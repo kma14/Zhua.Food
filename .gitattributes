@@ -1,0 +1,3 @@
+# Repo stores LF for all text files; Windows-only tooling keeps CRLF.
+* text=auto eol=lf
+*.sln text eol=crlf
