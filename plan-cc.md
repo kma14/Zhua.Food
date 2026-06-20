@@ -213,8 +213,9 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 - [x] Decisions: R1–R3 approved · Q1→change-only · Q2→Quartz · Q3→migrator · Q4→API-first + twice-daily · R6/R7 added — **all open questions resolved**
 - [x] Create solution + 7 projects per §3 (incl. `Zhua.Migrator`), clean-arch references
 - [x] Add `Zhua.Domain` entities (§4) — Store(+lat/long), CanonicalProduct(+GTIN), StoreProduct, PriceSnapshot, CrawlRun
-- [x] EF Core `DbContext` + configs + `InitialCreate` migration (5 tables, 3-store seed) — builds + renders DDL; live-apply pending Docker
-- [x] Docker Compose: `postgres` + one-shot `migrator` (+ Dockerfile, `.gitignore`/`.dockerignore`/`.gitattributes`, README)
+- [x] EF Core `DbContext` + configs + `InitialCreate` migration (5 tables, 3-store seed) — **verified live**: local + Compose migrator both create the schema + seed against Postgres
+- [x] Docker Compose: `postgres` (host **5433** — 5432 collided with a native PostgreSQL 17) + one-shot `migrator` (+ Dockerfile, ignores, `.gitattributes`, README)
+  - ⚠️ gotcha: pin `Microsoft.EntityFrameworkCore.Relational` in the executable projects, else `Design`'s version doesn't flow to them, the migrator runs on EF 9.0.1, finds 0 migrations, and **silently no-ops** (exits 0, applies nothing).
 
 ### Phase 1 — Ingestion spike (de-risk first!)
 - [x] **Step 1 — prior-art recon (done):** existing NZ scrapers found; per-store strategy drafted (§10). Woolworths → JSON API (`api.cdx.nz`); New World + PAK'nSAVE → Playwright + geolocation.
