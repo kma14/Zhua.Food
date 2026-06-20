@@ -5,7 +5,7 @@ using Zhua.Infrastructure.Persistence;
 // so neither of those auto-migrates and there is no migration race.
 
 var conn = Environment.GetEnvironmentVariable("ConnectionStrings__Default")
-           ?? "Host=localhost;Port=5432;Database=zhua;Username=zhua;Password=zhua";
+           ?? "Host=localhost;Port=5433;Database=zhua;Username=zhua;Password=zhua";
 
 Console.WriteLine("[migrator] applying migrations...");
 

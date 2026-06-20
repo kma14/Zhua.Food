@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: zhua
       POSTGRES_DB: zhua
     ports:
-      - "5432:5432"
+      - "5433:5432"   # host 5433 -> container 5432 (5432 left free for any native Postgres)
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

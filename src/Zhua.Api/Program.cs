@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 
 var conn = builder.Configuration.GetConnectionString("Default")
-           ?? "Host=localhost;Port=5432;Database=zhua;Username=zhua;Password=zhua";
+           ?? "Host=localhost;Port=5433;Database=zhua;Username=zhua;Password=zhua";
 
 // Query side: reads already-persisted data only. It never migrates (plan D5) and never triggers crawling.
 builder.Services.AddDbContext<ZhuaDbContext>(o => o.UseNpgsql(conn));

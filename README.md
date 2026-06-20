@@ -42,5 +42,6 @@ docker compose up --build migrator
 
 - Connection string: env `ConnectionStrings__Default` (or `ConnectionStrings:Default` in Api `appsettings.json`).
 - Compose dev credentials: user `zhua` / password `zhua` / database `zhua`.
+- Host access on port **5433** (`localhost:5433`) — 5432 is left free in case a native Postgres is installed. The in-container migrator still talks to `postgres:5432` over the Docker network.
 - Migrations: `src/Zhua.Infrastructure/Persistence/Migrations`.
 - Seed: the 3 Milestone-1 stores (Woolworths Takapuna, New World Takapuna, PAK'nSAVE Glenfield) with geolocation.
