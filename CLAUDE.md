@@ -33,6 +33,7 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 | `Zhua.Api` | Query REST API — **read-only**. |
 | `Zhua.Worker` | Ingestion — Quartz schedule + crawlers. |
 | `Zhua.Migrator` | One-shot migration runner. |
+| `tests/Zhua.Ingestion.Tests` | Ingestion / `CrawlOrchestrator` tests (EF InMemory). |
 
 ## Hard rules (do not violate)
 
@@ -48,6 +49,7 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 docker compose up -d postgres                          # Postgres on host port 5433
 dotnet ef database update -p src/Zhua.Infrastructure   # or: docker compose up --build migrator
 dotnet build Zhua.Food.sln
+dotnet test                                            # run all tests
 dotnet run --project src/Zhua.Api                      # GET /health, /health/db
 ```
 

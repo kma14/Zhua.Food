@@ -220,9 +220,9 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 ### Phase 1 — Ingestion spike (de-risk first!)
 - [x] **Step 1 — prior-art recon (done):** existing NZ scrapers found; per-store strategy drafted (§10). Woolworths → JSON API (`api.cdx.nz`); New World + PAK'nSAVE → Playwright + geolocation.
 - [x] **Step 2 — formal spike skipped (D2 rev):** standardized on Playwright-for-all, no up-front endpoint verification. Folded into build: grab Takapuna/Glenfield lat/long, confirm GTIN presence in the intercepted JSON during crawler dev, check each `robots.txt`.
-- [ ] Define `IStoreCrawler` + `CrawlRun` lifecycle
-- [ ] Implement first crawler end-to-end (suggest **Woolworths** — likely the easiest) → real rows in Postgres
-- [ ] Parser fixtures + tests for that store
+- [x] Ingestion contracts + `CrawlOrchestrator`: `CrawlRun` lifecycle + change-only snapshots (D3) + current-price/LastSeenAt refresh (R4); 5 InMemory tests green (`tests/Zhua.Ingestion.Tests`)
+- [ ] Implement first crawler end-to-end (**Woolworths** — Playwright → intercept JSON) → real rows in Postgres
+- [ ] Worker CLI one-shot runner (R7) + parser fixtures + tests for that store
 
 ### Phase 2 — Full ingestion
 - [ ] Implement New World + PAK'nSAVE crawlers (browser or API per spike)
