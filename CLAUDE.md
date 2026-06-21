@@ -12,6 +12,12 @@ Auckland grocery **price-intelligence** platform (information layer only — NOT
 
 📋 **Full background, all decisions (D1–D9) and the phased roadmap live in [plan-cc.md](plan-cc.md)** — that's the source of truth; read it before non-trivial work and keep it updated as decisions change. (Linked rather than `@import`-ed, to keep each session's context lean — ask if you'd prefer the whole plan auto-loaded every session.)
 
+## Prior art
+
+A similar NZ price tracker already exists — **kiwiprice.xyz** (GitHub `Jason-nzd`). Study these as references (don't depend on them; check licenses before copying): `Jason-nzd/pakn-scraper` (**.NET + Playwright** — our exact stack), `Jason-nzd/countdown-scraper`, `Jason-nzd/supermarket-prices-nextjs`.
+
+**Our differentiator:** real **canonical same-product cross-store comparison** (D9) + a focused, task-first UX. kiwiprice only sorts a whole category by `$/kg`, which is meaningless (it mixes whole chicken vs breast vs drumsticks) and shows the same product at two stores as separate cards — exactly what we improve on. Full recon: plan-cc.md §10.
+
 ## Architecture — Clean Architecture; respect the dependency direction
 
 ```
