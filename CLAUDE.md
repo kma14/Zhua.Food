@@ -2,8 +2,15 @@
 
 Auckland grocery **price-intelligence** platform (information layer only — NOT e-commerce / delivery / cart / marketplace).
 
-**Source of truth for architecture, decisions (D1–D9) and roadmap: [plan-cc.md](plan-cc.md). Read it before non-trivial work.**
-(Not `@import`-ed here on purpose, to keep each session's context lean — the rules below are the distilled "must follow"; plan-cc.md has the *why*.)
+## Background & status
+
+**Goal:** help Auckland shoppers find where groceries are cheapest — answering "where is X cheapest now / which store is lowest for X / is X on special / what's its price history / how much could I save shopping across stores". It's an **information layer**, not a shop, cart, or delivery service.
+
+**M1 scope:** 3 stores (Woolworths Takapuna, New World Takapuna, PAK'nSAVE Glenfield), ~15 common grocery types, **twice-daily** crawl + price history + search/compare/deals APIs. Future: Chinese/Korean/Indian supermarkets (not M1).
+
+**Status:** Phase 0 done — solution skeleton + EF schema + migrator + Compose, verified against Postgres. **Next: Phase 1** — first crawler (Woolworths, Playwright→JSON) into Postgres.
+
+📋 **Full background, all decisions (D1–D9) and the phased roadmap live in [plan-cc.md](plan-cc.md)** — that's the source of truth; read it before non-trivial work and keep it updated as decisions change. (Linked rather than `@import`-ed, to keep each session's context lean — ask if you'd prefer the whole plan auto-loaded every session.)
 
 ## Architecture — Clean Architecture; respect the dependency direction
 
