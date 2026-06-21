@@ -6,7 +6,7 @@ Auckland grocery **price-intelligence** platform (information layer only — NOT
 
 **Goal:** help Auckland shoppers find where groceries are cheapest — answering "where is X cheapest now / which store is lowest for X / is X on special / what's its price history / how much could I save shopping across stores". It's an **information layer**, not a shop, cart, or delivery service.
 
-**M1 scope:** 3 stores (Woolworths Takapuna, New World Takapuna, PAK'nSAVE Glenfield), ~15 common grocery types, **twice-daily** crawl + price history + search/compare/deals APIs. Future: Chinese/Korean/Indian supermarkets (not M1).
+**M1 scope:** 3 stores (Woolworths Takapuna, New World Takapuna, PAK'nSAVE Glenfield), **full catalog via each store's category tree** (browse Department→Aisle→Shelf, tag each product's store category — D10), **twice-daily** crawl + price history + search/compare/deals APIs. Future: Chinese/Korean/Indian supermarkets (not M1).
 
 **Status:** Phase 0 done — solution skeleton + EF schema + migrator + Compose, verified against Postgres. **Next: Phase 1** — first crawler (Woolworths, Playwright→JSON) into Postgres.
 

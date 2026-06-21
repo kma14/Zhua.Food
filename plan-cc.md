@@ -28,7 +28,7 @@
 
 *(lat/long = the geolocation we feed each site to select the physical store — D2/§10. `Store` seed data.)*
 
-**Product coverage (Milestone 1):** common groceries only — milk, eggs, bread, bananas, apples, chicken breast, beef mince, pork belly, rice, cooking oil, vegetables, fruits, noodles, soy sauce, dairy. *Completeness is a non-goal; reliability + architecture is the goal.*
+**Product coverage (Milestone 1):** crawl the **full catalog via each store's own category tree** (Browse → Department → Aisle → Shelf), tagging every product with its store category (**D10**). This supersedes the earlier "~15 common types" guess — following the site's taxonomy is more correct, complete, and yields clean fine-grained categories (feeds `RawCategory` + D9). *(M1 starts with 3 departments — **Meat & Poultry, Fruit & Veg, Fish & Seafood** (highest-value fresh categories) — expanding later; D10.)*
 
 **Questions the system must answer:**
 - Where is X cheapest right now?
@@ -265,6 +265,7 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 | D7 | Crawl cadence | ✅ **Default twice-daily**, config-driven, global + per-store override (R6) | groceries don't change hourly; lighter + lower ToS risk; with D3, cadence = detection latency and sub-day is fine | 2026-06-20 |
 | D8 | Manual crawl trigger | ✅ Worker-side: CLI one-shot now; Quartz "run now" later (R7) | public Api never triggers crawls | 2026-06-20 |
 | D9 | Canonical matching scope | ✅ **Core M1 feature, NOT deferred.** Two compare levels: exact same-product + fine-grained type | category-level $/kg is meaningless (whole chicken vs breast vs drumsticks); same-product cross-store compare is the differentiator | 2026-06-20 |
+| D10 | Crawl strategy | ✅ **Browse the store category tree** (Department→Aisle→Shelf), paginate each category, tag each product with its store category — NOT hard-coded keyword searches. M1 depts: **Meat & Poultry, Fruit & Veg, Fish & Seafood** | follows the site's own taxonomy → complete coverage + precise fine-grained categories; supersedes the 15-term search | 2026-06-21 |
 
 ---
 
