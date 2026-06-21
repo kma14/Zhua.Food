@@ -1,0 +1,148 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Xunit;
+using Zhua.Application.Ingestion;
+using Zhua.Domain.Entities;
+using Zhua.Domain.Enums;
+using Zhua.Infrastructure.Ingestion;
+using Zhua.Infrastructure.Persistence;
+
+namespace Zhua.Ingestion.Tests;
+
+/// <summary>Proves the change-only snapshot behaviour (plan D3) + liveness refresh (R4).</summary>
+public class CrawlOrchestratorTests
+{
+    private static readonly Guid StoreId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private readonly InMemoryDatabaseRoot _root = new();
+    private readonly TestClock _clock = new(DateTimeOffset.Parse("2026-06-21T06:00:00Z"));
+
+    private DbContextOptions<ZhuaDbContext> Options() =>
+        new DbContextOptionsBuilder<ZhuaDbContext>()
+            .UseInMemoryDatabase(nameof(CrawlOrchestratorTests), _root)
+            .Options;
+
+    private ZhuaDbContext NewContext() => new(Options());
+
+    private async Task SeedStoreAsync()
+    {
+        await using var db = NewContext();
+        db.Stores.Add(new Store
+        {
+            Id = StoreId,
+            Chain = Chain.Woolworths,
+            Name = "Test Store",
+            Suburb = "Test",
+            Latitude = -36.78,
+            Longitude = 174.76,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<CrawlRunResult> RunAsync(params ScrapedProduct[] products)
+    {
+        await using var db = NewContext();
+        var orchestrator = new CrawlOrchestrator(db, [new StubCrawler(Chain.Woolworths, products)], _clock);
+        return await orchestrator.RunAsync(StoreId);
+    }
+
+    private static ScrapedProduct Milk(decimal price, bool onSpecial = false, decimal? nonSpecial = null) => new()
+    {
+        SourceSku = "SKU-MILK",
+        Name = "Anchor Blue Milk 2L",
+        Price = price,
+        IsOnSpecial = onSpecial,
+        NonSpecialPrice = nonSpecial,
+    };
+
+    [Fact]
+    public async Task First_crawl_creates_product_and_one_snapshot()
+    {
+        await SeedStoreAsync();
+
+        var result = await RunAsync(Milk(3.50m));
+
+        Assert.Equal(CrawlRunStatus.Succeeded, result.Status);
+        Assert.Equal(1, result.ProductsFound);
+        Assert.Equal(1, result.SnapshotsWritten);
+
+        await using var db = NewContext();
+        Assert.Equal(1, await db.StoreProducts.CountAsync());
+        Assert.Equal(1, await db.PriceSnapshots.CountAsync());
+        Assert.Equal(3.50m, (await db.StoreProducts.SingleAsync()).CurrentPrice);
+    }
+
+    [Fact]
+    public async Task Unchanged_price_writes_no_new_snapshot_but_refreshes_lastseen()
+    {
+        await SeedStoreAsync();
+        await RunAsync(Milk(3.50m));
+
+        _clock.Advance(TimeSpan.FromHours(12));
+        var result = await RunAsync(Milk(3.50m));
+
+        Assert.Equal(0, result.SnapshotsWritten);
+
+        await using var db = NewContext();
+        Assert.Equal(1, await db.PriceSnapshots.CountAsync());
+        Assert.Equal(_clock.GetUtcNow(), (await db.StoreProducts.SingleAsync()).LastSeenAt);
+    }
+
+    [Fact]
+    public async Task Changed_price_writes_a_new_snapshot()
+    {
+        await SeedStoreAsync();
+        await RunAsync(Milk(3.50m));
+
+        _clock.Advance(TimeSpan.FromHours(12));
+        var result = await RunAsync(Milk(3.20m));
+
+        Assert.Equal(1, result.SnapshotsWritten);
+
+        await using var db = NewContext();
+        Assert.Equal(2, await db.PriceSnapshots.CountAsync());
+    }
+
+    [Fact]
+    public async Task Going_on_special_at_same_price_counts_as_a_change()
+    {
+        await SeedStoreAsync();
+        await RunAsync(Milk(3.50m));
+
+        _clock.Advance(TimeSpan.FromHours(12));
+        var result = await RunAsync(Milk(3.50m, onSpecial: true, nonSpecial: 4.00m));
+
+        Assert.Equal(1, result.SnapshotsWritten);
+
+        await using var db = NewContext();
+        Assert.Equal(2, await db.PriceSnapshots.CountAsync());
+    }
+
+    [Fact]
+    public async Task Missing_crawler_records_a_failed_run()
+    {
+        await SeedStoreAsync();
+        await using var db = NewContext();
+
+        var orchestrator = new CrawlOrchestrator(db, [], _clock); // no crawler registered
+        var result = await orchestrator.RunAsync(StoreId);
+
+        Assert.Equal(CrawlRunStatus.Failed, result.Status);
+        Assert.NotNull(result.Error);
+        Assert.Equal(1, await db.CrawlRuns.CountAsync(r => r.Status == CrawlRunStatus.Failed));
+    }
+}
+
+internal sealed class StubCrawler(Chain chain, IReadOnlyList<ScrapedProduct> products) : IStoreCrawler
+{
+    public Chain Chain => chain;
+
+    public Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default)
+        => Task.FromResult(products);
+}
+
+internal sealed class TestClock(DateTimeOffset start) : TimeProvider
+{
+    private DateTimeOffset _now = start;
+    public void Advance(TimeSpan by) => _now += by;
+    public override DateTimeOffset GetUtcNow() => _now;
+}

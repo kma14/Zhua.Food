@@ -18,7 +18,7 @@ public class StoreProductConfiguration : IEntityTypeConfiguration<StoreProduct>
         b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.Property(x => x.UnitOfMeasure).HasMaxLength(20);
         b.Property(x => x.CurrentPrice).HasPrecision(10, 2);
-        b.Property(x => x.CurrentSpecial).HasPrecision(10, 2);
+        b.Property(x => x.CurrentNonSpecialPrice).HasPrecision(10, 2);
         b.Property(x => x.UnitPrice).HasPrecision(12, 4);
 
         b.HasOne(x => x.Store)

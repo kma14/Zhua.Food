@@ -35,9 +35,11 @@ public class StoreProduct
 
     // --- Denormalized current price (plan R4): refreshed every crawl for fast "right now" queries. ---
 
+    /// <summary>Price paid now (special price if on special, else shelf price).</summary>
     public decimal? CurrentPrice { get; set; }
 
-    public decimal? CurrentSpecial { get; set; }
+    /// <summary>Regular ("was") price; set when on special (mirrors <see cref="PriceSnapshot.NonSpecialPrice"/>).</summary>
+    public decimal? CurrentNonSpecialPrice { get; set; }
 
     public bool IsOnSpecial { get; set; }
 
