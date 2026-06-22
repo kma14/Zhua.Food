@@ -12,6 +12,7 @@ public class ZhuaDbContext(DbContextOptions<ZhuaDbContext> options) : DbContext(
     public DbSet<CrawlRun> CrawlRuns => Set<CrawlRun>();
     public DbSet<StoreCategory> StoreCategories => Set<StoreCategory>();
     public DbSet<ProductTag> ProductTags => Set<ProductTag>();
+    public DbSet<MatchCandidate> MatchCandidates => Set<MatchCandidate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

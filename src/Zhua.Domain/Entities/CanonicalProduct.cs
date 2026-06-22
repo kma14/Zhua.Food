@@ -8,6 +8,13 @@ public class CanonicalProduct
 {
     public Guid Id { get; set; }
 
+    /// <summary>
+    /// Stable identity for matcher re-runs (plan D18) — e.g. "foodstuffs:5103401-KGM-000". Lets the offline
+    /// matcher upsert the same canonical each run so human review decisions keep pointing at it. Null for
+    /// canonicals created another way.
+    /// </summary>
+    public string? MatchKey { get; set; }
+
     public required string Name { get; set; }
 
     public string? Brand { get; set; }

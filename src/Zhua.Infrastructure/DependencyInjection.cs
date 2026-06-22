@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Zhua.Application.Ingestion;
+using Zhua.Application.Matching;
 using Zhua.Infrastructure.Ingestion;
+using Zhua.Infrastructure.Matching;
 using Zhua.Infrastructure.Persistence;
 
 namespace Zhua.Infrastructure;
@@ -15,6 +17,7 @@ public static class DependencyInjection
         services.AddDbContext<ZhuaDbContext>(o => o.UseNpgsql(connectionString));
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ICrawlOrchestrator, CrawlOrchestrator>();
+        services.AddScoped<ICanonicalMatcher, CanonicalMatcher>();
         return services;
     }
 }

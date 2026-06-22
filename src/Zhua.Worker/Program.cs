@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using Zhua.Application.Ingestion;
+using Zhua.Application.Matching;
 using Zhua.Crawling.Foodstuffs;
 using Zhua.Crawling.Woolworths;
 using Zhua.Infrastructure;
@@ -59,6 +60,18 @@ if (args.Length > 0 && args[0].Equals("crawl", StringComparison.OrdinalIgnoreCas
             + (r.Error is null ? "" : $"; error={r.Error}"));
     }
 
+    return;
+}
+
+// R3 offline canonical matching (plan D9/D18). Re-runnable after crawls. Usage: Zhua.Worker match
+if (args.Length > 0 && args[0].Equals("match", StringComparison.OrdinalIgnoreCase))
+{
+    using var scope = host.Services.CreateScope();
+    var matcher = scope.ServiceProvider.GetRequiredService<ICanonicalMatcher>();
+    Console.WriteLine("[match] canonical matching ...");
+    var r = await matcher.RunAsync();
+    Console.WriteLine($"[match] canonicals={r.CanonicalProducts}, auto-linked store-products={r.AutoLinked}, "
+        + $"pending review={r.PendingReview}, already decided={r.AlreadyDecided}");
     return;
 }
 

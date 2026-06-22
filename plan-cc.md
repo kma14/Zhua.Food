@@ -223,44 +223,45 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 
 ## 8. Milestone 1 plan — trackable checklist
 
-### Phase 0 — Foundations
-- [x] Decisions: R1–R3 approved · Q1→change-only · Q2→Quartz · Q3→migrator · Q4→API-first + twice-daily · R6/R7 added — **all open questions resolved**
-- [x] Create solution + 7 projects per §3 (incl. `Zhua.Migrator`), clean-arch references
-- [x] Add `Zhua.Domain` entities (§4) — Store(+lat/long), CanonicalProduct(+GTIN), StoreProduct, PriceSnapshot, CrawlRun
-- [x] EF Core `DbContext` + configs + `InitialCreate` migration (5 tables, 3-store seed) — **verified live**: local + Compose migrator both create the schema + seed against Postgres
-- [x] Docker Compose: `postgres` (host **5433** — 5432 collided with a native PostgreSQL 17) + one-shot `migrator` (+ Dockerfile, ignores, `.gitattributes`, README)
-  - ⚠️ gotcha: pin `Microsoft.EntityFrameworkCore.Relational` in the executable projects, else `Design`'s version doesn't flow to them, the migrator runs on EF 9.0.1, finds 0 migrations, and **silently no-ops** (exits 0, applies nothing).
+Legend: ✅ done · 🚧 in progress · 🔲 todo
 
-### Phase 1 — Ingestion spike (de-risk first!)
-- [x] **Step 1 — prior-art recon (done):** existing NZ scrapers found; per-store strategy drafted (§10). Woolworths → JSON API (`api.cdx.nz`); New World + PAK'nSAVE → Playwright + geolocation.
-- [x] **Step 2 — formal spike skipped (D2 rev):** standardized on Playwright-for-all, no up-front endpoint verification. Folded into build: grab Takapuna/Glenfield lat/long, confirm GTIN presence in the intercepted JSON during crawler dev, check each `robots.txt`.
-- [x] Ingestion contracts + `CrawlOrchestrator`: `CrawlRun` lifecycle + change-only snapshots (D3) + current-price/LastSeenAt refresh (R4); 5 InMemory tests green (`tests/Zhua.Ingestion.Tests`)
-- [ ] Implement first crawler end-to-end (**Woolworths** — Playwright → intercept JSON) → real rows in Postgres
-- [ ] Worker CLI one-shot runner (R7) + parser fixtures + tests for that store
+### Phase 0 — Foundations ✅
+- ✅ Decisions R1–R3 + Q1–Q4 + R6/R7 resolved
+- ✅ Solution + 7 projects (clean-arch references)
+- ✅ `Zhua.Domain` entities (§4)
+- ✅ EF `DbContext` + configs + `InitialCreate` (verified live: local + Compose migrator)
+- ✅ Docker Compose: `postgres` (host **5433**) + one-shot `migrator`
+  - ⚠️ pin `Microsoft.EntityFrameworkCore.Relational` in the executables, else the migrator runs on EF 9.0.1 and **silently no-ops**.
 
-### Phase 2 — Full ingestion
-- [ ] Implement New World + PAK'nSAVE crawlers (browser or API per spike)
-- [ ] `CrawlOrchestrator` + Quartz schedule, cadence from config (default twice-daily + per-store override, R6/D7); stores crawled sequentially
-- [ ] Persistence: refresh StoreProduct current price + LastSeenAt (R4); append PriceSnapshot only on price-tuple change (D3)
-- [ ] Worker CLI one-shot manual crawl `crawl [--store <chain>] --once` (R7)
-- [ ] Politeness: rate limit, retry/backoff, per-run error capture
+### Phase 1 — Ingestion spike ✅
+- ✅ Prior-art recon (§10); per-store strategy
+- ✅ Spike folded into build (Playwright-for-all, D2 rev)
+- ✅ Ingestion contracts + `CrawlOrchestrator` (D3 change-only + R4 refresh)
+- ✅ Woolworths crawler end-to-end → real Postgres rows (browse-by-category, D10)
+- ✅ Worker CLI one-shot runner + parser golden-file tests
 
-### Phase 3 — Canonical matching (CORE M1 feature — D9; runs offline, decoupled from ingestion per R3)
-- [ ] Seed `CanonicalProduct`s for the ~15 **fine-grained** M1 product-types
-- [ ] `CanonicalMatcher`: **GTIN-first** (same barcode = same item), then brand + normalized size; private labels stay distinct
-- [ ] Capture `Gtin` during crawl wherever the source exposes it (primary matching key)
-- [ ] Admin/manual review + override for `StoreProduct.CanonicalProductId` (ambiguous / no-GTIN cases)
+### Phase 2 — Full ingestion ✅ (scheduler still pending)
+- ✅ New World + PAK'nSAVE crawlers — shared `FoodstuffsCrawler` (D15)
+- ✅ Persistence: change-only snapshots (D3) + LastSeenAt refresh (R4)
+- ✅ Worker CLI manual crawl `crawl [--store <chain>]`
+- ✅ Politeness: base delay + Woolworths WAF cooldown-retry/backoff (D17)
+- ✅ **Beyond plan:** `StoreCategory` tree (D11) · raw archive (D12) · promo tags (D13) · **9 stores, 3 branches/chain** (D16, Woolworths reduced to 1 active) · departments expanding to Fridge/Deli + Frozen (D17)
+- 🔲 Quartz scheduler (twice-daily, R6/D7) — **the one Phase-2 item left**; crawling is still manual CLI
 
-### Phase 4 — Query API
-- [ ] `GET /search`
-- [ ] `GET /compare` (by unit price)
-- [ ] `GET /deals`
-- [ ] `GET /products/{id}/prices`
-- [ ] `GET /health` + `GET /admin/crawl-runs`
-- [ ] Api integration tests
+### Phase 3 — Canonical matching ✅ core done (D18; offline `match` command, decoupled per R3)
+- ✅ **Tier 1 (free):** group Foodstuffs NW↔PAK by shared `productId` → one `CanonicalProduct` per SKU (upserted by `MatchKey`) — same-product compare across all 6 Foodstuffs stores. **3783 canonicals.**
+- ✅ **Tier 2 (review-gated):** Woolworths↔Foodstuffs by brand + normalised size + name-token overlap; single clear winner ≥0.8 auto-links, ambiguous/weak → `MatchCandidate` review queue. **545 Woolworths auto-linked, 760 pending review.**
+- ✅ **Review queue persists:** `MatchCandidate` (Pending/Approved/Rejected); matcher is **idempotent + re-runnable after each crawl**, honours human decisions, never re-asks. (Approve/reject endpoint = Phase 4.)
+- 🔲 **Fresh/unbranded:** still compare by category + `$/kg` (no brand/size → not canonicalised)
+- ⚠️ **D9 revised:** Foodstuffs exposes **no GTIN**, so GTIN-first can't bridge chains; the bridge is brand+size+name (D18)
 
-### Phase 5 — Hardening
-- [ ] End-to-end: scheduled (twice-daily) crawl runs unattended for several days, snapshots accumulate, APIs answer the 5 core questions
+### Phase 4 — Query API 🔲
+- 🔲 `GET /search` · `GET /compare` (by unit price) · `GET /deals` · `GET /products/{id}/prices`
+- 🔲 `GET /health` + `GET /admin/crawl-runs`
+- 🔲 Api integration tests (WebApplicationFactory + Testcontainers)
+
+### Phase 5 — Hardening 🔲
+- 🔲 End-to-end: scheduled crawls run unattended for days, snapshots accumulate, APIs answer the 5 core questions
 - [ ] Serilog dashboards/log review; alert on failed CrawlRuns
 - [ ] README + run instructions
 
@@ -286,6 +287,7 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 | D14 | Promotion history | ✅ **Don't historize promotions.** Tags stay current-state only (reset per crawl = current badge for UX); **`PriceSnapshot` is the sole history of record** (each price-tuple change + date, D3). No `StartedAt`/`EndedAt` on tags, no `Promotion` entity. | source doesn't return promo start/end dates anyway (0/739 — gated by `EnableReturnOfPromotionStartAndEndDate`); price-special periods are already reconstructable from snapshots; promo-badge history has little user value | 2026-06-22 |
 | D15 | Foodstuffs crawler | ✅ **One shared `FoodstuffsCrawler` base for New World + PAK'nSAVE** (same platform/API; only domain + store differ). POST `api-prod.{site}/v1/edge/search/paginated/products` (Algolia-backed), filtered by department name (`category0NI`), paginated by `totalPages`. Needs an **anonymous Bearer token** — captured from the page's own api-prod requests during warmup. Each product carries `categoryTrees[{level0/1/2}]` (→ Department/Aisle/Shelf, often several), so we crawl per-department and the product self-describes its path(s). Price is in **cents**. **No GTIN, no image URL** in this API (canonical falls back to brand+name; image via fsimg CDN later). storeId via `ExternalStoreId` or geolocation. Verified: NW Beef=24, NW=328 / PAK'nSAVE=641. | shared platform → one crawler covers two banners ~free; shared Foodstuffs `productId` makes **cross-banner same-product compare (D9) nearly free** — and NW-vs-PAK'nSAVE price gaps are the core "where's it cheapest" value | 2026-06-22 |
 | D16 | 3 branches per chain | ✅ **Seed 3 stores per chain (9 total)** to compare same-brand branch prices. Woolworths = Takapuna/Glenfield/Browns Bay (geolocation); New World = Metro/Shore City/Browns Bay; PAK'nSAVE = Albany/Botany/Highland Park (only Albany is online on the Shore; Botany+Highland Park are the Chinese-dense online stores). **Result → only 1 Woolworths kept active** (the other two deactivated; national pricing makes them redundant). | **measured: Woolworths 0% / NW 39.6% / PAK'nSAVE 48.9%** of shared products differ in price across branches — Foodstuffs is franchise-priced, so branch matters; proves per-store pricing + branch-level compare | 2026-06-22 |
+| D18 | Canonical matching | ✅ **Two-tier offline matcher** (`match` command, R3). T1: Foodstuffs NW↔PAK share `productId` → one `CanonicalProduct` per SKU (upsert by `MatchKey`, idempotent). T2: Woolworths↔Foodstuffs by **brand + normalised size (hard filter) + name-token overlap** — single clear winner ≥0.8 auto-links, else → `MatchCandidate` review queue (Pending/Approved/Rejected, persisted, never re-asked). Per-store `RawName` always kept. | no GTIN/shared-id bridges Woolworths↔Foodstuffs and names diverge wildly, so confident cases auto-link and the rest become a **review queue** (not the user spelunking the DB). Result: 3783 canonicals, 545 WW auto-linked, 760 pending | 2026-06-23 |
 | D17 | Woolworths WAF backoff | ✅ Keep Woolworths at **shelf-level** crawl (finest categories) and survive the WAF rate-limit with **cooldown-and-retry + session refresh** (12/24/36s on an empty/blocked body), base delay 600ms. ~300 req/crawl. Aisle-level (≈half the requests) considered but not taken. | shelf granularity (Beef Steaks vs Mince) helps D9 canonical matching; backoff makes the high request volume reliable rather than dropping departments | 2026-06-23 |
 
 ---
