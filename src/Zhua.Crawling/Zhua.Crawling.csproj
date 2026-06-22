@@ -5,6 +5,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Expose internal parser (ParseProductsInto, Slugify) to the ingestion test project for golden-file tests. -->
+    <InternalsVisibleTo Include="Zhua.Ingestion.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
   </ItemGroup>
 

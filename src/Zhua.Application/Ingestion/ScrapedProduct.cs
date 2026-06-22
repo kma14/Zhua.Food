@@ -35,4 +35,10 @@ public sealed record ScrapedProduct
     public decimal? UnitPrice { get; init; }
 
     public string? UnitOfMeasure { get; init; }
+
+    /// <summary>Store category path this product was crawled under: Department → Aisle → Shelf (plan D11).</summary>
+    public IReadOnlyList<ScrapedCategoryNode> CategoryPath { get; init; } = [];
+
+    /// <summary>Promo/marketing tags on this product as seen at the source (plan D13).</summary>
+    public IReadOnlyList<ScrapedTag> Tags { get; init; } = [];
 }

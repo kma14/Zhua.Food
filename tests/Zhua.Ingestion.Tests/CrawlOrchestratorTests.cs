@@ -118,6 +118,31 @@ public class CrawlOrchestratorTests
     }
 
     [Fact]
+    public async Task Tags_are_reset_each_crawl()
+    {
+        await SeedStoreAsync();
+
+        // First crawl: on special.
+        await RunAsync(Milk(3.50m, onSpecial: true, nonSpecial: 4.00m) with
+        {
+            Tags = [new ScrapedTag(ProductTagSource.Primary, "IsSpecial")],
+        });
+
+        // Next crawl: special ended, now an everyday "Low Price".
+        _clock.Advance(TimeSpan.FromHours(12));
+        await RunAsync(Milk(3.50m) with
+        {
+            Tags = [new ScrapedTag(ProductTagSource.Primary, "IsGreatPrice")],
+        });
+
+        await using var db = NewContext();
+        var sp = await db.StoreProducts.Include(p => p.Tags).SingleAsync();
+        Assert.Single(sp.Tags);                                  // stale IsSpecial dropped
+        Assert.Equal("IsGreatPrice", sp.Tags.Single().Code);
+        Assert.Equal(2, await db.ProductTags.CountAsync());      // both rows kept in the shared dimension
+    }
+
+    [Fact]
     public async Task Missing_crawler_records_a_failed_run()
     {
         await SeedStoreAsync();

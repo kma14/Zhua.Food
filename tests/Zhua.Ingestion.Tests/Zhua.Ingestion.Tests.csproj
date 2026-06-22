@@ -23,6 +23,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Zhua.Application\Zhua.Application.csproj" />
     <ProjectReference Include="..\..\src\Zhua.Infrastructure\Zhua.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Zhua.Crawling\Zhua.Crawling.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

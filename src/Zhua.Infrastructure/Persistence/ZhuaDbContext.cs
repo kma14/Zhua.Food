@@ -10,6 +10,8 @@ public class ZhuaDbContext(DbContextOptions<ZhuaDbContext> options) : DbContext(
     public DbSet<StoreProduct> StoreProducts => Set<StoreProduct>();
     public DbSet<PriceSnapshot> PriceSnapshots => Set<PriceSnapshot>();
     public DbSet<CrawlRun> CrawlRuns => Set<CrawlRun>();
+    public DbSet<StoreCategory> StoreCategories => Set<StoreCategory>();
+    public DbSet<ProductTag> ProductTags => Set<ProductTag>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

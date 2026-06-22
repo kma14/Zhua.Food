@@ -33,8 +33,23 @@ public sealed class CrawlOrchestrator(
             var scraped = await crawler.FetchAsync(store, ct);
 
             var existing = await db.StoreProducts
+                .Include(p => p.Categories)
+                .Include(p => p.Tags)
+                .AsSplitQuery() // two collection includes — split to avoid a cartesian-explosion warning
                 .Where(p => p.StoreId == store.Id)
                 .ToDictionaryAsync(p => p.SourceSku, ct);
+
+            var categories = await db.StoreCategories
+                .Where(c => c.StoreId == store.Id)
+                .ToDictionaryAsync(c => (c.Kind, c.ExternalId), ct);
+
+            // Tag dimension is chain-scoped (plan D13).
+            var tags = await db.ProductTags
+                .Where(t => t.Chain == store.Chain)
+                .ToDictionaryAsync(t => (t.Source, t.Code), ct);
+
+            // Tags are reset per crawl (current state only) — clear each product's set the first time we see it this run.
+            var tagsResetForSku = new HashSet<string>();
 
             var now = clock.GetUtcNow();
             var snapshotsWritten = 0;
@@ -88,6 +103,54 @@ public sealed class CrawlOrchestrator(
                         CapturedAt = now,
                     });
                     snapshotsWritten++;
+                }
+
+                // Link the product to its category path (Department → Aisle → Shelf), upserting nodes (plan D11).
+                StoreCategory? parent = null;
+                foreach (var node in s.CategoryPath)
+                {
+                    var key = (node.Kind, node.ExternalId);
+                    if (!categories.TryGetValue(key, out var cat))
+                    {
+                        cat = new StoreCategory
+                        {
+                            StoreId = store.Id,
+                            Kind = node.Kind,
+                            ExternalId = node.ExternalId,
+                            Slug = node.Slug,
+                            Name = node.Name,
+                            Parent = parent,
+                        };
+                        db.StoreCategories.Add(cat);
+                        categories[key] = cat;
+                    }
+                    else if (cat.ParentId is null && cat.Parent is null && parent is not null)
+                    {
+                        cat.Parent = parent;
+                    }
+
+                    if (!sp.Categories.Any(c => c.Kind == cat.Kind && c.ExternalId == cat.ExternalId))
+                        sp.Categories.Add(cat);
+
+                    parent = cat;
+                }
+
+                // Promo tags (plan D13): reset to the current crawl's set (tags are volatile), upserting the dimension.
+                if (tagsResetForSku.Add(s.SourceSku))
+                    sp.Tags.Clear();
+
+                foreach (var t in s.Tags)
+                {
+                    var key = (t.Source, t.Code);
+                    if (!tags.TryGetValue(key, out var tag))
+                    {
+                        tag = new ProductTag { Chain = store.Chain, Source = t.Source, Code = t.Code, Label = t.Label };
+                        db.ProductTags.Add(tag);
+                        tags[key] = tag;
+                    }
+
+                    if (!sp.Tags.Any(x => x.Source == tag.Source && x.Code == tag.Code))
+                        sp.Tags.Add(tag);
                 }
             }
 

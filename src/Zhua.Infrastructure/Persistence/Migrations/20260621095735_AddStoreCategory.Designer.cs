@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Zhua.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Zhua.Infrastructure.Persistence;
 namespace Zhua.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ZhuaDbContext))]
-    partial class ZhuaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260621095735_AddStoreCategory")]
+    partial class AddStoreCategory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,21 +24,6 @@ namespace Zhua.Infrastructure.Persistence.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("ProductTagStoreProduct", b =>
-                {
-                    b.Property<Guid>("ProductsId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TagsId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("ProductsId", "TagsId");
-
-                    b.HasIndex("TagsId");
-
-                    b.ToTable("ProductTagStoreProduct");
-                });
 
             modelBuilder.Entity("StoreCategoryStoreProduct", b =>
                 {
@@ -172,39 +160,6 @@ namespace Zhua.Infrastructure.Persistence.Migrations
                     b.HasIndex("StoreProductId", "CapturedAt");
 
                     b.ToTable("PriceSnapshots");
-                });
-
-            modelBuilder.Entity("Zhua.Domain.Entities.ProductTag", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Chain")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Label")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Chain", "Source", "Code")
-                        .IsUnique();
-
-                    b.ToTable("ProductTags");
                 });
 
             modelBuilder.Entity("Zhua.Domain.Entities.Store", b =>
@@ -402,21 +357,6 @@ namespace Zhua.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("StoreProducts");
-                });
-
-            modelBuilder.Entity("ProductTagStoreProduct", b =>
-                {
-                    b.HasOne("Zhua.Domain.Entities.StoreProduct", null)
-                        .WithMany()
-                        .HasForeignKey("ProductsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Zhua.Domain.Entities.ProductTag", null)
-                        .WithMany()
-                        .HasForeignKey("TagsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("StoreCategoryStoreProduct", b =>

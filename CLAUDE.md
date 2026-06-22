@@ -38,8 +38,11 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 ## Hard rules (do not violate)
 
 - **Two pipelines stay separate.** The query `Api` **never** triggers crawling and **never** migrates the DB.
-- **Migrations:** change an entity → `dotnet ef migrations add <Name> -p src/Zhua.Infrastructure`. Only the `Migrator` (or `dotnet ef`) applies them; Api/Worker must not auto-migrate (D5).
+- **Migrations:** change an entity → `dotnet ef migrations add <Name> --project src/Zhua.Infrastructure --startup-project src/Zhua.Infrastructure` (Infrastructure holds `Design` + a design-time `ZhuaDbContextFactory`; the **Migrator does NOT reference Design**, so it can't be the EF-tools startup project). Only the `Migrator` (or `dotnet ef`) applies them; Api/Worker must not auto-migrate (D5).
 - **Price history is change-only (D3):** append a `PriceSnapshot` only when the tuple `{Price, IsOnSpecial, NonSpecialPrice, UnitPrice}` changes; every crawl still refreshes `StoreProduct` current price + `LastSeenAt`.
+- **Categories are first-class (D11):** crawl the store's own tree (Department→Aisle→Shelf), auto-discover aisles/shelves from `dasFacets`, and link products **many-to-many** to `StoreCategory` — never a denormalized category string. Category links accumulate across a crawl (a product sits under several shelves).
+- **Promo tags (D13):** capture the source's promo badge into the `ProductTag` m2m dimension (chain-scoped). Tags are **volatile → reset every crawl** (NOT in the D3 price tuple, NOT snapshotted). Keep `IsOnSpecial`+was-price as the real discount signal. Woolworths "Low Price" = `tagType:"IsGreatPrice"`; "Other" is dropped.
+- **Raw archive (D12):** crawlers archive every raw response to disk (default-on, 7-day self-pruning). Don't remove it — the parsed DB keeps only mapped fields, so the archive is the only way to recover/debug source data. Dir is git-ignored (`crawl-archive/`).
 - **Canonical matching (D9) is a core feature, done offline (R3):** `StoreProduct.CanonicalProductId` is nullable and matching never blocks ingestion. GTIN-first — capture `Gtin` at crawl time. `Category` must be **fine-grained** ("Chicken Breast", not "Chicken").
 - **Crawlers (D2):** Playwright for all 3 stores; **parse the page's intercepted JSON, not the DOM**. Store context = geolocation (lat/long). Cadence is config-driven, default **twice-daily** (R6/D7); crawl stores sequentially and politely.
 
@@ -55,8 +58,10 @@ dotnet run --project src/Zhua.Api                      # GET /health, /health/db
 
 ## Gotchas (learned the hard way)
 
-- **Host Postgres is on port 5433** (5432 collides with a native PostgreSQL on this machine). In-container services use `postgres:5432` over the Docker network.
+- **Host Postgres is on port 5433** (5432 collides with a native PostgreSQL on this machine). In-container services use `postgres:5432` over the Docker network. **Other projects' containers on this machine also bind 5433** (e.g. `tradematch-db-uat`); if Docker restarts they can grab the port first and our `zhuafood-postgres-1` fails to bind (Exited 255). Fix: `docker stop` the squatter, then `docker compose up -d postgres`.
+- **EF tools startup project = Infrastructure, not Migrator.** Infrastructure has `Design` + `ZhuaDbContextFactory`; the Migrator does not reference `Design`. Run `dotnet ef … --project src/Zhua.Infrastructure --startup-project src/Zhua.Infrastructure`.
 - **Pin `Microsoft.EntityFrameworkCore.Relational` in the executable projects** (Migrator/Api/Worker). Otherwise `Design`'s version doesn't flow to them, they run on EF **9.0.1**, and the migrator **silently applies nothing** (exits 0, creates no tables). Keep all EF Core + Npgsql at **9.0.4**; target **net9.0**.
+- **`dotnet run --project src/Zhua.Worker` uses the project dir as CWD**, so the crawl archive lands at `src/Zhua.Worker/crawl-archive/` (still git-ignored).
 
 ## Conventions
 

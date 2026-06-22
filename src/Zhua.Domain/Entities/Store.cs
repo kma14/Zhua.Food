@@ -26,4 +26,6 @@ public class Store
     public ICollection<StoreProduct> StoreProducts { get; } = new List<StoreProduct>();
 
     public ICollection<CrawlRun> CrawlRuns { get; } = new List<CrawlRun>();
+
+    public ICollection<StoreCategory> StoreCategories { get; } = new List<StoreCategory>();
 }

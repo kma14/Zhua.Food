@@ -139,18 +139,22 @@ Zhua.Food.sln
 
 ```
 Store ─1──*─ StoreProduct ─*──1(nullable)─ CanonicalProduct
-                  │
-                  1
-                  │
-                  *
-            PriceSnapshot ─*──1─ CrawlRun ─*──1─ Store
+  │               │  │ │
+  │               │  │ └─*──*─ ProductTag      (m2m, promo badges — D13)
+  │               │  └───*──*─ StoreCategory   (m2m, Dept→Aisle→Shelf tree — D11)
+  1               1
+  │               │
+  *               *
+StoreCategory   PriceSnapshot ─*──1─ CrawlRun ─*──1─ Store
 ```
 
 | Entity | Key fields (M1) | Notes |
 |---|---|---|
 | **Store** | `Id`, `Chain`, `Name`, `Suburb`, `Latitude`, `Longitude`, `ExternalStoreId?`, `IsActive` | **Store context is geolocation** (lat/long) across all 3 chains (spike §10). `ExternalStoreId` = source-site store id where one exists (e.g. Woolworths, resolvable via its locator API). |
 | **CanonicalProduct** | `Id`, `Name`, `Brand`, `Size`, `UnitOfMeasure`, `Category`, `Gtin?` | The normalized concept = an **exact item** (e.g. *Tegel Tenderbasted Chicken Breast 500g*). `Category` must be **fine-grained product-type** (*Chicken Breast*, NOT *Chicken* — see §10 anti-pattern). `Gtin`/barcode = **primary matching key** when present; brand+size is the fallback. Store private labels (Woolworths/Pams/Pak'nSave) are **distinct** canonicals. |
-| **StoreProduct** | `Id`, `StoreId`, **`CanonicalProductId?`**, `SourceSku`, `RawName`, `RawBrand`, `RawSize`, `Url`, `ImageUrl`, `CurrentPrice`, `CurrentSpecial?`, `IsOnSpecial`, `UnitPrice?`, `UnitOfMeasure?`, `FirstSeenAt`, `LastSeenAt`, `PriceUpdatedAt` | Raw as-seen-in-store record. Nullable canonical FK (R3). Denormalized current price (R4); `LastSeenAt` refreshed every crawl as liveness (D3). |
+| **StoreProduct** | `Id`, `StoreId`, **`CanonicalProductId?`**, `SourceSku`, `RawName`, `RawBrand`, `RawSize`, `Gtin?`, `Url`, `ImageUrl`, `CurrentPrice`, `CurrentNonSpecialPrice?`, `IsOnSpecial`, `UnitPrice?`, `UnitOfMeasure?`, `FirstSeenAt`, `LastSeenAt`, `PriceUpdatedAt`, `Categories[]`, `Tags[]` | Raw as-seen-in-store record. Nullable canonical FK (R3). Denormalized current price (R4); `LastSeenAt` refreshed every crawl as liveness (D3). m2m to `StoreCategory` (D11) + `ProductTag` (D13). |
+| **StoreCategory** | `Id`, `StoreId`, `Kind` (Department/Aisle/Shelf), `ExternalId`, `Slug`, `Name`, `ParentId?` | The store's own category tree (D11), self-referencing. Unique `(StoreId, Kind, ExternalId)`. m2m with `StoreProduct`. |
+| **ProductTag** | `Id`, `Chain`, `Source` (Primary/Additional), `Code`, `Label?` | Promo/marketing badge dimension (D13), chain-scoped, unique `(Chain, Source, Code)`. m2m with `StoreProduct`, **reset each crawl** (volatile; not snapshotted). |
 | **PriceSnapshot** | `Id`, `StoreProductId`, `CrawlRunId`, `Price`, `NonSpecialPrice?`, `IsOnSpecial`, `UnitPrice?`, `Currency`, `CapturedAt` | Append-only changelog — **one row per price-tuple change** (D3), not per crawl. Linked to the run that produced it. |
 | **CrawlRun** | `Id`, `StoreId`, `StartedAt`, `FinishedAt?`, `Status` (Running/Succeeded/Failed/Partial), `ProductsFound`, `SnapshotsWritten`, `ErrorMessage?` | Observability/audit trail per store per run. |
 
@@ -266,6 +270,10 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 | D8 | Manual crawl trigger | ✅ Worker-side: CLI one-shot now; Quartz "run now" later (R7) | public Api never triggers crawls | 2026-06-20 |
 | D9 | Canonical matching scope | ✅ **Core M1 feature, NOT deferred.** Two compare levels: exact same-product + fine-grained type | category-level $/kg is meaningless (whole chicken vs breast vs drumsticks); same-product cross-store compare is the differentiator | 2026-06-20 |
 | D10 | Crawl strategy | ✅ **Browse the store category tree** (Department→Aisle→Shelf), paginate each category, tag each product with its store category — NOT hard-coded keyword searches. M1 depts: **Meat & Poultry, Fruit & Veg, Fish & Seafood** | follows the site's own taxonomy → complete coverage + precise fine-grained categories; supersedes the 15-term search | 2026-06-21 |
+| D11 | Category as first-class | ✅ **`StoreCategory` tree entity** (Kind=Department/Aisle/Shelf, self-ref Parent) + **many-to-many** with `StoreProduct` — NOT a denormalized text field. Aisles/shelves **auto-discovered** from each browse response's `dasFacets` (no hard-coded slugs below department). | a product sits under several shelves; the tree mirrors the site and powers search/browse. Verified counts match site exactly: Meat&Poultry 267 / Beef 76 / Steak 20 | 2026-06-21 |
+| D12 | Raw-response archive | ✅ **Archive every raw crawl response to disk**, default-on, self-pruning **7-day** retention (`ZHUA_CRAWL_DUMP_DIR` / `_RETENTION_DAYS`, disable `ZHUA_CRAWL_DUMP=0`). `crawl-archive/{chain}/{runTs}/{path}_pN.json`, git-ignored. | retrospective debugging — parsed DB keeps only mapped fields, so without raw bodies we can't see why a parse went wrong or recover newly-needed fields | 2026-06-21 |
+| D13 | Promo tags | ✅ **`ProductTag` dimension (Chain, Source, Code) + many-to-many** with `StoreProduct`; **reset every crawl** (volatile, NOT in price history). Captures Woolworths `productTag.tagType` (IsSpecial / **IsGreatPrice = "Low Price"** / IsClubPrice / IsFreshDeal / IsGreatPriceMultiBuy / IsNew; "Other" dropped). `Source` column future-proofs `additionalTag` (Clearance/Organic/own-brand). Keep existing `IsOnSpecial`+was-price as the real discount signal (D3). | the source's promo badges are orthogonal to the `isSpecial` bool (a product can be isSpecial **and** show an IsClubPrice badge), so a single bool can't reproduce the site; m2m absorbs new tag values without migrations | 2026-06-22 |
+| D14 | Promotion history | ✅ **Don't historize promotions.** Tags stay current-state only (reset per crawl = current badge for UX); **`PriceSnapshot` is the sole history of record** (each price-tuple change + date, D3). No `StartedAt`/`EndedAt` on tags, no `Promotion` entity. | source doesn't return promo start/end dates anyway (0/739 — gated by `EnableReturnOfPromotionStartAndEndDate`); price-special periods are already reconstructable from snapshots; promo-badge history has little user value | 2026-06-22 |
 
 ---
 

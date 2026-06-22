@@ -17,6 +17,12 @@ public class StoreProduct
 
     public CanonicalProduct? CanonicalProduct { get; set; }
 
+    /// <summary>Store categories this product appears under (many-to-many; plan D11) — a product sits in several shelves.</summary>
+    public ICollection<StoreCategory> Categories { get; } = new List<StoreCategory>();
+
+    /// <summary>Promo/marketing tags currently on this product (many-to-many; plan D13). Reset every crawl — current state only, not history.</summary>
+    public ICollection<ProductTag> Tags { get; } = new List<ProductTag>();
+
     /// <summary>The store's own product id/SKU at the source.</summary>
     public required string SourceSku { get; set; }
 

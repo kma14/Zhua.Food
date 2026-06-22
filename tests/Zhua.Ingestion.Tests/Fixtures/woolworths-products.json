@@ -1,0 +1,61 @@
+{
+  "products": {
+    "totalItems": 3,
+    "items": [
+      {
+        "type": "Product",
+        "sku": "265262",
+        "name": "Woolworths Fresh NZ Fish Fillets Snapper Tamure 1-3 Pce Tray",
+        "brand": "Woolworths",
+        "barcode": "9400000265262",
+        "images": { "small": "https://img/small.jpg", "big": "https://img/big.jpg" },
+        "price": {
+          "originalPrice": 52.4,
+          "salePrice": 46.9,
+          "savePrice": 5.5,
+          "isSpecial": true,
+          "isClubPrice": false
+        },
+        "size": { "volumeSize": "1-3 Pieces", "cupPrice": 46.9, "cupMeasure": "1kg" },
+        "productTag": { "tagType": "IsSpecial", "additionalTag": null }
+      },
+      {
+        "type": "Product",
+        "sku": "123456",
+        "name": "Woolworths Essentials Beef Mince Value",
+        "brand": "Woolworths Essentials",
+        "barcode": "9400000123456",
+        "images": { "big": "https://img/mince.jpg" },
+        "price": {
+          "originalPrice": 31.9,
+          "salePrice": 31.9,
+          "savePrice": 0.0,
+          "isSpecial": false,
+          "isClubPrice": false
+        },
+        "size": { "volumeSize": "1kg", "cupPrice": 31.9, "cupMeasure": "1kg" },
+        "productTag": { "tagType": "IsGreatPrice", "additionalTag": null }
+      },
+      {
+        "type": "Product",
+        "sku": "999999",
+        "name": "Aquafresh Smoked Tuna Sliced",
+        "brand": "Aquafresh",
+        "barcode": "9400000999999",
+        "images": { "big": "https://img/tuna.jpg" },
+        "price": {
+          "originalPrice": 14.9,
+          "salePrice": 14.9,
+          "isSpecial": false,
+          "isClubPrice": false
+        },
+        "size": { "volumeSize": "200g", "cupPrice": 7.45, "cupMeasure": "100g" },
+        "productTag": { "tagType": "Other", "additionalTag": null }
+      },
+      {
+        "type": "PromotionalCarousel",
+        "name": "not a product — must be skipped"
+      }
+    ]
+  }
+}
