@@ -18,15 +18,23 @@
 
 ## 1. Scope anchor (so we don't drift)
 
-**Stores (Milestone 1):**
+**Stores (Milestone 1): 3 branches per chain (9 total, D16)** — to compare same-brand branch prices.
 
-| Store | Chain | Owner | Latitude | Longitude | Notes |
-|---|---|---|---|---|---|
-| Woolworths Takapuna | Woolworths | Woolworths NZ | -36.7879 | 174.7695 | ex-Countdown |
-| New World Takapuna | New World | Foodstuffs | -36.7868 | 174.7731 | = the Shore City branch; storeId pinned via `ExternalStoreId` (D15) |
-| PAK'nSAVE Albany | PAK'nSAVE | Foodstuffs | -36.7228 | 174.7005 | **was Glenfield/Wairau — that branch is in-store-only (no online catalog); Albany is the nearest online store** (D15) |
+| Store | Chain | Suburb | storeId source | Notes |
+|---|---|---|---|---|
+| Woolworths Takapuna | Woolworths | Takapuna | geolocation | ex-Countdown |
+| Woolworths Glenfield | Woolworths | Glenfield | geolocation | |
+| Woolworths Browns Bay | Woolworths | Browns Bay | geolocation | |
+| New World Metro Auckland | New World | CBD | `ExternalStoreId` | CBD store first crawled (was mis-seeded as "Takapuna") |
+| New World Shore City | New World | Takapuna | `ExternalStoreId` | the actual Takapuna branch |
+| New World Browns Bay | New World | Browns Bay | `ExternalStoreId` | |
+| PAK'nSAVE Albany | PAK'nSAVE | Albany | `ExternalStoreId` | only North Shore online store (Wairau is in-store-only) |
+| PAK'nSAVE Botany | PAK'nSAVE | Botany (East) | `ExternalStoreId` | Chinese-dense |
+| PAK'nSAVE Highland Park | PAK'nSAVE | Highland Park (East) | `ExternalStoreId` | Chinese-dense |
 
-*(lat/long = the geolocation we feed each site to select the physical store — D2/§10. `Store` seed data.)*
+*(lat/long = the geolocation we feed each site to select the physical store — D2/§10. Foodstuffs storeIds pinned via `ExternalStoreId`. `Store` seed data.)*
+
+**Finding (D16):** same-brand branch price variation, measured live — **Woolworths 0%** (738 shared products, identical across all 3 branches = national pricing), **New World 39.6%**, **PAK'nSAVE 48.9%** differ (avg gap ~$1.4–1.6, max $20–30). Foodstuffs stores are independently owned/priced; this validates per-physical-store price storage + branch-level "where's it cheapest".
 
 **Product coverage (Milestone 1):** crawl the **full catalog via each store's own category tree** (Browse → Department → Aisle → Shelf), tagging every product with its store category (**D10**). This supersedes the earlier "~15 common types" guess — following the site's taxonomy is more correct, complete, and yields clean fine-grained categories (feeds `RawCategory` + D9). M1 departments: **Woolworths** = Meat & Poultry + Fruit & Veg + Fish & Seafood; **Foodstuffs** (NW/PAK'nSAVE) = Meat, Poultry & Seafood + Fruit & Vegetables (Foodstuffs folds seafood into the meat department). *(All 3 crawlers live and verified; counts match each source.)*
 
@@ -275,6 +283,7 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 | D13 | Promo tags | ✅ **`ProductTag` dimension (Chain, Source, Code) + many-to-many** with `StoreProduct`; **reset every crawl** (volatile, NOT in price history). Captures Woolworths `productTag.tagType` (IsSpecial / **IsGreatPrice = "Low Price"** / IsClubPrice / IsFreshDeal / IsGreatPriceMultiBuy / IsNew; "Other" dropped). `Source` column future-proofs `additionalTag` (Clearance/Organic/own-brand). Keep existing `IsOnSpecial`+was-price as the real discount signal (D3). | the source's promo badges are orthogonal to the `isSpecial` bool (a product can be isSpecial **and** show an IsClubPrice badge), so a single bool can't reproduce the site; m2m absorbs new tag values without migrations | 2026-06-22 |
 | D14 | Promotion history | ✅ **Don't historize promotions.** Tags stay current-state only (reset per crawl = current badge for UX); **`PriceSnapshot` is the sole history of record** (each price-tuple change + date, D3). No `StartedAt`/`EndedAt` on tags, no `Promotion` entity. | source doesn't return promo start/end dates anyway (0/739 — gated by `EnableReturnOfPromotionStartAndEndDate`); price-special periods are already reconstructable from snapshots; promo-badge history has little user value | 2026-06-22 |
 | D15 | Foodstuffs crawler | ✅ **One shared `FoodstuffsCrawler` base for New World + PAK'nSAVE** (same platform/API; only domain + store differ). POST `api-prod.{site}/v1/edge/search/paginated/products` (Algolia-backed), filtered by department name (`category0NI`), paginated by `totalPages`. Needs an **anonymous Bearer token** — captured from the page's own api-prod requests during warmup. Each product carries `categoryTrees[{level0/1/2}]` (→ Department/Aisle/Shelf, often several), so we crawl per-department and the product self-describes its path(s). Price is in **cents**. **No GTIN, no image URL** in this API (canonical falls back to brand+name; image via fsimg CDN later). storeId via `ExternalStoreId` or geolocation. Verified: NW Beef=24, NW=328 / PAK'nSAVE=641. | shared platform → one crawler covers two banners ~free; shared Foodstuffs `productId` makes **cross-banner same-product compare (D9) nearly free** — and NW-vs-PAK'nSAVE price gaps are the core "where's it cheapest" value | 2026-06-22 |
+| D16 | 3 branches per chain | ✅ **Seed 3 stores per chain (9 total)** to compare same-brand branch prices. Woolworths = Takapuna/Glenfield/Browns Bay (geolocation); New World = Metro/Shore City/Browns Bay; PAK'nSAVE = Albany/Botany/Highland Park (only Albany is online on the Shore; Botany+Highland Park are the Chinese-dense online stores). | **measured: Woolworths 0% / NW 39.6% / PAK'nSAVE 48.9%** of shared products differ in price across branches — Foodstuffs is franchise-priced, so branch matters; proves per-store pricing + branch-level compare | 2026-06-22 |
 
 ---
 
