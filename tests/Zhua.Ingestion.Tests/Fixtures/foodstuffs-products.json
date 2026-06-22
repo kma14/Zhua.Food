@@ -1,0 +1,65 @@
+{
+  "tobaccoProducts": false,
+  "products": [
+    {
+      "productId": "5125914-KGM-000",
+      "name": "NZ Beef Prime Mince",
+      "displayName": "kg",
+      "saleType": "WEIGHT",
+      "singlePrice": {
+        "price": 2699,
+        "comparativePrice": { "pricePerUnit": 2699, "unitQuantityUom": "kg", "measureDescription": "1kg" }
+      },
+      "categoryTrees": [
+        { "level0": "Meat, Poultry & Seafood", "level1": "Beef", "level2": "Beef Mince & Stir Fry" },
+        { "level0": "Meat, Poultry & Seafood", "level1": "Mince, Sausages & Meatballs", "level2": "Mince" }
+      ]
+    },
+    {
+      "productId": "5349090-EA-000",
+      "brand": "Hellers",
+      "name": "Beef Mince",
+      "displayName": "340g",
+      "saleType": "UNITS",
+      "singlePrice": {
+        "price": 949,
+        "comparativePrice": { "pricePerUnit": 2791, "unitQuantityUom": "kg", "measureDescription": "1kg" }
+      },
+      "categoryTrees": [
+        { "level0": "Meat, Poultry & Seafood", "level1": "Beef", "level2": "Beef Mince & Stir Fry" }
+      ]
+    },
+    {
+      "productId": "5106653-KGM-000",
+      "name": "NZ Beef Brisket",
+      "displayName": "kg",
+      "saleType": "WEIGHT",
+      "singlePrice": {
+        "price": 1999,
+        "promoId": "130263285",
+        "comparativePrice": { "pricePerUnit": 1999, "unitQuantityUom": "kg", "measureDescription": "1kg" }
+      },
+      "promotions": [
+        { "promoId": "130263285", "rewardValue": 1999, "decal": "3000", "rewardType": "NEW_PRICE", "bestPromotion": true }
+      ],
+      "categoryTrees": [
+        { "level0": "Meat, Poultry & Seafood", "level1": "Beef", "level2": "Roast Beef & Large Cuts" }
+      ]
+    },
+    {
+      "productId": "5999999-EA-000",
+      "name": "Cross-Department Item",
+      "displayName": "ea",
+      "saleType": "UNITS",
+      "singlePrice": { "price": 500, "comparativePrice": { "pricePerUnit": 500, "unitQuantityUom": "ea", "measureDescription": "ea" } },
+      "categoryTrees": [
+        { "level0": "Meat, Poultry & Seafood", "level1": "Deli Meats", "level2": "Sliced" },
+        { "level0": "Frozen", "level1": "Frozen Meals", "level2": "Pies" }
+      ]
+    }
+  ],
+  "totalHits": 4,
+  "page": 0,
+  "totalPages": 1,
+  "hitsPerPage": 50
+}

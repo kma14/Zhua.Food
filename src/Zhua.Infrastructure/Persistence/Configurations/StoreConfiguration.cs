@@ -19,7 +19,9 @@ public class StoreConfiguration : IEntityTypeConfiguration<Store>
         // Milestone-1 store seed (plan §1). Lat/long = geolocation used to select the store on the source site.
         b.HasData(
             new Store { Id = StoreSeed.WoolworthsTakapuna, Chain = Chain.Woolworths, Name = "Woolworths Takapuna", Suburb = "Takapuna", Latitude = -36.7879, Longitude = 174.7695, IsActive = true },
-            new Store { Id = StoreSeed.NewWorldTakapuna, Chain = Chain.NewWorld, Name = "New World Takapuna", Suburb = "Takapuna", Latitude = -36.7868, Longitude = 174.7731, IsActive = true },
-            new Store { Id = StoreSeed.PaknSaveGlenfield, Chain = Chain.PaknSave, Name = "PAK'nSAVE Glenfield", Suburb = "Glenfield", Latitude = -36.7783, Longitude = 174.7447, IsActive = true });
+            // New World "Takapuna" = the Shore City branch; ExternalStoreId pins the Foodstuffs store id (D15).
+            new Store { Id = StoreSeed.NewWorldTakapuna, Chain = Chain.NewWorld, Name = "New World Takapuna", Suburb = "Takapuna", Latitude = -36.7868, Longitude = 174.7731, ExternalStoreId = "60928d93-06fa-4d8f-92a6-8c359e7e846d", IsActive = true },
+            // PAK'nSAVE Albany (online); the nearer Wairau Valley branch is in-store-only. storeId resolved at crawl time by geolocation.
+            new Store { Id = StoreSeed.PaknSaveAlbany, Chain = Chain.PaknSave, Name = "PAK'nSAVE Albany", Suburb = "Albany", Latitude = -36.7228, Longitude = 174.7005, IsActive = true });
     }
 }

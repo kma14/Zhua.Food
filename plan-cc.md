@@ -23,12 +23,12 @@
 | Store | Chain | Owner | Latitude | Longitude | Notes |
 |---|---|---|---|---|---|
 | Woolworths Takapuna | Woolworths | Woolworths NZ | -36.7879 | 174.7695 | ex-Countdown |
-| New World Takapuna | New World | Foodstuffs | -36.7868 | 174.7731 | |
-| PAK'nSAVE Glenfield | PAK'nSAVE | Foodstuffs | -36.7783 | 174.7447 | |
+| New World Takapuna | New World | Foodstuffs | -36.7868 | 174.7731 | = the Shore City branch; storeId pinned via `ExternalStoreId` (D15) |
+| PAK'nSAVE Albany | PAK'nSAVE | Foodstuffs | -36.7228 | 174.7005 | **was Glenfield/Wairau — that branch is in-store-only (no online catalog); Albany is the nearest online store** (D15) |
 
 *(lat/long = the geolocation we feed each site to select the physical store — D2/§10. `Store` seed data.)*
 
-**Product coverage (Milestone 1):** crawl the **full catalog via each store's own category tree** (Browse → Department → Aisle → Shelf), tagging every product with its store category (**D10**). This supersedes the earlier "~15 common types" guess — following the site's taxonomy is more correct, complete, and yields clean fine-grained categories (feeds `RawCategory` + D9). *(M1 starts with 3 departments — **Meat & Poultry, Fruit & Veg, Fish & Seafood** (highest-value fresh categories) — expanding later; D10.)*
+**Product coverage (Milestone 1):** crawl the **full catalog via each store's own category tree** (Browse → Department → Aisle → Shelf), tagging every product with its store category (**D10**). This supersedes the earlier "~15 common types" guess — following the site's taxonomy is more correct, complete, and yields clean fine-grained categories (feeds `RawCategory` + D9). M1 departments: **Woolworths** = Meat & Poultry + Fruit & Veg + Fish & Seafood; **Foodstuffs** (NW/PAK'nSAVE) = Meat, Poultry & Seafood + Fruit & Vegetables (Foodstuffs folds seafood into the meat department). *(All 3 crawlers live and verified; counts match each source.)*
 
 **Questions the system must answer:**
 - Where is X cheapest right now?
@@ -274,6 +274,7 @@ The API **never** triggers crawling in M1. Read-only over already-persisted data
 | D12 | Raw-response archive | ✅ **Archive every raw crawl response to disk**, default-on, self-pruning **7-day** retention (`ZHUA_CRAWL_DUMP_DIR` / `_RETENTION_DAYS`, disable `ZHUA_CRAWL_DUMP=0`). `crawl-archive/{chain}/{runTs}/{path}_pN.json`, git-ignored. | retrospective debugging — parsed DB keeps only mapped fields, so without raw bodies we can't see why a parse went wrong or recover newly-needed fields | 2026-06-21 |
 | D13 | Promo tags | ✅ **`ProductTag` dimension (Chain, Source, Code) + many-to-many** with `StoreProduct`; **reset every crawl** (volatile, NOT in price history). Captures Woolworths `productTag.tagType` (IsSpecial / **IsGreatPrice = "Low Price"** / IsClubPrice / IsFreshDeal / IsGreatPriceMultiBuy / IsNew; "Other" dropped). `Source` column future-proofs `additionalTag` (Clearance/Organic/own-brand). Keep existing `IsOnSpecial`+was-price as the real discount signal (D3). | the source's promo badges are orthogonal to the `isSpecial` bool (a product can be isSpecial **and** show an IsClubPrice badge), so a single bool can't reproduce the site; m2m absorbs new tag values without migrations | 2026-06-22 |
 | D14 | Promotion history | ✅ **Don't historize promotions.** Tags stay current-state only (reset per crawl = current badge for UX); **`PriceSnapshot` is the sole history of record** (each price-tuple change + date, D3). No `StartedAt`/`EndedAt` on tags, no `Promotion` entity. | source doesn't return promo start/end dates anyway (0/739 — gated by `EnableReturnOfPromotionStartAndEndDate`); price-special periods are already reconstructable from snapshots; promo-badge history has little user value | 2026-06-22 |
+| D15 | Foodstuffs crawler | ✅ **One shared `FoodstuffsCrawler` base for New World + PAK'nSAVE** (same platform/API; only domain + store differ). POST `api-prod.{site}/v1/edge/search/paginated/products` (Algolia-backed), filtered by department name (`category0NI`), paginated by `totalPages`. Needs an **anonymous Bearer token** — captured from the page's own api-prod requests during warmup. Each product carries `categoryTrees[{level0/1/2}]` (→ Department/Aisle/Shelf, often several), so we crawl per-department and the product self-describes its path(s). Price is in **cents**. **No GTIN, no image URL** in this API (canonical falls back to brand+name; image via fsimg CDN later). storeId via `ExternalStoreId` or geolocation. Verified: NW Beef=24, NW=328 / PAK'nSAVE=641. | shared platform → one crawler covers two banners ~free; shared Foodstuffs `productId` makes **cross-banner same-product compare (D9) nearly free** — and NW-vs-PAK'nSAVE price gaps are the core "where's it cheapest" value | 2026-06-22 |
 
 ---
 
@@ -284,8 +285,8 @@ Prior-art recon done (web research). **Decision (D2 rev): all 3 stores use Playw
 | Store | Strategy | Store context | Confidence | Notes |
 |---|---|---|---|---|
 | Woolworths | **Playwright → intercept JSON** | lat/long | — | Standardized on Playwright-for-all (D2 rev). A JSON API exists (`api.cdx.nz`) — we read it via Playwright network interception (not HttpClient) for a uniform pattern + anti-bot cover. |
-| PAK'nSAVE | **Playwright (browser)** | geolocation lat/long in config | High | Confirmed by `Jason-nzd/pakn-scraper` — **.NET 8 + Playwright** (our stack); site geolocates to nearest store. |
-| New World | **Playwright (browser)** | geolocation lat/long (assumed) | Med | Same parent (Foodstuffs) + same site tech as PAK'nSAVE → assume same approach; confirm in DevTools. |
+| PAK'nSAVE | **Playwright → POST edge API** (D15) | geolocation lat/long | ✅ Done | Same Foodstuffs platform as New World; one shared crawler. M1 store = **Albany** (Wairau Valley is in-store-only). |
+| New World | **Playwright → POST edge API** (D15) | geolocation lat/long | ✅ Done | **Confirmed via live recon** (Worker `recon` cmd): Next.js SPA → `api-prod.newworld.co.nz/v1/edge/search/paginated/products` (Algolia, Bearer-token auth, cents pricing, embedded `categoryTrees`). |
 
 **Cross-cutting finding — store context is geolocation everywhere.** All three pick the physical store from **lat/long**, not a store-id path → `Store` carries `Latitude`/`Longitude` (Takapuna, Glenfield); that's how every crawler targets the right store. (Woolworths also has a numeric store id resolvable via its site-locator API.)
 

@@ -10,7 +10,7 @@ public class StoreCategoryConfiguration : IEntityTypeConfiguration<StoreCategory
     {
         b.HasKey(x => x.Id);
         b.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
-        b.Property(x => x.ExternalId).HasMaxLength(50);
+        b.Property(x => x.ExternalId).HasMaxLength(150); // Woolworths = numeric id; Foodstuffs = category name (D15)
         b.Property(x => x.Slug).HasMaxLength(150);
         b.Property(x => x.Name).HasMaxLength(200);
 

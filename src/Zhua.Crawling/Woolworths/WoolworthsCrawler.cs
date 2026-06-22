@@ -47,8 +47,7 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         var page = await context.NewPageAsync();
 
         // Raw-response archive for retrospective debugging (plan D12). Default on, 7-day self-pruning retention.
-        var (dumpDir, retention) = DumpConfig();
-        var archive = new RawCrawlArchive(Chain.ToString(), dumpDir, retention, DateTimeOffset.UtcNow);
+        var archive = RawCrawlArchive.FromEnvironment(Chain.ToString(), DateTimeOffset.UtcNow);
 
         // Warm up the homepage to establish session/store cookies.
         try
@@ -156,28 +155,6 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         {
             return null;
         }
-    }
-
-    /// <summary>
-    /// Raw-archive config (plan D12). Default ON to <c>{cwd}/crawl-archive</c> with 7-day retention.
-    /// Override dir with <c>ZHUA_CRAWL_DUMP_DIR</c>, retention with <c>ZHUA_CRAWL_DUMP_RETENTION_DAYS</c>,
-    /// or disable entirely with <c>ZHUA_CRAWL_DUMP=0</c> (also: off/false/no).
-    /// </summary>
-    private static (string? Dir, TimeSpan Retention) DumpConfig()
-    {
-        var flag = Environment.GetEnvironmentVariable("ZHUA_CRAWL_DUMP");
-        if (flag is "0" or "off" or "false" or "no" or "OFF" or "FALSE" or "NO")
-            return (null, TimeSpan.Zero);
-
-        var dir = Environment.GetEnvironmentVariable("ZHUA_CRAWL_DUMP_DIR");
-        if (string.IsNullOrWhiteSpace(dir))
-            dir = Path.Combine(Directory.GetCurrentDirectory(), "crawl-archive");
-
-        var days = 7;
-        if (int.TryParse(Environment.GetEnvironmentVariable("ZHUA_CRAWL_DUMP_RETENTION_DAYS"), out var d) && d > 0)
-            days = d;
-
-        return (dir, TimeSpan.FromDays(days));
     }
 
     private static IReadOnlyList<ScrapedCategoryNode> BuildPath(JsonElement root, List<(CategoryKind Kind, string Slug)> filters)

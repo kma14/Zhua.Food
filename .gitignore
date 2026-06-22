@@ -22,3 +22,6 @@ appsettings.*.local.json
 
 ## Raw crawler response archive (plan D12) — local debugging data, self-pruning
 crawl-archive/
+
+## Throwaway recon probe output (Worker `recon` command)
+recon/

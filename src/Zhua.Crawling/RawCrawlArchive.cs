@@ -27,6 +27,28 @@ public sealed partial class RawCrawlArchive
         Directory.CreateDirectory(_runDir);
     }
 
+    /// <summary>
+    /// Builds an archive from env config (plan D12): default-on to <c>{cwd}/crawl-archive</c>, 7-day retention.
+    /// Override dir with <c>ZHUA_CRAWL_DUMP_DIR</c>, retention with <c>ZHUA_CRAWL_DUMP_RETENTION_DAYS</c>,
+    /// or disable with <c>ZHUA_CRAWL_DUMP=0</c> (also off/false/no).
+    /// </summary>
+    public static RawCrawlArchive FromEnvironment(string chain, DateTimeOffset now)
+    {
+        var flag = Environment.GetEnvironmentVariable("ZHUA_CRAWL_DUMP");
+        if (flag is "0" or "off" or "false" or "no" or "OFF" or "FALSE" or "NO")
+            return new RawCrawlArchive(chain, null, TimeSpan.Zero, now);
+
+        var dir = Environment.GetEnvironmentVariable("ZHUA_CRAWL_DUMP_DIR");
+        if (string.IsNullOrWhiteSpace(dir))
+            dir = Path.Combine(Directory.GetCurrentDirectory(), "crawl-archive");
+
+        var days = 7;
+        if (int.TryParse(Environment.GetEnvironmentVariable("ZHUA_CRAWL_DUMP_RETENTION_DAYS"), out var d) && d > 0)
+            days = d;
+
+        return new RawCrawlArchive(chain, dir, TimeSpan.FromDays(days), now);
+    }
+
     /// <summary>True when archiving is active (root configured).</summary>
     public bool IsEnabled => _runDir is not null;
 
