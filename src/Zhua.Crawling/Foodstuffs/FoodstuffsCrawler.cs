@@ -25,8 +25,12 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
     /// <summary>Edge API origin, e.g. <c>https://api-prod.newworld.co.nz</c>.</summary>
     protected abstract string ApiBaseUrl { get; }
 
-    /// <summary>M1 department names (category level0) to crawl. Foodstuffs folds seafood under "Meat, Poultry &amp; Seafood".</summary>
-    protected abstract string[] DepartmentNames { get; }
+    /// <summary>
+    /// M1 department names (category level0) to crawl — shared by both banners (same Foodstuffs taxonomy).
+    /// Foodstuffs folds seafood under "Meat, Poultry &amp; Seafood". Override only if a banner ever diverges.
+    /// </summary>
+    protected virtual string[] DepartmentNames =>
+        ["Meat, Poultry & Seafood", "Fruit & Vegetables", "Fridge, Deli & Eggs", "Frozen"];
 
     private const int HitsPerPage = 50;
 

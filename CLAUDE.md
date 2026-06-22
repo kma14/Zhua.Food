@@ -6,7 +6,7 @@ Auckland grocery **price-intelligence** platform (information layer only — NOT
 
 **Goal:** help Auckland shoppers find where groceries are cheapest — answering "where is X cheapest now / which store is lowest for X / is X on special / what's its price history / how much could I save shopping across stores". It's an **information layer**, not a shop, cart, or delivery service.
 
-**M1 scope:** **9 stores — 3 branches per chain** (Woolworths Takapuna/Glenfield/Browns Bay; New World Metro/Shore City/Browns Bay; PAK'nSAVE Albany/Botany/Highland Park) so we can compare same-brand branch prices (D16). **Full catalog via each store's category tree** (browse Department→Aisle→Shelf, tag each product's store category — D10), **twice-daily** crawl + price history + search/compare/deals APIs. Future: Chinese/Korean/Indian supermarkets (not M1).
+**M1 scope:** 9 stores seeded, **7 active** — Woolworths runs **1 store** (Takapuna; it's national-priced so branches are identical — D16), Foodstuffs runs 3 each (New World Metro/Shore City/Browns Bay; PAK'nSAVE Albany/Botany/Highland Park — independently priced). Departments (expanding): Meat/Poultry/Seafood + Fruit&Veg + Fridge/Deli + Frozen. **Catalog via each store's category tree** (D10/D11), **twice-daily** crawl + price history + search/compare/deals APIs. Future: Chinese/Korean/Indian supermarkets (not M1).
 
 **Status:** Phase 1 ingestion working — **all 3 crawlers live & verified across 9 stores** (Woolworths via browse-JSON D2/D10; New World + PAK'nSAVE via shared `FoodstuffsCrawler` D15). StoreCategory tree (D11), raw archive (D12), promo tags (D13) done; counts match each source. Cross-banner AND cross-branch same-product price compare confirmed (measured branch variation: Woolworths 0% / NW 40% / PAK'nSAVE 49% — D16). **Next:** Phase 2 scheduler (Quartz) + remaining departments + D9 canonical matching.
 
@@ -65,6 +65,7 @@ dotnet run --project src/Zhua.Api                      # GET /health, /health/db
 - **`dotnet run --project src/Zhua.Worker` uses the project dir as CWD**, so the crawl archive lands at `src/Zhua.Worker/crawl-archive/` (still git-ignored).
 - **Foodstuffs (NW/PAK'nSAVE) edge API needs an anonymous `Authorization: Bearer` token** the SPA mints — a raw fetch with cookies alone returns empty/401. We capture it from the page's own `api-prod` requests during warmup. Also: **prices are in cents** (divide by 100); the search API exposes **no GTIN and no image URL**.
 - **Foodstuffs storeId**: prefer `Store.ExternalStoreId`; else resolved at crawl time from `…/next/api/stores/geolocation?lat=&lng=` (returns nearest store — seed precise store coords). New World "Takapuna" = the **Shore City** branch.
+- **Woolworths is ~10× more requests than Foodstuffs** (~300 vs ~40/store): its products don't carry their category, so we must query every aisle+shelf to build the tree, while Foodstuffs queries per-department (products carry `categoryTrees`). This volume trips Woolworths' WAF rate-limit, so `FetchBrowseAsync` does **cooldown-and-retry with homepage session refresh** (12/24/36s) on a block (empty body). Don't remove that backoff or Woolworths crawls die partway through.
 
 ## Conventions
 

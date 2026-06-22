@@ -21,8 +21,9 @@ public class StoreConfiguration : IEntityTypeConfiguration<Store>
         b.HasData(
             // Woolworths (national pricing) — selected by geolocation lat/long.
             new Store { Id = StoreSeed.WoolworthsTakapuna, Chain = Chain.Woolworths, Name = "Woolworths Takapuna", Suburb = "Takapuna", Latitude = -36.7879, Longitude = 174.7695, IsActive = true },
-            new Store { Id = StoreSeed.WoolworthsGlenfield, Chain = Chain.Woolworths, Name = "Woolworths Glenfield", Suburb = "Glenfield", Latitude = -36.7807, Longitude = 174.7228, IsActive = true },
-            new Store { Id = StoreSeed.WoolworthsBrownsBay, Chain = Chain.Woolworths, Name = "Woolworths Browns Bay", Suburb = "Browns Bay", Latitude = -36.7166, Longitude = 174.7466, IsActive = true },
+            // Woolworths is national-priced (D16: 0% branch variation) → keep only one active; these two stay as evidence but aren't crawled.
+            new Store { Id = StoreSeed.WoolworthsGlenfield, Chain = Chain.Woolworths, Name = "Woolworths Glenfield", Suburb = "Glenfield", Latitude = -36.7807, Longitude = 174.7228, IsActive = false },
+            new Store { Id = StoreSeed.WoolworthsBrownsBay, Chain = Chain.Woolworths, Name = "Woolworths Browns Bay", Suburb = "Browns Bay", Latitude = -36.7166, Longitude = 174.7466, IsActive = false },
             // New World (Foodstuffs) — storeId pinned (D15). "Metro" = the CBD store originally mis-seeded as Takapuna.
             new Store { Id = StoreSeed.NewWorldMetro, Chain = Chain.NewWorld, Name = "New World Metro Auckland", Suburb = "Auckland Central", Latitude = -36.8464, Longitude = 174.7659, ExternalStoreId = "60928d93-06fa-4d8f-92a6-8c359e7e846d", IsActive = true },
             new Store { Id = StoreSeed.NewWorldShoreCity, Chain = Chain.NewWorld, Name = "New World Shore City", Suburb = "Takapuna", Latitude = -36.7876, Longitude = 174.7700, ExternalStoreId = "1898a189-acf3-4320-8704-7a9cc6b3924d", IsActive = true },

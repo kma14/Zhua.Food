@@ -54,7 +54,7 @@
       "singlePrice": { "price": 500, "comparativePrice": { "pricePerUnit": 500, "unitQuantityUom": "ea", "measureDescription": "ea" } },
       "categoryTrees": [
         { "level0": "Meat, Poultry & Seafood", "level1": "Deli Meats", "level2": "Sliced" },
-        { "level0": "Frozen", "level1": "Frozen Meals", "level2": "Pies" }
+        { "level0": "Pets", "level1": "Dog", "level2": "Dog Food" }
       ]
     }
   ],

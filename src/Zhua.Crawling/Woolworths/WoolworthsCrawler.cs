@@ -20,7 +20,8 @@ public sealed class WoolworthsCrawler : IStoreCrawler
     public Chain Chain => Chain.Woolworths;
 
     // M1 department slugs (plan D10). Aisles/shelves under each are auto-discovered from the API facets.
-    private static readonly string[] DepartmentSlugs = ["meat-poultry", "fruit-veg", "fish-seafood"];
+    private static readonly string[] DepartmentSlugs =
+        ["meat-poultry", "fruit-veg", "fish-seafood", "fridge-deli", "frozen"];
 
     private const int PageSize = 48;
 
@@ -129,7 +130,11 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         }
     }
 
-    /// <summary>Calls the browse products API from within the page (cookies + x-requested-with). Returns body or null.</summary>
+    /// <summary>
+    /// Calls the browse products API from within the page (cookies + x-requested-with). Returns body or null.
+    /// Woolworths' WAF rate-limits bursts (empty body = blocked), so on a block we cool down and re-establish the
+    /// session before retrying, rather than skipping the category outright.
+    /// </summary>
     private static async Task<string?> FetchBrowseAsync(
         IPage page, RawCrawlArchive archive, List<(CategoryKind Kind, string Slug)> filters, int pageNo, CancellationToken ct)
     {
@@ -137,24 +142,41 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         foreach (var (kind, slug) in filters)
             sb.Append("dasFilter=").Append(kind).Append("%3B%3B").Append(Uri.EscapeDataString(slug)).Append("%3Bfalse&");
         sb.Append("target=browse&inStockProductsOnly=false&size=").Append(PageSize).Append("&page=").Append(pageNo);
+        var url = sb.ToString();
 
-        try
+        const int maxAttempts = 4;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var res = await page.EvaluateAsync<string>(
-                "async (u) => { const r = await fetch(u, { headers: { 'x-requested-with': 'OnlineShopping.WebApp' }, credentials: 'include' }); return r.ok ? await r.text() : ''; }",
-                sb.ToString());
-            await page.WaitForTimeoutAsync(400); // polite spacing (plan D6)
-            if (string.IsNullOrEmpty(res)) return null;
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var res = await page.EvaluateAsync<string>(
+                    "async (u) => { try { const r = await fetch(u, { headers: { 'x-requested-with': 'OnlineShopping.WebApp' }, credentials: 'include' }); return r.ok ? await r.text() : ''; } catch { return ''; } }",
+                    url);
+                await page.WaitForTimeoutAsync(600); // base politeness (plan D6)
+                if (!string.IsNullOrEmpty(res))
+                {
+                    // Archive the raw response for retrospective debugging (plan D12).
+                    var name = string.Join("__", filters.Select(f => f.Slug)) + $"_p{pageNo}";
+                    await archive.SaveAsync(name, res, ct);
+                    return res;
+                }
+            }
+            catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
 
-            // Archive the raw response for retrospective debugging (plan D12).
-            var name = string.Join("__", filters.Select(f => f.Slug)) + $"_p{pageNo}";
-            await archive.SaveAsync(name, res, ct);
-            return res;
+            // Empty/blocked → cool down (let the rate-limit window reset) and refresh the session, then retry.
+            if (attempt < maxAttempts)
+            {
+                await page.WaitForTimeoutAsync(12_000 * attempt); // 12s, 24s, 36s
+                try
+                {
+                    await page.GotoAsync("https://www.woolworths.co.nz",
+                        new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30_000 });
+                }
+                catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
+            }
         }
-        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
-        {
-            return null;
-        }
+        return null;
     }
 
     private static IReadOnlyList<ScrapedCategoryNode> BuildPath(JsonElement root, List<(CategoryKind Kind, string Slug)> filters)
