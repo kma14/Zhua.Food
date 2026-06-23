@@ -155,6 +155,25 @@ public class CrawlOrchestratorTests
         Assert.NotNull(result.Error);
         Assert.Equal(1, await db.CrawlRuns.CountAsync(r => r.Status == CrawlRunStatus.Failed));
     }
+
+    [Fact]
+    public async Task Crawler_failure_with_huge_message_records_a_truncated_error_and_does_not_throw()
+    {
+        // Regression: a Playwright launch error carries a >2000-char call-log. Storing it raw made the
+        // Failed-status save overflow ErrorMessage's varchar(2000) and crash the whole run (orphaned "Running").
+        await SeedStoreAsync();
+        await using var db = NewContext();
+        var hugeMessage = new string('x', 5000);
+
+        var orchestrator = new CrawlOrchestrator(db, [new ThrowingCrawler(Chain.Woolworths, hugeMessage)], _clock);
+        var result = await orchestrator.RunAsync(StoreId); // must not throw
+
+        Assert.Equal(CrawlRunStatus.Failed, result.Status);
+        var run = await db.CrawlRuns.SingleAsync();
+        Assert.Equal(CrawlRunStatus.Failed, run.Status);
+        Assert.NotNull(run.ErrorMessage);
+        Assert.True(run.ErrorMessage!.Length <= 2000, "ErrorMessage must be truncated to fit the column");
+    }
 }
 
 internal sealed class StubCrawler(Chain chain, IReadOnlyList<ScrapedProduct> products) : IStoreCrawler
@@ -163,6 +182,14 @@ internal sealed class StubCrawler(Chain chain, IReadOnlyList<ScrapedProduct> pro
 
     public Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default)
         => Task.FromResult(products);
+}
+
+internal sealed class ThrowingCrawler(Chain chain, string message) : IStoreCrawler
+{
+    public Chain Chain => chain;
+
+    public Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default)
+        => throw new InvalidOperationException(message);
 }
 
 internal sealed class TestClock(DateTimeOffset start) : TimeProvider

@@ -29,9 +29,19 @@ public sealed class IngestionJob(
         foreach (var store in stores)
         {
             ct.ThrowIfCancellationRequested();
-            var r = await orchestrator.RunAsync(store.Id, ct);
-            log.LogInformation("[scheduled] {Store}: {Status} products={Products} snapshots={Snapshots}{Error}",
-                store.Name, r.Status, r.ProductsFound, r.SnapshotsWritten, r.Error is null ? "" : $" error={r.Error}");
+            try
+            {
+                var r = await orchestrator.RunAsync(store.Id, ct);
+                log.LogInformation("[scheduled] {Store}: {Status} products={Products} snapshots={Snapshots}{Error}",
+                    store.Name, r.Status, r.ProductsFound, r.SnapshotsWritten, r.Error is null ? "" : $" error={r.Error}");
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // One store's failure (e.g. a transient browser-launch error right after a host resume) must not
+                // abort the rest of the crawl or skip the matcher. The orchestrator normally records its own
+                // Failed run; this is the last-resort guard if RunAsync itself throws.
+                log.LogError(ex, "[scheduled] {Store}: crawl threw unexpectedly; continuing", store.Name);
+            }
         }
 
         var m = await matcher.RunAsync(ct);

@@ -98,11 +98,18 @@ public sealed class CrawlOrchestrator(
         {
             run.Status = CrawlRunStatus.Failed;
             run.FinishedAt = clock.GetUtcNow();
-            run.ErrorMessage = ex.Message;
+            // Truncate: Playwright exceptions carry a full call-log (well over the ErrorMessage column's
+            // varchar(2000)); storing it raw makes this very failure-record save throw 22001 and orphans the run.
+            run.ErrorMessage = Truncate(ex.Message, MaxErrorLength);
             await db.SaveChangesAsync(CancellationToken.None);
             return new CrawlRunResult(run.Id, run.Status, run.ProductsFound, run.SnapshotsWritten, ex.Message);
         }
     }
+
+    /// <summary>Max persisted <see cref="CrawlRun.ErrorMessage"/> length — matches CrawlRunConfiguration's HasMaxLength.</summary>
+    private const int MaxErrorLength = 2000;
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
     private static StoreProductObservation ToObservation(ScrapedProduct s) => new(
         s.Name, s.Brand, s.Size, s.Gtin, s.Url, s.ImageUrl,
