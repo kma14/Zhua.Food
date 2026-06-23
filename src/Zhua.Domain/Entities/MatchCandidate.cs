@@ -29,4 +29,18 @@ public class MatchCandidate
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? ReviewedAt { get; set; }
+
+    /// <summary>Human confirms the match (D18). The caller also sets the product's CanonicalProductId.</summary>
+    public void Approve(DateTimeOffset now)
+    {
+        Status = MatchStatus.Approved;
+        ReviewedAt = now;
+    }
+
+    /// <summary>Human rejects the match (D18) — the matcher won't propose this pair again.</summary>
+    public void Reject(DateTimeOffset now)
+    {
+        Status = MatchStatus.Rejected;
+        ReviewedAt = now;
+    }
 }

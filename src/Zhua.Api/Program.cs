@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Zhua.Api.Endpoints;
 using Zhua.Infrastructure;
 using Zhua.Infrastructure.Persistence;
 
@@ -24,5 +25,9 @@ app.MapGet("/health/db", async (ZhuaDbContext db) =>
     await db.Database.CanConnectAsync()
         ? Results.Ok(new { db = "up" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
+
+app.MapProductEndpoints();   // /products/search, /products/{id} (compare)
+app.MapDealEndpoints();      // /deals
+app.MapMatchReviewEndpoints(); // /admin/match-candidates (+ approve/reject)
 
 app.Run();
