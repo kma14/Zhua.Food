@@ -3,7 +3,9 @@
 # (an in-memory X server) DIRECTLY here rather than via xvfb-run, which hangs in non-TTY containers.
 set -e
 
-Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
+# Silence Xvfb's own stderr (harmless xkbcomp "keysym" keymap warnings on every browser launch) so it
+# doesn't drown the Worker's [scheduled] logs. Our app's stdout/stderr is untouched.
+Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
 export DISPLAY=:99
 
 # Wait until the display answers (xdpyinfo if present; otherwise fall back to a short fixed wait).
