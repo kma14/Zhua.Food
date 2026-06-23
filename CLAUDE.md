@@ -73,3 +73,6 @@ dotnet run --project src/Zhua.Api                      # GET /health, /health/db
 
 - Match surrounding code style. One `IEntityTypeConfiguration<T>` per entity under `Infrastructure/Persistence/Configurations`. Entities use `required` for mandatory strings; XML-doc non-obvious choices with the plan id (e.g. "plan D3").
 - Add tests when building testable code: parser golden-file fixtures for crawlers, `WebApplicationFactory` + Testcontainers for the Api.
+- **Shared build settings live in `Directory.Build.props`** (TFM, Nullable, ImplicitUsings, `TreatWarningsAsErrors`) — don't re-add them per-csproj. Warnings are errors; keep the build clean.
+- **Entity invariants live on the entity** (D19): the D3 price rule is `StoreProduct.ApplyObservation` — don't re-inline price-change logic in the orchestrator. Use-case orchestration (category/tag linking, run lifecycle) stays in `CrawlOrchestrator`.
+- **DI is split by pipeline** (D19): the read-only Api calls `AddPersistence` only; the Worker calls `AddPersistence().AddIngestion().AddMatching()`. Don't give the Api ingestion/matching services. Dev connection string = `DbDefaults.DevConnectionString`.

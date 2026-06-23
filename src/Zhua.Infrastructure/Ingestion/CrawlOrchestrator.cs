@@ -2,14 +2,16 @@ using Microsoft.EntityFrameworkCore;
 using Zhua.Application.Ingestion;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
+using Zhua.Domain.ValueObjects;
 using Zhua.Infrastructure.Persistence;
 
 namespace Zhua.Infrastructure.Ingestion;
 
 /// <summary>
-/// Runs one crawl for a store: open <see cref="CrawlRun"/> → fetch → upsert <see cref="StoreProduct"/>
-/// (refresh current price + LastSeenAt every crawl, plan R4) → append a <see cref="PriceSnapshot"/>
-/// ONLY when the price tuple changed (plan D3) → close the run.
+/// Runs one crawl for a store: open <see cref="CrawlRun"/> → fetch → for each product apply the observation
+/// (the change-only price rule, D3, lives on <see cref="StoreProduct.ApplyObservation"/>) → link categories
+/// (D11) → sync promo tags (D13) → close the run. This type is the use-case orchestration; the per-product
+/// invariant is owned by the entity (D19).
 /// </summary>
 public sealed class CrawlOrchestrator(
     ZhuaDbContext db,
@@ -48,7 +50,7 @@ public sealed class CrawlOrchestrator(
                 .Where(t => t.Chain == store.Chain)
                 .ToDictionaryAsync(t => (t.Source, t.Code), ct);
 
-            // Tags are reset per crawl (current state only) — clear each product's set the first time we see it this run.
+            // Tags are volatile → reset each product's set the first time we see it this run (D13).
             var tagsResetForSku = new HashSet<string>();
 
             var now = clock.GetUtcNow();
@@ -69,89 +71,19 @@ public sealed class CrawlOrchestrator(
                     existing[s.SourceSku] = sp;
                 }
 
-                // Price tuple per plan D3 — null current price (new product) counts as a change.
-                var priceChanged =
-                    sp.CurrentPrice != s.Price
-                    || sp.IsOnSpecial != s.IsOnSpecial
-                    || sp.CurrentNonSpecialPrice != s.NonSpecialPrice
-                    || sp.UnitPrice != s.UnitPrice;
-
-                // Always refresh raw fields + denormalized current price + liveness (plan R4 / D3).
-                sp.RawName = s.Name;
-                sp.RawBrand = s.Brand;
-                sp.RawSize = s.Size;
-                sp.Gtin = s.Gtin;
-                sp.Url = s.Url;
-                sp.ImageUrl = s.ImageUrl;
-                sp.CurrentPrice = s.Price;
-                sp.CurrentNonSpecialPrice = s.NonSpecialPrice;
-                sp.IsOnSpecial = s.IsOnSpecial;
-                sp.UnitPrice = s.UnitPrice;
-                sp.UnitOfMeasure = s.UnitOfMeasure;
-                sp.LastSeenAt = now;
-
-                if (priceChanged)
+                // D3/R4 price rule is owned by the entity; we just link the snapshot to this run.
+                var snapshot = sp.ApplyObservation(ToObservation(s), now);
+                if (snapshot is not null)
                 {
-                    sp.PriceUpdatedAt = now;
-                    sp.PriceSnapshots.Add(new PriceSnapshot
-                    {
-                        CrawlRun = run,
-                        Price = s.Price,
-                        NonSpecialPrice = s.NonSpecialPrice,
-                        IsOnSpecial = s.IsOnSpecial,
-                        UnitPrice = s.UnitPrice,
-                        CapturedAt = now,
-                    });
+                    snapshot.CrawlRun = run;
                     snapshotsWritten++;
                 }
 
-                // Link the product to its category path (Department → Aisle → Shelf), upserting nodes (plan D11).
-                StoreCategory? parent = null;
-                foreach (var node in s.CategoryPath)
-                {
-                    var key = (node.Kind, node.ExternalId);
-                    if (!categories.TryGetValue(key, out var cat))
-                    {
-                        cat = new StoreCategory
-                        {
-                            StoreId = store.Id,
-                            Kind = node.Kind,
-                            ExternalId = node.ExternalId,
-                            Slug = node.Slug,
-                            Name = node.Name,
-                            Parent = parent,
-                        };
-                        db.StoreCategories.Add(cat);
-                        categories[key] = cat;
-                    }
-                    else if (cat.ParentId is null && cat.Parent is null && parent is not null)
-                    {
-                        cat.Parent = parent;
-                    }
+                LinkCategories(sp, s.CategoryPath, store.Id, categories);
 
-                    if (!sp.Categories.Any(c => c.Kind == cat.Kind && c.ExternalId == cat.ExternalId))
-                        sp.Categories.Add(cat);
-
-                    parent = cat;
-                }
-
-                // Promo tags (plan D13): reset to the current crawl's set (tags are volatile), upserting the dimension.
                 if (tagsResetForSku.Add(s.SourceSku))
                     sp.Tags.Clear();
-
-                foreach (var t in s.Tags)
-                {
-                    var key = (t.Source, t.Code);
-                    if (!tags.TryGetValue(key, out var tag))
-                    {
-                        tag = new ProductTag { Chain = store.Chain, Source = t.Source, Code = t.Code, Label = t.Label };
-                        db.ProductTags.Add(tag);
-                        tags[key] = tag;
-                    }
-
-                    if (!sp.Tags.Any(x => x.Source == tag.Source && x.Code == tag.Code))
-                        sp.Tags.Add(tag);
-                }
+                SyncTags(sp, s.Tags, store.Chain, tags);
             }
 
             run.ProductsFound = scraped.Count;
@@ -169,6 +101,65 @@ public sealed class CrawlOrchestrator(
             run.ErrorMessage = ex.Message;
             await db.SaveChangesAsync(CancellationToken.None);
             return new CrawlRunResult(run.Id, run.Status, run.ProductsFound, run.SnapshotsWritten, ex.Message);
+        }
+    }
+
+    private static StoreProductObservation ToObservation(ScrapedProduct s) => new(
+        s.Name, s.Brand, s.Size, s.Gtin, s.Url, s.ImageUrl,
+        s.Price, s.NonSpecialPrice, s.IsOnSpecial, s.UnitPrice, s.UnitOfMeasure);
+
+    /// <summary>Upserts the product's Department→Aisle→Shelf nodes and links them many-to-many (plan D11).</summary>
+    private void LinkCategories(
+        StoreProduct sp, IReadOnlyList<ScrapedCategoryNode> path, Guid storeId,
+        Dictionary<(CategoryKind Kind, string ExternalId), StoreCategory> categories)
+    {
+        StoreCategory? parent = null;
+        foreach (var node in path)
+        {
+            var key = (node.Kind, node.ExternalId);
+            if (!categories.TryGetValue(key, out var cat))
+            {
+                cat = new StoreCategory
+                {
+                    StoreId = storeId,
+                    Kind = node.Kind,
+                    ExternalId = node.ExternalId,
+                    Slug = node.Slug,
+                    Name = node.Name,
+                    Parent = parent,
+                };
+                db.StoreCategories.Add(cat);
+                categories[key] = cat;
+            }
+            else if (cat.ParentId is null && cat.Parent is null && parent is not null)
+            {
+                cat.Parent = parent;
+            }
+
+            if (!sp.Categories.Any(c => c.Kind == cat.Kind && c.ExternalId == cat.ExternalId))
+                sp.Categories.Add(cat);
+
+            parent = cat;
+        }
+    }
+
+    /// <summary>Adds the crawl's promo tags, upserting the chain-scoped tag dimension (plan D13). Reset happens in the caller.</summary>
+    private void SyncTags(
+        StoreProduct sp, IReadOnlyList<ScrapedTag> scrapedTags, Chain chain,
+        Dictionary<(ProductTagSource Source, string Code), ProductTag> tags)
+    {
+        foreach (var t in scrapedTags)
+        {
+            var key = (t.Source, t.Code);
+            if (!tags.TryGetValue(key, out var tag))
+            {
+                tag = new ProductTag { Chain = chain, Source = t.Source, Code = t.Code, Label = t.Label };
+                db.ProductTags.Add(tag);
+                tags[key] = tag;
+            }
+
+            if (!sp.Tags.Any(x => x.Source == tag.Source && x.Code == tag.Code))
+                sp.Tags.Add(tag);
         }
     }
 }

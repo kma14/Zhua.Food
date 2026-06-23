@@ -13,9 +13,8 @@ using Zhua.Infrastructure.Persistence;
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 
-var conn = builder.Configuration.GetConnectionString("Default")
-           ?? "Host=localhost;Port=5433;Database=zhua;Username=zhua;Password=zhua";
-builder.Services.AddInfrastructure(conn);
+var conn = builder.Configuration.GetConnectionString("Default") ?? DbDefaults.DevConnectionString;
+builder.Services.AddPersistence(conn).AddIngestion().AddMatching();
 
 // Crawler implementations (composition root). One per chain; the orchestrator picks by Store.Chain.
 builder.Services.AddSingleton<IStoreCrawler, WoolworthsCrawler>();

@@ -4,8 +4,7 @@ using Zhua.Infrastructure.Persistence;
 // One-shot migrator (plan D5). Compose runs this to completion before Api/Worker start,
 // so neither of those auto-migrates and there is no migration race.
 
-var conn = Environment.GetEnvironmentVariable("ConnectionStrings__Default")
-           ?? "Host=localhost;Port=5433;Database=zhua;Username=zhua;Password=zhua";
+var conn = Environment.GetEnvironmentVariable("ConnectionStrings__Default") ?? DbDefaults.DevConnectionString;
 
 Console.WriteLine("[migrator] applying migrations...");
 

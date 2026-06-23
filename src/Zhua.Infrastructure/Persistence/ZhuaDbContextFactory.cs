@@ -11,8 +11,7 @@ public class ZhuaDbContextFactory : IDesignTimeDbContextFactory<ZhuaDbContext>
 {
     public ZhuaDbContext CreateDbContext(string[] args)
     {
-        var conn = Environment.GetEnvironmentVariable("ConnectionStrings__Default")
-                   ?? "Host=localhost;Port=5433;Database=zhua;Username=zhua;Password=zhua";
+        var conn = Environment.GetEnvironmentVariable("ConnectionStrings__Default") ?? DbDefaults.DevConnectionString;
 
         var options = new DbContextOptionsBuilder<ZhuaDbContext>()
             .UseNpgsql(conn)

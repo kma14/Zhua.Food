@@ -1,3 +1,5 @@
+using Zhua.Domain.ValueObjects;
+
 namespace Zhua.Domain.Entities;
 
 /// <summary>
@@ -61,4 +63,48 @@ public class StoreProduct
     public DateTimeOffset? PriceUpdatedAt { get; set; }
 
     public ICollection<PriceSnapshot> PriceSnapshots { get; } = new List<PriceSnapshot>();
+
+    /// <summary>
+    /// Applies one crawl observation and owns the change-only price rule (plan D3): always refreshes the
+    /// denormalized current fields + <see cref="LastSeenAt"/> (R4), and appends a <see cref="PriceSnapshot"/>
+    /// ONLY when the price tuple <c>{Price, IsOnSpecial, NonSpecialPrice, UnitPrice}</c> changed (a first
+    /// observation of a new product counts as a change). Returns the new snapshot, or null if nothing changed.
+    /// The caller links the snapshot to its <see cref="CrawlRun"/> (an orchestration concern).
+    /// </summary>
+    public PriceSnapshot? ApplyObservation(StoreProductObservation obs, DateTimeOffset now)
+    {
+        var priceChanged =
+            CurrentPrice != obs.Price
+            || IsOnSpecial != obs.IsOnSpecial
+            || CurrentNonSpecialPrice != obs.NonSpecialPrice
+            || UnitPrice != obs.UnitPrice;
+
+        // Always refresh raw fields + denormalized current price + liveness (plan R4 / D3).
+        RawName = obs.Name;
+        RawBrand = obs.Brand;
+        RawSize = obs.Size;
+        Gtin = obs.Gtin;
+        Url = obs.Url;
+        ImageUrl = obs.ImageUrl;
+        CurrentPrice = obs.Price;
+        CurrentNonSpecialPrice = obs.NonSpecialPrice;
+        IsOnSpecial = obs.IsOnSpecial;
+        UnitPrice = obs.UnitPrice;
+        UnitOfMeasure = obs.UnitOfMeasure;
+        LastSeenAt = now;
+
+        if (!priceChanged) return null;
+
+        PriceUpdatedAt = now;
+        var snapshot = new PriceSnapshot
+        {
+            Price = obs.Price,
+            NonSpecialPrice = obs.NonSpecialPrice,
+            IsOnSpecial = obs.IsOnSpecial,
+            UnitPrice = obs.UnitPrice,
+            CapturedAt = now,
+        };
+        PriceSnapshots.Add(snapshot);
+        return snapshot;
+    }
 }

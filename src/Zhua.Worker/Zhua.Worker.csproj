@@ -1,9 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-Zhua.Worker-fcc9a1a9-f8e4-440a-9c30-816d397c01d4</UserSecretsId>
   </PropertyGroup>
 
