@@ -44,5 +44,26 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Ingestion Worker (plan D7) — Quartz cron (twice-daily) driving HEADED Playwright Chromium under xvfb.
+  # Headless is WAF-blocked (D2/D17), so even on a headless host (NAS/EC2) we run headed via a virtual display.
+  worker:
+    build:
+      context: .
+      dockerfile: src/Zhua.Worker/Dockerfile
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=zhua;Username=zhua;Password=zhua"
+      Crawl__Cron: "0 0 6,18 * * ?"
+      TZ: "Pacific/Auckland"   # cron uses InTimeZone(Local); make Local = Auckland so 06:00/18:00 are real
+    shm_size: "1gb"            # Chromium needs >Docker's default 64MB /dev/shm or it crashes mid-crawl
+    volumes:
+      - crawlarchive:/app/crawl-archive   # raw response archive (D12) — keep it inspectable/persistent
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  crawlarchive:
