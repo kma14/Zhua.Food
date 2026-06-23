@@ -3,12 +3,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
+using Quartz;
 using Zhua.Application.Ingestion;
 using Zhua.Application.Matching;
 using Zhua.Crawling.Foodstuffs;
 using Zhua.Crawling.Woolworths;
 using Zhua.Infrastructure;
 using Zhua.Infrastructure.Persistence;
+using Zhua.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
@@ -20,6 +22,21 @@ builder.Services.AddPersistence(conn).AddIngestion().AddMatching();
 builder.Services.AddSingleton<IStoreCrawler, WoolworthsCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, NewWorldCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, PaknSaveCrawler>();
+
+// No CLI command = scheduled mode (plan D4/D7): Quartz fires the ingestion job on a cron (default twice-daily).
+var scheduled = args.Length == 0;
+if (scheduled)
+{
+    var cron = builder.Configuration["Crawl:Cron"] ?? "0 0 6,18 * * ?"; // 06:00 & 18:00 local, daily
+    builder.Services.AddQuartz(q =>
+    {
+        var job = new JobKey("ingestion");
+        q.AddJob<IngestionJob>(job);
+        q.AddTrigger(t => t.ForJob(job).WithIdentity("ingestion-trigger")
+            .WithCronSchedule(cron, x => x.InTimeZone(TimeZoneInfo.Local)));
+    });
+    builder.Services.AddQuartzHostedService(o => o.WaitForJobsToComplete = true);
+}
 
 var host = builder.Build();
 
@@ -128,5 +145,11 @@ if (args.Length > 0 && args[0].Equals("recon", StringComparison.OrdinalIgnoreCas
     return;
 }
 
-Console.WriteLine("Usage: Zhua.Worker crawl [--store woolworths|newworld|paknsave|<guid>]");
-Console.WriteLine("(Scheduled mode arrives in Phase 2.)");
+if (scheduled)
+{
+    // Scheduled mode: Quartz hosted service runs the cron-driven ingestion job until the process is stopped.
+    await host.RunAsync();
+    return;
+}
+
+Console.WriteLine("Usage: Zhua.Worker [<no args> = scheduled crawl+match | crawl [--store <chain>] | match | recon <url>]");

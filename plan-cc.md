@@ -240,13 +240,13 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 - ✅ Woolworths crawler end-to-end → real Postgres rows (browse-by-category, D10)
 - ✅ Worker CLI one-shot runner + parser golden-file tests
 
-### Phase 2 — Full ingestion ✅ (scheduler still pending)
+### Phase 2 — Full ingestion ✅
 - ✅ New World + PAK'nSAVE crawlers — shared `FoodstuffsCrawler` (D15)
 - ✅ Persistence: change-only snapshots (D3) + LastSeenAt refresh (R4)
 - ✅ Worker CLI manual crawl `crawl [--store <chain>]`
 - ✅ Politeness: base delay + Woolworths WAF cooldown-retry/backoff (D17)
 - ✅ **Beyond plan:** `StoreCategory` tree (D11) · raw archive (D12) · promo tags (D13) · **9 stores, 3 branches/chain** (D16, Woolworths reduced to 1 active) · departments expanding to Fridge/Deli + Frozen (D17)
-- 🔲 Quartz scheduler (twice-daily, R6/D7) — **the one Phase-2 item left**; crawling is still manual CLI
+- ✅ Quartz scheduler (D4/D7): Worker with **no args** = scheduled mode — cron-driven `IngestionJob` (crawl all active stores → match), `Crawl:Cron` config (default twice-daily `0 0 6,18 * * ?`, local tz), `[DisallowConcurrentExecution]`. CLI `crawl`/`match`/`recon` still work as one-shots.
 
 ### Phase 3 — Canonical matching ✅ core done (D18; offline `match` command, decoupled per R3)
 - ✅ **Tier 1 (free):** group Foodstuffs NW↔PAK by shared `productId` → one `CanonicalProduct` per SKU (upserted by `MatchKey`) — same-product compare across all 6 Foodstuffs stores. **3783 canonicals.**

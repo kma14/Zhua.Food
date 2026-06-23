@@ -8,7 +8,7 @@ Auckland grocery **price-intelligence** platform (information layer only — NOT
 
 **M1 scope:** 9 stores seeded, **7 active** — Woolworths runs **1 store** (Takapuna; it's national-priced so branches are identical — D16), Foodstuffs runs 3 each (New World Metro/Shore City/Browns Bay; PAK'nSAVE Albany/Botany/Highland Park — independently priced). Departments (expanding): Meat/Poultry/Seafood + Fruit&Veg + Fridge/Deli + Frozen. **Catalog via each store's category tree** (D10/D11), **twice-daily** crawl + price history + search/compare/deals APIs. Future: Chinese/Korean/Indian supermarkets (not M1).
 
-**Status:** Phase 1 ingestion working — **all 3 crawlers live & verified across 9 stores** (Woolworths via browse-JSON D2/D10; New World + PAK'nSAVE via shared `FoodstuffsCrawler` D15). StoreCategory tree (D11), raw archive (D12), promo tags (D13) done; counts match each source. Cross-banner AND cross-branch same-product price compare confirmed (measured branch variation: Woolworths 0% / NW 40% / PAK'nSAVE 49% — D16). **Canonical matching done (D18):** offline `match` command groups Foodstuffs by shared productId + bridges to Woolworths by brand+size+name, auto-linking confident matches and queueing the rest for review (`MatchCandidate`). **Query API done (D20):** `/products/search`, `/products/{id}` (same-product compare), `/deals`, `/admin/match-candidates` (+approve/reject). **Next:** Quartz scheduler (Phase 2's last item) + Api integration tests + `/admin/crawl-runs`.
+**Status:** Phase 1 ingestion working — **all 3 crawlers live & verified across 9 stores** (Woolworths via browse-JSON D2/D10; New World + PAK'nSAVE via shared `FoodstuffsCrawler` D15). StoreCategory tree (D11), raw archive (D12), promo tags (D13) done; counts match each source. Cross-banner AND cross-branch same-product price compare confirmed (measured branch variation: Woolworths 0% / NW 40% / PAK'nSAVE 49% — D16). **Canonical matching done (D18):** offline `match` command groups Foodstuffs by shared productId + bridges to Woolworths by brand+size+name, auto-linking confident matches and queueing the rest for review (`MatchCandidate`). **Query API done (D20):** `/products/search`, `/products/{id}` (same-product compare), `/deals`, `/admin/match-candidates` (+approve/reject). **Quartz scheduler done (D4/D7):** Worker no-args = cron-driven crawl+match. **Next:** Api integration tests + `/admin/crawl-runs` + containerize the Worker (xvfb for headed Playwright).
 
 📋 **Full background, all decisions (D1–D9) and the phased roadmap live in [plan-cc.md](plan-cc.md)** — that's the source of truth; read it before non-trivial work and keep it updated as decisions change. (Linked rather than `@import`-ed, to keep each session's context lean — ask if you'd prefer the whole plan auto-loaded every session.)
 
@@ -54,8 +54,9 @@ docker compose up -d postgres                          # Postgres on host port 5
 dotnet ef database update -p src/Zhua.Infrastructure   # or: docker compose up --build migrator
 dotnet build Zhua.Food.sln
 dotnet test                                            # run all tests
-dotnet run --project src/Zhua.Worker -- crawl          # ingest all active stores (headed Playwright)
-dotnet run --project src/Zhua.Worker -- match          # offline canonical matching (D18); re-run after crawls
+dotnet run --project src/Zhua.Worker                   # scheduled mode (Quartz cron: crawl all + match; D4/D7)
+dotnet run --project src/Zhua.Worker -- crawl          # one-shot: ingest all active stores (headed Playwright)
+dotnet run --project src/Zhua.Worker -- match          # one-shot: offline canonical matching (D18)
 dotnet run --project src/Zhua.Api                      # GET /health, /health/db
 ```
 
