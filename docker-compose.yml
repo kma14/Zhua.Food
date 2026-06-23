@@ -27,5 +27,22 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Query API (plan D20) — read + admin match-review. Waits for the migrator; never migrates itself (D5).
+  api:
+    build:
+      context: .
+      dockerfile: src/Zhua.Api/Dockerfile
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=zhua;Username=zhua;Password=zhua"
+      ASPNETCORE_ENVIRONMENT: Development   # exposes /openapi; set Production for a real deploy
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   pgdata:
