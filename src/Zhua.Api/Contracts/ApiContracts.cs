@@ -47,6 +47,17 @@ public sealed record DealItem(
     decimal? UnitPrice,
     string? UnitOfMeasure);
 
+/// <summary>A node in the shared canonical category tree (D22) — Department → Aisle → Shelf.</summary>
+public sealed record CategoryNode(
+    Guid Id,
+    string Kind,              // Department | Aisle | Shelf
+    string Name,
+    string Slug,
+    string Path,             // full slug path, e.g. "meat-poultry-seafood/beef"
+    int ProductCount,        // canonical products directly on this node
+    int TotalProductCount,   // including all descendants (useful at Department/Aisle level)
+    IReadOnlyList<CategoryNode> Children);
+
 /// <summary>A pending cross-store match awaiting review (the queue).</summary>
 public sealed record MatchCandidateView(
     Guid Id,
