@@ -70,4 +70,55 @@ public class StoreProductTests
         Assert.Equal(4.00m, p.CurrentNonSpecialPrice);
         Assert.Equal(2, p.PriceSnapshots.Count);
     }
+
+    // --- Foodstuffs was-price reconstruction: source flags a special but publishes no was-price (D13 gap). ---
+
+    [Fact]
+    public void Foodstuffs_special_reconstructs_was_price_from_prior_shelf_price()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m), T0);                                    // regular shelf price seen
+
+        var snap = p.ApplyObservation(Milk(2.99m, onSpecial: true), T0.AddHours(12)); // on special, no was-price
+
+        Assert.NotNull(snap);
+        Assert.True(p.IsOnSpecial);
+        Assert.Equal(3.50m, p.CurrentNonSpecialPrice);   // recovered from the prior shelf price
+        Assert.Equal(3.50m, snap!.NonSpecialPrice);      // and recorded into history
+    }
+
+    [Fact]
+    public void Reconstructed_was_price_carries_forward_while_special_holds()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m), T0);
+        p.ApplyObservation(Milk(2.99m, onSpecial: true), T0.AddHours(12));      // reconstructs was = 3.50
+
+        var snap = p.ApplyObservation(Milk(2.99m, onSpecial: true), T0.AddHours(24)); // still on special, same price
+
+        Assert.Null(snap);                               // nothing changed → no spurious snapshot
+        Assert.Equal(3.50m, p.CurrentNonSpecialPrice);   // carried forward, not lost
+    }
+
+    [Fact]
+    public void First_sighting_already_on_special_leaves_was_price_null()
+    {
+        var p = NewProduct();
+
+        var snap = p.ApplyObservation(Milk(2.99m, onSpecial: true), T0);        // no prior state to recover from
+
+        Assert.NotNull(snap);
+        Assert.Null(p.CurrentNonSpecialPrice);           // unrecoverable — going-forward only
+    }
+
+    [Fact]
+    public void Special_priced_at_or_above_prior_does_not_fabricate_a_saving()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m), T0);
+
+        p.ApplyObservation(Milk(3.50m, onSpecial: true), T0.AddHours(12));      // "special" not actually cheaper
+
+        Assert.Null(p.CurrentNonSpecialPrice);           // guard: prior must be strictly higher
+    }
 }

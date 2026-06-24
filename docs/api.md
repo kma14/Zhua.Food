@@ -142,7 +142,8 @@ One **step series per store** from the change-only snapshots (D3). Optional `?da
 ```
 > **Render as a step line** — points are **sparse by design** (each one is a real price *change*; the price holds
 > until the next point), not evenly spaced. History is **short for now** (crawling started recently) and grows
-> with each twice-daily crawl. `wasPrice` is `null` for Foodstuffs (not published — see /deals note).
+> with each twice-daily crawl. For Foodstuffs `wasPrice` is **reconstructed** from the prior shelf price (D23),
+> so it's `null` only for a special we first saw already running — see the /deals note.
 
 ### `GET /categories/{id}/products` — products inside a category (D22)
 
@@ -189,9 +190,11 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
   "priceUpdatedAt": "2026-06-23T18:08:56+00:00", "priceAsOf": "2026-06-24T06:00:33+00:00"
 }]
 ```
-> ⚠️ **Currently Woolworths-only.** Foodstuffs (NW/PAK) products set `isOnSpecial` but our crawler doesn't yet
-> capture their *was-price*, so there's no saving to compute/sort by — NW/PAK specials are excluded until the
-> FoodstuffsCrawler captures it. (Ingestion gap, tracked separately.)
+> ⚠️ **Foodstuffs specials appear once we've seen the price drop.** NW/PAK flag a special but publish **no
+> was-price**, so we *reconstruct* it from our own history — the shelf price we last recorded before the product
+> went on special (D23). This is **going-forward only**: a special that was already running the first time we saw
+> the product has no recoverable was-price and stays out of `/deals` until it re-prices. Woolworths publishes its
+> own was-price, so it's never affected. (Early on, expect mostly Woolworths until NW/PAK specials turn over.)
 
 ### Admin — match review queue (D18)
 

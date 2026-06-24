@@ -73,10 +73,12 @@ public class StoreProduct
     /// </summary>
     public PriceSnapshot? ApplyObservation(StoreProductObservation obs, DateTimeOffset now)
     {
+        var nonSpecialPrice = ReconstructWasPrice(obs);
+
         var priceChanged =
             CurrentPrice != obs.Price
             || IsOnSpecial != obs.IsOnSpecial
-            || CurrentNonSpecialPrice != obs.NonSpecialPrice
+            || CurrentNonSpecialPrice != nonSpecialPrice
             || UnitPrice != obs.UnitPrice;
 
         // Always refresh raw fields + denormalized current price + liveness (plan R4 / D3).
@@ -87,7 +89,7 @@ public class StoreProduct
         Url = obs.Url;
         ImageUrl = obs.ImageUrl;
         CurrentPrice = obs.Price;
-        CurrentNonSpecialPrice = obs.NonSpecialPrice;
+        CurrentNonSpecialPrice = nonSpecialPrice;
         IsOnSpecial = obs.IsOnSpecial;
         UnitPrice = obs.UnitPrice;
         UnitOfMeasure = obs.UnitOfMeasure;
@@ -99,12 +101,34 @@ public class StoreProduct
         var snapshot = new PriceSnapshot
         {
             Price = obs.Price,
-            NonSpecialPrice = obs.NonSpecialPrice,
+            NonSpecialPrice = nonSpecialPrice,
             IsOnSpecial = obs.IsOnSpecial,
             UnitPrice = obs.UnitPrice,
             CapturedAt = now,
         };
         PriceSnapshots.Add(snapshot);
         return snapshot;
+    }
+
+    /// <summary>
+    /// The regular ("was") price to record for this observation. Prefer the source's own value (Woolworths
+    /// publishes it). Foodstuffs (NW/PAK) flags a special but publishes NO was-price, so we reconstruct it from
+    /// our own prior state (D13 gap): the shelf price we last saw before the product went on special. This is
+    /// <b>going-forward only</b> — we can't recover a was-price for a special that was already running the first
+    /// time we saw the product (prior state unknown). The guard <c>prior &gt; obs.Price</c> avoids fabricating a
+    /// non-discount (zero/negative saving) from noisy data.
+    /// </summary>
+    private decimal? ReconstructWasPrice(StoreProductObservation obs)
+    {
+        if (!obs.IsOnSpecial || obs.NonSpecialPrice is not null)
+            return obs.NonSpecialPrice;
+
+        if (!IsOnSpecial && CurrentPrice is { } prior && prior > obs.Price)
+            return prior;                    // just went on special: the prior shelf price is the "was"
+
+        if (IsOnSpecial && CurrentNonSpecialPrice is not null)
+            return CurrentNonSpecialPrice;   // still on special: carry the reconstructed "was" forward
+
+        return null;                         // first sighting already on special — unrecoverable
     }
 }
