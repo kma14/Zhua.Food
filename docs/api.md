@@ -98,28 +98,59 @@ The "where's it cheapest" view: one canonical product, every store's real listin
   "cheapestPrice": 8.99,
   "saving": 1.00,                            // dearest − cheapest across stores
   "prices": [
-    { "store": "PAK'nSAVE Albany", "chain": "PaknSave", "suburb": "Albany",
+    { "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
       "storeName": "Boneless Skinless Chicken Breast",   // the store's OWN name for this item
       "price": 8.99, "isOnSpecial": false, "nonSpecialPrice": null,
       "unitPrice": 22.48, "unitOfMeasure": "1kg", "lastSeenAt": "2026-06-24T06:01:14+00:00" },
-    { "store": "New World Metro Auckland", "chain": "NewWorld", "price": 9.99, "unitPrice": 24.98, "unitOfMeasure": "1kg", … }
+    { "store": "New World Metro Auckland", "supermarket": "NewWorld", "price": 9.99, "unitPrice": 24.98, "unitOfMeasure": "1kg", … }
   ]
 }
 ```
 
-### `GET /deals?chain=` — current specials
+> **`supermarket`** = the store group (`Woolworths` | `NewWorld` | `PaknSave`). (Was `chain`.)
 
-Products on special now, **biggest dollar saving first**. Optional `?chain=Woolworths|NewWorld|PaknSave`.
+### `GET /categories/{id}/products` — products inside a category (D22)
+
+The products under a category node (its **whole subtree**), each **merged across stores** and shown at its
+cheapest store. This is "show me the products in this category." `id` comes from `GET /categories`.
+
+**Query:** `sort=unitPrice` (default — comparable per kg/L/ea, nulls last) `| price` (raw cheapest); `page`, `size`.
+
+**Response:** `CategoryProduct[]`:
+```json
+[{
+  "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
+  "product": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
+  "originalName": "Boneless Skinless Chicken Breast",   // the cheapest store's own name
+  "cheapestPrice": 8.99,
+  "unitPrice": 22.48, "unit": "1kg",      // normalised comparable unit price; null if not comparable
+  "storeCount": 6,
+  "cheapestStore": "PAK'nSAVE Albany", "supermarket": "PaknSave",
+  "onSpecialSomewhere": false
+}]
+```
+Click a row → `GET /products/{id}` for the per-store breakdown.
+
+> **Mixed units caveat:** at a broad node (e.g. the *Beef* aisle mixes per-kg steaks with per-pack sausages),
+> `unitPrice` spans `1kg` and `1ea`, so a single sorted list interleaves them — use the `unit` field to group,
+> or query a **shelf** (homogeneous units) for a clean cheapest list.
+
+### `GET /deals?supermarket=` — current specials
+
+Products on special now, **biggest dollar saving first**. Optional `?supermarket=Woolworths|NewWorld|PaknSave`.
 
 **Response:** `DealItem[]`:
 ```json
 [{
   "product": "woolworths nz beef eye fillet grass fed", "brand": "woolworths nz",
-  "store": "Woolworths Takapuna", "chain": "Woolworths",
+  "store": "Woolworths Takapuna", "supermarket": "Woolworths",
   "price": 63.99, "wasPrice": 78.99, "saving": 15.00,
   "unitPrice": 63.99, "unitOfMeasure": "1kg"
 }]
 ```
+> ⚠️ **Currently Woolworths-only.** Foodstuffs (NW/PAK) products set `isOnSpecial` but our crawler doesn't yet
+> capture their *was-price*, so there's no saving to compute/sort by — NW/PAK specials are excluded until the
+> FoodstuffsCrawler captures it. (Ingestion gap, tracked separately.)
 
 ### Admin — match review queue (D18)
 
@@ -131,7 +162,7 @@ The only **writes** the API makes (touch already-ingested data; no crawl/migrate
 | POST | `/admin/match-candidates/{id}/approve` | link the product to the canonical; clears its sibling candidates |
 | POST | `/admin/match-candidates/{id}/reject` | matcher won't propose this pair again |
 
-`MatchCandidateView`: `{ id, storeProductName, brand, size, chain, price, candidateCanonical, score, reason }`.
+`MatchCandidateView`: `{ id, storeProductName, brand, size, supermarket, price, candidateCanonical, score, reason }`.
 
 ---
 
@@ -140,24 +171,12 @@ The only **writes** the API makes (touch already-ingested data; no crawl/migrate
 | Step | UI shows | Call |
 |---|---|---|
 | 1 | Category navigation | `GET /categories` (`?kind=aisle` for a menu) |
-| 2 | Products inside a chosen category | **see gap below** |
+| 2 | Products inside a chosen category | `GET /categories/{id}/products` |
 | 3 | Click a product → per-store prices | `GET /products/{id}` |
 | — | A search box | `GET /products/search?q=` |
 | — | A deals page | `GET /deals` |
 
-### ⚠️ Known gap — "products in a category" (step 2)
-
-There is **no endpoint yet that lists the products under a category node**. `/products/search` is name-based only.
-For the category-browse flow, the recommended next endpoint is:
-
-```
-GET /categories/{id}/products?sort=unitPrice&limit=20
-→ the canonical products in that category subtree, each as one merged row with its cheapest store +
-  comparable (normalised) unit price. (Step 1 of the flow above; Step 3 = /products/{id} already exists.)
-```
-
-Not built yet — flag if the UI needs it and it's a small addition. Until then, the UI can navigate by search +
-compare, or we build the above.
+The whole flow is now backed end-to-end.
 
 ---
 
@@ -166,9 +185,10 @@ compare, or we build the above.
 - **`category` string vs `categoryId`:** `ProductSummary.category` / `ProductComparison.category` are the
   denormalized leaf **name** (e.g. "Chicken Breast, Thighs & Tenders"). The structured tree + ids come from
   `GET /categories`.
-- **Unit prices are not yet normalised to one comparable unit.** `unitPrice` + `unitOfMeasure` are as the store
-  published them (`1kg`, `100g`, `100ml`, `1L`, `1ea`…). Cross-product "cheapest by unit" needs normalisation —
-  planned with the `/categories/{id}/products` endpoint above.
+- **Two flavours of unit price.** On `/products/{id}` and `/deals`, `unitPrice` + `unitOfMeasure` are **as the
+  store published them** (`1kg`, `100g`, `100ml`, `1L`, `1ea`…). On **`/categories/{id}/products`**, `unitPrice`
+  is **normalised** to one comparable base (`unit` = `1kg`/`1L`/`1ea`) so products can be ranked by value
+  (`null` when the store's unit can't be parsed).
 - **Not every StoreProduct is matched to a CanonicalProduct.** Unmatched listings still exist (with prices) but
   won't appear in same-product compare until the matcher links them.
 - **Prices are NZD.** `lastSeenAt` is UTC (ISO-8601).

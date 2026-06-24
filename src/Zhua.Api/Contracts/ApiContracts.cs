@@ -14,7 +14,7 @@ public sealed record ProductSummary(
 /// <summary>What one store charges for a canonical product (keeps the store's own name).</summary>
 public sealed record StorePrice(
     string Store,
-    string Chain,
+    string Supermarket,      // Woolworths | NewWorld | PaknSave (internally Domain enum Chain)
     string Suburb,
     string StoreName,        // the store's own RawName for this product
     decimal? Price,
@@ -35,12 +35,27 @@ public sealed record ProductComparison(
     decimal? Saving,         // dearest − cheapest across stores
     IReadOnlyList<StorePrice> Prices);
 
+/// <summary>One product inside a category (merged across stores), shown at its cheapest store.</summary>
+public sealed record CategoryProduct(
+    Guid Id,
+    string Product,            // canonical/display name
+    string? Brand,
+    string? Size,
+    string? OriginalName,      // the cheapest store's own raw name
+    decimal? CheapestPrice,    // lowest shelf price across its stores
+    decimal? UnitPrice,        // normalised comparable unit price (per kg/L/ea); null if not comparable
+    string? Unit,              // "1kg" | "1L" | "1ea"
+    int StoreCount,
+    string CheapestStore,
+    string Supermarket,
+    bool OnSpecialSomewhere);
+
 /// <summary>A product currently on special at a store.</summary>
 public sealed record DealItem(
     string Product,
     string? Brand,
     string Store,
-    string Chain,
+    string Supermarket,
     decimal? Price,
     decimal? WasPrice,
     decimal? Saving,
@@ -64,7 +79,7 @@ public sealed record MatchCandidateView(
     string StoreProductName,
     string? Brand,
     string? Size,
-    string Chain,
+    string Supermarket,
     decimal? Price,
     string CandidateCanonical,
     double Score,

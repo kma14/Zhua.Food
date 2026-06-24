@@ -9,15 +9,15 @@ public static class DealEndpoints
 {
     public static IEndpointRouteBuilder MapDealEndpoints(this IEndpointRouteBuilder app)
     {
-        // Current specials (biggest saving first). Optional ?chain=Woolworths|NewWorld|PaknSave.
-        app.MapGet("/deals", async (string? chain, ZhuaDbContext db, int page = 1, int size = 20) =>
+        // Current specials (biggest saving first). Optional ?supermarket=Woolworths|NewWorld|PaknSave.
+        app.MapGet("/deals", async (string? supermarket, ZhuaDbContext db, int page = 1, int size = 20) =>
         {
             size = Math.Clamp(size, 1, 100);
             page = Math.Max(page, 1);
 
-            Chain? chainFilter = Enum.TryParse<Chain>(chain, ignoreCase: true, out var c) ? c : null;
-            if (chain is not null && chainFilter is null)
-                return Results.BadRequest(new { error = $"unknown chain '{chain}'" });
+            Chain? chainFilter = Enum.TryParse<Chain>(supermarket, ignoreCase: true, out var c) ? c : null;
+            if (supermarket is not null && chainFilter is null)
+                return Results.BadRequest(new { error = $"unknown supermarket '{supermarket}'" });
 
             var deals = await db.StoreProducts
                 .Where(sp => sp.Store.IsActive

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Zhua.Api.Contracts;
+using Zhua.Application.Pricing;
 using Zhua.Infrastructure.Persistence;
 
 namespace Zhua.Api.Endpoints;
@@ -53,6 +54,60 @@ public static class CategoryEndpoints
 
             static int SubtreeCount(MutableNode n) =>
                 n.Children.Sum(c => c.DirectCount + SubtreeCount(c));
+        });
+
+        // Products inside a category node (its whole subtree), each merged across stores and shown at its
+        // cheapest store. ?sort=unitPrice (default, comparable per-kg/L/ea, nulls last) | price (raw cheapest).
+        group.MapGet("/{id:guid}/products", async (Guid id, ZhuaDbContext db, string sort = "unitPrice", int page = 1, int size = 20) =>
+        {
+            size = Math.Clamp(size, 1, 100);
+            page = Math.Max(page, 1);
+
+            var cats = await db.CanonicalCategories.Select(c => new { c.Id, c.ParentId }).ToListAsync();
+            if (cats.All(c => c.Id != id)) return Results.NotFound();
+
+            // Collect the node + all descendant category ids.
+            var childrenByParent = cats.Where(c => c.ParentId != null)
+                .GroupBy(c => c.ParentId!.Value).ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
+            var subtree = new HashSet<Guid>();
+            var stack = new Stack<Guid>([id]);
+            while (stack.Count > 0)
+            {
+                var n = stack.Pop();
+                if (!subtree.Add(n)) continue;
+                if (childrenByParent.TryGetValue(n, out var ch)) foreach (var c in ch) stack.Push(c);
+            }
+
+            var products = await db.CanonicalProducts
+                .Where(cp => cp.CanonicalCategoryId != null && subtree.Contains(cp.CanonicalCategoryId.Value))
+                .Select(cp => new
+                {
+                    cp.Id, cp.Name, cp.Brand, cp.Size,
+                    Stores = cp.StoreProducts.Where(sp => sp.CurrentPrice != null).Select(sp => new
+                    {
+                        sp.CurrentPrice, sp.UnitPrice, sp.UnitOfMeasure, sp.RawName, sp.IsOnSpecial,
+                        StoreName = sp.Store.Name, sp.Store.Chain,
+                    }).ToList(),
+                })
+                .ToListAsync();
+
+            var rows = products.Where(p => p.Stores.Count > 0).Select(p =>
+            {
+                var cheapest = p.Stores.OrderBy(s => s.CurrentPrice).First();
+                var norm = UnitPriceNormalizer.ToComparable(cheapest.UnitPrice, cheapest.UnitOfMeasure);
+                return new CategoryProduct(
+                    p.Id, p.Name, p.Brand, p.Size, cheapest.RawName,
+                    cheapest.CurrentPrice,
+                    norm is { } n ? decimal.Round(n.Price, 2) : null, norm?.Unit,
+                    p.Stores.Count, cheapest.StoreName, cheapest.Chain.ToString(),
+                    p.Stores.Any(s => s.IsOnSpecial));
+            });
+
+            rows = sort.Equals("price", StringComparison.OrdinalIgnoreCase)
+                ? rows.OrderBy(r => r.CheapestPrice)
+                : rows.OrderBy(r => r.UnitPrice is null).ThenBy(r => r.UnitPrice); // comparable unit price, nulls last
+
+            return Results.Ok(rows.Skip((page - 1) * size).Take(size).ToList());
         });
 
         return app;
