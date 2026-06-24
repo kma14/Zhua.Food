@@ -10,6 +10,17 @@ public static class ProductEndpoints
     {
         var group = app.MapGroup("/products").WithTags("Products");
 
+        // Products filtered by canonical category (?category={id}). Same data + shape as
+        // GET /categories/{id}/products — this is the "filter on the products resource" form.
+        group.MapGet("/", async (Guid? category, ZhuaDbContext db, string sort = "unitPrice", int page = 1, int size = 20) =>
+        {
+            if (category is null)
+                return Results.BadRequest(new { error = "query parameter 'category' is required" });
+
+            var items = await CategoryProductQuery.RunAsync(db, category.Value, sort, page, size);
+            return items is null ? Results.NotFound() : Results.Ok(items);
+        });
+
         // Search canonical products by name or brand.
         group.MapGet("/search", async (string? q, ZhuaDbContext db, int page = 1, int size = 20) =>
         {
@@ -28,7 +39,9 @@ public static class ProductEndpoints
                     c.Id, c.Name, c.Brand, c.Size, c.Category,
                     c.StoreProducts.Where(sp => sp.CurrentPrice != null).Min(sp => sp.CurrentPrice),
                     c.StoreProducts.Count,
-                    c.StoreProducts.Any(sp => sp.IsOnSpecial)))
+                    c.StoreProducts.Any(sp => sp.IsOnSpecial),
+                    c.StoreProducts.Where(sp => sp.CurrentPrice != null)
+                        .OrderBy(sp => sp.CurrentPrice).Select(sp => (DateTimeOffset?)sp.LastSeenAt).FirstOrDefault()))
                 .ToListAsync();
 
             return Results.Ok(items);
@@ -45,7 +58,8 @@ public static class ProductEndpoints
                 .OrderBy(sp => sp.CurrentPrice == null).ThenBy(sp => sp.CurrentPrice) // priced first, cheapest first
                 .Select(sp => new StorePrice(
                     sp.Store.Name, sp.Store.Chain.ToString(), sp.Store.Suburb, sp.RawName,
-                    sp.CurrentPrice, sp.IsOnSpecial, sp.CurrentNonSpecialPrice, sp.UnitPrice, sp.UnitOfMeasure, sp.LastSeenAt))
+                    sp.CurrentPrice, sp.IsOnSpecial, sp.CurrentNonSpecialPrice, sp.UnitPrice, sp.UnitOfMeasure,
+                    sp.PriceUpdatedAt, sp.LastSeenAt))
                 .ToListAsync();
 
             var priced = prices.Where(p => p.Price is not null).Select(p => p.Price!.Value).ToList();

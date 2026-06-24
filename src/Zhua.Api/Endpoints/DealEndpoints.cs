@@ -30,7 +30,7 @@ public static class DealEndpoints
                 .Select(sp => new DealItem(
                     sp.RawName, sp.RawBrand, sp.Store.Name, sp.Store.Chain.ToString(),
                     sp.CurrentPrice, sp.CurrentNonSpecialPrice, sp.CurrentNonSpecialPrice - sp.CurrentPrice,
-                    sp.UnitPrice, sp.UnitOfMeasure))
+                    sp.UnitPrice, sp.UnitOfMeasure, sp.PriceUpdatedAt, sp.LastSeenAt))
                 .ToListAsync();
 
             return Results.Ok(deals);

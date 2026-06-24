@@ -9,7 +9,8 @@ public sealed record ProductSummary(
     string Category,
     decimal? CheapestPrice,
     int StoreCount,
-    bool OnSpecialSomewhere);
+    bool OnSpecialSomewhere,
+    DateTimeOffset? PriceAsOf);   // cheapest store's LastSeenAt — when that price was last confirmed
 
 /// <summary>What one store charges for a canonical product (keeps the store's own name).</summary>
 public sealed record StorePrice(
@@ -22,7 +23,8 @@ public sealed record StorePrice(
     decimal? NonSpecialPrice,
     decimal? UnitPrice,
     string? UnitOfMeasure,
-    DateTimeOffset LastSeenAt);
+    DateTimeOffset? PriceUpdatedAt,   // when this store's price last changed (D3)
+    DateTimeOffset PriceAsOf);        // when it was last confirmed in a crawl (LastSeenAt)
 
 /// <summary>Same-product cross-store comparison (the core "where's it cheapest" view).</summary>
 public sealed record ProductComparison(
@@ -48,7 +50,9 @@ public sealed record CategoryProduct(
     int StoreCount,
     string CheapestStore,
     string Supermarket,
-    bool OnSpecialSomewhere);
+    bool OnSpecialSomewhere,
+    DateTimeOffset? PriceUpdatedAt,   // cheapest store's: when its price last changed
+    DateTimeOffset PriceAsOf);        // cheapest store's: when last confirmed in a crawl
 
 /// <summary>A product currently on special at a store.</summary>
 public sealed record DealItem(
@@ -60,7 +64,9 @@ public sealed record DealItem(
     decimal? WasPrice,
     decimal? Saving,
     decimal? UnitPrice,
-    string? UnitOfMeasure);
+    string? UnitOfMeasure,
+    DateTimeOffset? PriceUpdatedAt,   // when this special's price last changed
+    DateTimeOffset PriceAsOf);        // when last confirmed in a crawl
 
 /// <summary>A node in the shared canonical category tree (D22) — Department → Aisle → Shelf.</summary>
 public sealed record CategoryNode(

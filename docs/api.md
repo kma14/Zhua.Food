@@ -33,6 +33,17 @@ CanonicalCategory   e.g. "Chicken Breast, Thighs & Tenders"   ← shared taxonom
 **Typical UI flow:** `GET /categories` (build nav) → list products in a category → `GET /products/{id}` (the
 cross-store price compare). See [Front-end flow](#front-end-flow) below.
 
+### Price dates (every priced response carries these)
+
+| Field | Means | Show as |
+|---|---|---|
+| `priceAsOf` | when we **last confirmed** this price (refreshed every crawl) | "price as of 24 Jun 6am" — freshness |
+| `priceUpdatedAt` | when the price **last changed** (D3); `null` if never moved | "price changed 22 Jun" |
+
+On list/merged views (`/categories/{id}/products`, `/products?category=`) these are the **cheapest store's**
+dates. `ProductSummary` (search) carries only `priceAsOf`. Prices update on the **twice-daily** crawl (6am/6pm
+NZ), so `priceAsOf` is at most ~12h old.
+
 ---
 
 ## Endpoints
@@ -81,7 +92,8 @@ The shared taxonomy as a nested tree, with product counts. The front-end builds 
   "category": "UHT Milk & Milk Powder",     // canonical category leaf name (denormalized)
   "cheapestPrice": 37.19,                    // MIN across its stores
   "storeCount": 2,
-  "onSpecialSomewhere": false
+  "onSpecialSomewhere": false,
+  "priceAsOf": "2026-06-24T06:02:46+00:00"   // cheapest store's freshness
 }]
 ```
 
@@ -101,7 +113,8 @@ The "where's it cheapest" view: one canonical product, every store's real listin
     { "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
       "storeName": "Boneless Skinless Chicken Breast",   // the store's OWN name for this item
       "price": 8.99, "isOnSpecial": false, "nonSpecialPrice": null,
-      "unitPrice": 22.48, "unitOfMeasure": "1kg", "lastSeenAt": "2026-06-24T06:01:14+00:00" },
+      "unitPrice": 22.48, "unitOfMeasure": "1kg",
+      "priceUpdatedAt": "2026-06-22T08:08:59+00:00", "priceAsOf": "2026-06-24T06:01:44+00:00" },
     { "store": "New World Metro Auckland", "supermarket": "NewWorld", "price": 9.99, "unitPrice": 24.98, "unitOfMeasure": "1kg", … }
   ]
 }
@@ -113,6 +126,9 @@ The "where's it cheapest" view: one canonical product, every store's real listin
 
 The products under a category node (its **whole subtree**), each **merged across stores** and shown at its
 cheapest store. This is "show me the products in this category." `id` comes from `GET /categories`.
+
+> **Two equivalent URLs (same data):** `GET /categories/{id}/products` (sub-resource) and
+> `GET /products?category={id}` (filter on the products resource). Use whichever fits the call site.
 
 **Query:** `sort=unitPrice` (default — comparable per kg/L/ea, nulls last) `| price` (raw cheapest); `page`, `size`.
 
@@ -126,7 +142,9 @@ cheapest store. This is "show me the products in this category." `id` comes from
   "unitPrice": 22.48, "unit": "1kg",      // normalised comparable unit price; null if not comparable
   "storeCount": 6,
   "cheapestStore": "PAK'nSAVE Albany", "supermarket": "PaknSave",
-  "onSpecialSomewhere": false
+  "onSpecialSomewhere": false,
+  "priceUpdatedAt": "2026-06-22T08:08:59+00:00",   // cheapest store's: when its price last changed
+  "priceAsOf": "2026-06-24T06:01:44+00:00"         // cheapest store's: when last confirmed in a crawl
 }]
 ```
 Click a row → `GET /products/{id}` for the per-store breakdown.
@@ -145,7 +163,8 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
   "product": "woolworths nz beef eye fillet grass fed", "brand": "woolworths nz",
   "store": "Woolworths Takapuna", "supermarket": "Woolworths",
   "price": 63.99, "wasPrice": 78.99, "saving": 15.00,
-  "unitPrice": 63.99, "unitOfMeasure": "1kg"
+  "unitPrice": 63.99, "unitOfMeasure": "1kg",
+  "priceUpdatedAt": "2026-06-23T18:08:56+00:00", "priceAsOf": "2026-06-24T06:00:33+00:00"
 }]
 ```
 > ⚠️ **Currently Woolworths-only.** Foodstuffs (NW/PAK) products set `isOnSpecial` but our crawler doesn't yet
@@ -171,7 +190,7 @@ The only **writes** the API makes (touch already-ingested data; no crawl/migrate
 | Step | UI shows | Call |
 |---|---|---|
 | 1 | Category navigation | `GET /categories` (`?kind=aisle` for a menu) |
-| 2 | Products inside a chosen category | `GET /categories/{id}/products` |
+| 2 | Products inside a chosen category | `GET /categories/{id}/products` (or `GET /products?category={id}`) |
 | 3 | Click a product → per-store prices | `GET /products/{id}` |
 | — | A search box | `GET /products/search?q=` |
 | — | A deals page | `GET /deals` |
