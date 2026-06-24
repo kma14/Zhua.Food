@@ -17,6 +17,7 @@ public sealed class IngestionJob(
     ZhuaDbContext db,
     ICrawlOrchestrator orchestrator,
     ICanonicalMatcher matcher,
+    ICanonicalCategoryMapper categoryMapper,
     ILogger<IngestionJob> log) : IJob
 {
     public async Task Execute(IJobExecutionContext context)
@@ -47,5 +48,9 @@ public sealed class IngestionJob(
         var m = await matcher.RunAsync(ct);
         log.LogInformation("[scheduled] match: canonicals={Canonicals} linked={Linked} pendingReview={Pending}",
             m.CanonicalProducts, m.AutoLinked, m.PendingReview);
+
+        var cm = await categoryMapper.MapAsync(ct);
+        log.LogInformation("[scheduled] categories: canonical={Canonical} mappedStoreCats={Mapped} categorizedProducts={Products}",
+            cm.CanonicalCategories, cm.MappedStoreCategories, cm.CategorizedProducts);
     }
 }

@@ -88,6 +88,12 @@ if (args.Length > 0 && args[0].Equals("match", StringComparison.OrdinalIgnoreCas
     var r = await matcher.RunAsync();
     Console.WriteLine($"[match] canonicals={r.CanonicalProducts}, auto-linked store-products={r.AutoLinked}, "
         + $"pending review={r.PendingReview}, already decided={r.AlreadyDecided}");
+
+    var categoryMapper = scope.ServiceProvider.GetRequiredService<ICanonicalCategoryMapper>();
+    Console.WriteLine("[match] canonical category mapping ...");
+    var cm = await categoryMapper.MapAsync();
+    Console.WriteLine($"[match] canonical categories={cm.CanonicalCategories}, "
+        + $"mapped store-categories={cm.MappedStoreCategories}, categorized products={cm.CategorizedProducts}");
     return;
 }
 

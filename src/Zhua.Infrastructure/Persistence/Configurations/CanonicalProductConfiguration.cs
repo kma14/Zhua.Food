@@ -20,5 +20,6 @@ public class CanonicalProductConfiguration : IEntityTypeConfiguration<CanonicalP
 
         b.HasIndex(x => x.Category);
         b.HasIndex(x => x.Gtin);
+        b.HasIndex(x => x.CanonicalCategoryId); // browse/filter by the shared taxonomy (D22)
     }
 }

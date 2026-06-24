@@ -23,8 +23,16 @@ public class CanonicalProduct
 
     public string? UnitOfMeasure { get; set; }
 
-    /// <summary>Fine-grained product-type (e.g. "Chicken Breast", NOT "Chicken") — plan D9.</summary>
+    /// <summary>
+    /// Fine-grained product-type name (e.g. "Chicken Breast", NOT "Chicken") — plan D9. Denormalized display
+    /// value (the canonical category's leaf name); <see cref="CanonicalCategoryId"/> is the structured link (D22).
+    /// </summary>
     public required string Category { get; set; }
+
+    /// <summary>The shared canonical category this product sits under (plan D22) — drives UI browse/filter.</summary>
+    public Guid? CanonicalCategoryId { get; set; }
+
+    public CanonicalCategory? CanonicalCategory { get; set; }
 
     /// <summary>Barcode — primary cross-store matching key when present (plan D9).</summary>
     public string? Gtin { get; set; }

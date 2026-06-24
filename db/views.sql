@@ -146,6 +146,17 @@ JOIN "CanonicalProducts" c  ON c."Id" = mc."CanonicalProductId"
 WHERE mc."Status" = 'Pending'
 ORDER BY mc."Score" DESC;
 
+-- 8) CANONICAL CATEGORY TREE (D22) — the shared cross-store taxonomy with product counts per node.
+CREATE OR REPLACE VIEW v_canonical_category AS
+SELECT cc."Kind"  AS kind,
+       cc."Path"  AS path,
+       cc."Name"  AS name,
+       count(cp.*) AS products
+FROM "CanonicalCategories" cc
+LEFT JOIN "CanonicalProducts" cp ON cp."CanonicalCategoryId" = cc."Id"
+GROUP BY cc."Id"
+ORDER BY cc."Path";
+
 -- =====================================================================================
 -- Ad-hoc query recipes (copy + fill in the blank). Not views — just handy patterns.
 -- =====================================================================================

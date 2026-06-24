@@ -11,6 +11,7 @@ public class ZhuaDbContext(DbContextOptions<ZhuaDbContext> options) : DbContext(
     public DbSet<PriceSnapshot> PriceSnapshots => Set<PriceSnapshot>();
     public DbSet<CrawlRun> CrawlRuns => Set<CrawlRun>();
     public DbSet<StoreCategory> StoreCategories => Set<StoreCategory>();
+    public DbSet<CanonicalCategory> CanonicalCategories => Set<CanonicalCategory>();
     public DbSet<ProductTag> ProductTags => Set<ProductTag>();
     public DbSet<MatchCandidate> MatchCandidates => Set<MatchCandidate>();
 
