@@ -30,7 +30,7 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 | `Zhua.Application` | Use cases + service/repository interfaces. |
 | `Zhua.Infrastructure` | EF Core `DbContext`, configs, migrations, store seed. |
 | `Zhua.Crawling` | Per-store crawlers. |
-| `Zhua.Api` | Query REST API (read) + admin match-review writes (D20). Never crawls or migrates. |
+| `Zhua.Api` | Query REST API (read) + admin match-review writes (D20). Never crawls or migrates. **Front-end API reference: [docs/api.md](docs/api.md).** |
 | `Zhua.Worker` | Ingestion — Quartz schedule + crawlers. |
 | `Zhua.Migrator` | One-shot migration runner. |
 | `tests/Zhua.Ingestion.Tests` | Ingestion / `CrawlOrchestrator` tests (EF InMemory). |
