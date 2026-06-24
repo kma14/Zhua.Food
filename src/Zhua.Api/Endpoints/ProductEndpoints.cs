@@ -37,6 +37,8 @@ public static class ProductEndpoints
                 .Skip((page - 1) * size).Take(size)
                 .Select(c => new ProductSummary(
                     c.Id, c.Name, c.Brand, c.Size, c.Category,
+                    c.StoreProducts.Where(sp => sp.CurrentPrice != null)
+                        .OrderBy(sp => sp.CurrentPrice).Select(sp => sp.ImageUrl).FirstOrDefault(),
                     c.StoreProducts.Where(sp => sp.CurrentPrice != null).Min(sp => sp.CurrentPrice),
                     c.StoreProducts.Count,
                     c.StoreProducts.Any(sp => sp.IsOnSpecial),
@@ -57,7 +59,7 @@ public static class ProductEndpoints
                 .Where(sp => sp.CanonicalProductId == id)
                 .OrderBy(sp => sp.CurrentPrice == null).ThenBy(sp => sp.CurrentPrice) // priced first, cheapest first
                 .Select(sp => new StorePrice(
-                    sp.Store.Name, sp.Store.Chain.ToString(), sp.Store.Suburb, sp.RawName,
+                    sp.Store.Name, sp.Store.Chain.ToString(), sp.Store.Suburb, sp.RawName, sp.ImageUrl,
                     sp.CurrentPrice, sp.IsOnSpecial, sp.CurrentNonSpecialPrice, sp.UnitPrice, sp.UnitOfMeasure,
                     sp.PriceUpdatedAt, sp.LastSeenAt))
                 .ToListAsync();
@@ -65,8 +67,9 @@ public static class ProductEndpoints
             var priced = prices.Where(p => p.Price is not null).Select(p => p.Price!.Value).ToList();
             decimal? cheapest = priced.Count > 0 ? priced.Min() : null;
             decimal? saving = priced.Count > 1 ? priced.Max() - priced.Min() : null;
+            var image = prices.Select(p => p.ImageUrl).FirstOrDefault(u => u != null); // cheapest-first → cheapest store's
 
-            return Results.Ok(new ProductComparison(c.Id, c.Name, c.Brand, c.Size, c.Category, cheapest, saving, prices));
+            return Results.Ok(new ProductComparison(c.Id, c.Name, c.Brand, c.Size, c.Category, image, cheapest, saving, prices));
         });
 
         // Price history: one step-series per store (change-only snapshots, D3). ?days=N caps the range.

@@ -31,6 +31,14 @@ public class FoodstuffsParserTests
     }
 
     [Fact]
+    public void Derives_fsimg_image_url_from_the_sku_numeric_prefix()
+    {
+        var p = ParseFixture().First(x => x.SourceSku == "5349090-EA-000");
+        // fsimg is keyed by the prefix before the first dash (5349090), NOT the full SKU.
+        Assert.Equal("https://a.fsimg.co.nz/product/retail/fan/image/400x400/5349090.png", p.ImageUrl);
+    }
+
+    [Fact]
     public void Emits_one_product_per_category_tree()
     {
         // NZ Beef Prime Mince has two trees (Beef + Mince) → two entries with the same SKU.

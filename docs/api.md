@@ -90,6 +90,7 @@ The shared taxonomy as a nested tree, with product counts. The front-end builds 
   "id": "019ef1a2-8825-700e-bc5a-7927f3bd7e6d",
   "name": "100% Pure Goat's Milk Powder", "brand": "Healtheries", "size": "450g",
   "category": "UHT Milk & Milk Powder",     // canonical category leaf name (denormalized)
+  "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5005182.png",  // cheapest store's image
   "cheapestPrice": 37.19,                    // MIN across its stores
   "storeCount": 2,
   "onSpecialSomewhere": false,
@@ -107,11 +108,13 @@ The "where's it cheapest" view: one canonical product, every store's real listin
   "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
   "name": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
   "category": "Chicken Breast, Thighs & Tenders",
+  "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // representative (cheapest store's)
   "cheapestPrice": 8.99,
   "saving": 1.00,                            // dearest − cheapest across stores
   "prices": [
     { "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
       "storeName": "Boneless Skinless Chicken Breast",   // the store's OWN name for this item
+      "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // this store's image
       "price": 8.99, "isOnSpecial": false, "nonSpecialPrice": null,
       "unitPrice": 22.48, "unitOfMeasure": "1kg",
       "priceUpdatedAt": "2026-06-22T08:08:59+00:00", "priceAsOf": "2026-06-24T06:01:44+00:00" },
@@ -160,6 +163,7 @@ cheapest store. This is "show me the products in this category." `id` comes from
 [{
   "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
   "product": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
+  "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // cheapest store's image
   "originalName": "Boneless Skinless Chicken Breast",   // the cheapest store's own name
   "cheapestPrice": 8.99,
   "unitPrice": 22.48, "unit": "1kg",      // normalised comparable unit price; null if not comparable
@@ -184,6 +188,7 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
 ```json
 [{
   "product": "woolworths nz beef eye fillet grass fed", "brand": "woolworths nz",
+  "imageUrl": "https://assets.woolworths.com.au/images/2010/67807.jpg?...&w=200&h=200",
   "store": "Woolworths Takapuna", "supermarket": "Woolworths",
   "price": 63.99, "wasPrice": 78.99, "saving": 15.00,
   "unitPrice": 63.99, "unitOfMeasure": "1kg",
@@ -236,4 +241,10 @@ The whole flow is now backed end-to-end.
   (`null` when the store's unit can't be parsed).
 - **Not every StoreProduct is matched to a CanonicalProduct.** Unmatched listings still exist (with prices) but
   won't appear in same-product compare until the matcher links them.
+- **Product images (`imageUrl`).** Present on search, category, compare (top-level + per-store), and deals. On the
+  canonical/merged views it's the **cheapest store's** image; `/products/{id}` also gives each store's own under
+  `prices[].imageUrl`. Can be `null` if no store has one. Sources differ: **Woolworths** = its own CDN
+  (`assets.woolworths.com.au`, already sized ~200×200); **Foodstuffs** = the `a.fsimg.co.nz` CDN at `400x400` — for
+  Foodstuffs you can append **`?w=N`** for a smaller variant (e.g. `?w=200`), and imageless products resolve to a
+  generic placeholder image (a real 200 response, just not a photo — same as on the supermarket's own site).
 - **Prices are NZD.** `lastSeenAt` is UTC (ISO-8601).

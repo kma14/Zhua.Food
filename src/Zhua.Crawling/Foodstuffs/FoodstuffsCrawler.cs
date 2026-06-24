@@ -234,7 +234,7 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
             Brand = brand,
             Size = size,
             Gtin = null,        // Foodstuffs search API exposes no barcode (canonical match falls back to brand+name, D9)
-            ImageUrl = null,    // …and no image URL here (derive from fsimg CDN later)
+            ImageUrl = ImageUrlFor(sku), // not in the API — derived from the fsimg CDN (see ImageUrlFor)
             Category = path.Count > 0 ? path[^1].Name : null,
             CategoryPath = path,
             Tags = tags,
@@ -244,6 +244,20 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
             UnitPrice = unitPrice,
             UnitOfMeasure = unitOfMeasure,
         };
+
+    /// <summary>
+    /// Foodstuffs serves product photos from the fsimg CDN keyed by the productId's <b>numeric prefix</b> (the part
+    /// before the first <c>-</c>), NOT the full SKU — e.g. <c>5039995-KGM-000</c> → <c>…/image/400x400/5039995.png</c>
+    /// (the search API carries no image field, so we derive it). This is the exact URL the storefront's <c>img</c>
+    /// uses, so it's deterministic and free — no extra request, no GTIN. Products with no photo resolve to the CDN's
+    /// generic placeholder (just as they appear on the site); the front-end can append <c>?w=</c> for a resized variant.
+    /// </summary>
+    internal static string ImageUrlFor(string sku)
+    {
+        var dash = sku.IndexOf('-');
+        var id = dash > 0 ? sku[..dash] : sku;
+        return $"https://a.fsimg.co.nz/product/retail/fan/image/400x400/{id}.png";
+    }
 
     /// <summary>level0/1/2 → Department/Aisle/Shelf nodes. ExternalId = name (the source has no stable category id).</summary>
     private static IReadOnlyList<ScrapedCategoryNode> BuildPath(JsonElement tree)

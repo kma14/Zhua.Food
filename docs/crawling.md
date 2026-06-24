@@ -141,7 +141,7 @@ read each product's path(s). A product is emitted **once per category tree** who
 | `Brand` | `brand` | |
 | `Size` | `displayName` | |
 | `Gtin` | — | **none** — search API exposes no barcode → canonical match falls back to brand+name (D9) |
-| `ImageUrl` | — | **none** here (derive from fsimg CDN later) |
+| `ImageUrl` | **derived** from `productId` | not in the API; built as `https://a.fsimg.co.nz/product/retail/fan/image/400x400/{prefix}.png` where `prefix` = the digits before the first `-`. ⚠️ **prefix, not the full SKU** — `5039995-KGM-000` → `5039995.png`. Same URL the storefront uses; deterministic & free. No-photo products resolve to the CDN placeholder. |
 | `Price` (current) | `singlePrice.price / 100` | **⚠️ cents** — divide by 100. This is the **promo** price while on special |
 | `IsOnSpecial` | `promotions` is a non-empty array | **⚠️ implicit** — no boolean |
 | `NonSpecialPrice` (was) | **always `null`** at crawl time | **not published** → reconstructed in `ApplyObservation` (D23) |
@@ -150,8 +150,9 @@ read each product's path(s). A product is emitted **once per category tree** who
 | `CategoryPath` | `categoryTrees[].level0/1/2` | ExternalId = the **name** (source has no stable category id) |
 | promo `Tag` | `promotions[0].decal` (code) + `rewardType` (label) | e.g. `rewardType:NEW_PRICE` |
 
-**Quirks:** prices in **cents** everywhere. No GTIN, no image URL. A "special" only tells you the *current* promo
-price, never the original — the whole reason for the D23 reconstruction above.
+**Quirks:** prices in **cents** everywhere. No GTIN. The image URL is **not in the response** but is derived from
+the SKU prefix (see the `ImageUrl` row). A "special" only tells you the *current* promo price, never the original —
+the whole reason for the D23 reconstruction above.
 
 ---
 

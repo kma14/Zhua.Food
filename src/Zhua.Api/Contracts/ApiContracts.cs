@@ -7,6 +7,7 @@ public sealed record ProductSummary(
     string? Brand,
     string? Size,
     string Category,
+    string? ImageUrl,             // cheapest store's product image (Foodstuffs may resolve to a CDN placeholder)
     decimal? CheapestPrice,
     int StoreCount,
     bool OnSpecialSomewhere,
@@ -18,6 +19,7 @@ public sealed record StorePrice(
     string Supermarket,      // Woolworths | NewWorld | PaknSave (internally Domain enum Chain)
     string Suburb,
     string StoreName,        // the store's own RawName for this product
+    string? ImageUrl,        // this store's product image
     decimal? Price,
     bool IsOnSpecial,
     decimal? NonSpecialPrice,
@@ -33,6 +35,7 @@ public sealed record ProductComparison(
     string? Brand,
     string? Size,
     string Category,
+    string? ImageUrl,        // representative image (the cheapest store's)
     decimal? CheapestPrice,
     decimal? Saving,         // dearest − cheapest across stores
     IReadOnlyList<StorePrice> Prices);
@@ -43,6 +46,7 @@ public sealed record CategoryProduct(
     string Product,            // canonical/display name
     string? Brand,
     string? Size,
+    string? ImageUrl,          // the cheapest store's product image
     string? OriginalName,      // the cheapest store's own raw name
     decimal? CheapestPrice,    // lowest shelf price across its stores
     decimal? UnitPrice,        // normalised comparable unit price (per kg/L/ea); null if not comparable
@@ -58,6 +62,7 @@ public sealed record CategoryProduct(
 public sealed record DealItem(
     string Product,
     string? Brand,
+    string? ImageUrl,        // this store's product image
     string Store,
     string Supermarket,
     decimal? Price,
