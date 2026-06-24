@@ -29,7 +29,7 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 | `Zhua.Domain` | Entities + enums. No external deps. |
 | `Zhua.Application` | Use cases + service/repository interfaces. |
 | `Zhua.Infrastructure` | EF Core `DbContext`, configs, migrations, store seed. |
-| `Zhua.Crawling` | Per-store crawlers. |
+| `Zhua.Crawling` | Per-store crawlers. **Source-field → our-field mappings + the fragile special/was-price logic: [docs/crawling.md](docs/crawling.md).** |
 | `Zhua.Api` | Query REST API (read) + admin match-review writes (D20). Never crawls or migrates. **Front-end API reference: [docs/api.md](docs/api.md).** |
 | `Zhua.Worker` | Ingestion — Quartz schedule + crawlers. |
 | `Zhua.Migrator` | One-shot migration runner. |
@@ -45,7 +45,7 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 - **Raw archive (D12):** crawlers archive every raw response to disk (default-on, 7-day self-pruning). Don't remove it — the parsed DB keeps only mapped fields, so the archive is the only way to recover/debug source data. Dir is git-ignored (`crawl-archive/`).
 - **Canonical matching (D9) is a core feature, done offline (R3):** `StoreProduct.CanonicalProductId` is nullable and matching never blocks ingestion. GTIN-first — capture `Gtin` at crawl time. `Category` must be **fine-grained** ("Chicken Breast", not "Chicken").
 - **Canonical category (D22) is the cross-store browse taxonomy.** `StoreCategory` (D11) is **per-store** (each banner's own tree) and trees don't compare across stores; `CanonicalCategory` is the **single shared tree** the UI selects/filters by. It's seeded from the **Foodstuffs taxonomy** (NW+PAK share it → covers every canonical product, since every canonical has a Foodstuffs member). `CanonicalCategoryMapper` (offline, in `AddMatching`) runs **right after the matcher** in both the `match` CLI and the scheduled `IngestionJob` — keep that order (it needs canonicals to exist). Foodstuffs maps by identity, other banners by exact (kind, slug) name (best-effort); `CanonicalProduct.Category` stays as the denormalized leaf-name display, `CanonicalCategoryId` is the structured link.
-- **Crawlers (D2):** Playwright for all 3 stores; **parse the page's intercepted JSON, not the DOM**. Store context = geolocation (lat/long). Cadence is config-driven, default **twice-daily** (R6/D7); crawl stores sequentially and politely. Woolworths = browse-API per category (D10); New World + PAK'nSAVE = shared `FoodstuffsCrawler` (D15), one base class, subclasses differ only by domain + departments.
+- **Crawlers (D2):** Playwright for all 3 stores; **parse the page's intercepted JSON, not the DOM**. Store context = geolocation (lat/long). Cadence is config-driven, default **twice-daily** (R6/D7); crawl stores sequentially and politely. Woolworths = browse-API per category (D10); New World + PAK'nSAVE = shared `FoodstuffsCrawler` (D15), one base class, subclasses differ only by domain + departments. **The exact per-chain source-field → our-field mappings, the (fragile, different-per-chain) special/was-price signals, and a "when a site changes" playbook live in [docs/crawling.md](docs/crawling.md) — read/update it before touching a crawler.**
 - **One crawler per chain, registered in `Worker/Program.cs`** (`AddSingleton<IStoreCrawler, …>`); the orchestrator picks by `Store.Chain`. The Worker also has a throwaway `recon <url>` command (headed, dumps every JSON response + request headers/body) for reverse-engineering a new store's API.
 
 ## Dev workflow
