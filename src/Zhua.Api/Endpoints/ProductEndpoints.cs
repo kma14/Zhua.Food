@@ -69,6 +69,37 @@ public static class ProductEndpoints
             return Results.Ok(new ProductComparison(c.Id, c.Name, c.Brand, c.Size, c.Category, cheapest, saving, prices));
         });
 
+        // Price history: one step-series per store (change-only snapshots, D3). ?days=N caps the range.
+        // Sparse by design — each point is a real price change; render as a step line (price holds until next).
+        group.MapGet("/{id:guid}/price-history", async (Guid id, ZhuaDbContext db, int? days) =>
+        {
+            var c = await db.CanonicalProducts.FirstOrDefaultAsync(x => x.Id == id);
+            if (c is null) return Results.NotFound();
+
+            var since = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : DateTimeOffset.MinValue;
+
+            var rows = await db.StoreProducts
+                .Where(sp => sp.CanonicalProductId == id)
+                .Select(sp => new
+                {
+                    sp.Store.Name, sp.Store.Chain, sp.Store.Suburb,
+                    Points = sp.PriceSnapshots
+                        .Where(ps => ps.CapturedAt >= since)
+                        .OrderBy(ps => ps.CapturedAt)
+                        .Select(ps => new PriceHistoryPoint(ps.CapturedAt, ps.Price, ps.IsOnSpecial, ps.NonSpecialPrice, ps.UnitPrice))
+                        .ToList(),
+                })
+                .ToListAsync();
+
+            var stores = rows
+                .Where(r => r.Points.Count > 0)
+                .OrderBy(r => r.Name)
+                .Select(r => new StorePriceHistory(r.Name, r.Chain.ToString(), r.Suburb, r.Points))
+                .ToList();
+
+            return Results.Ok(new ProductPriceHistory(c.Id, c.Name, c.Brand, c.Size, stores));
+        });
+
         return app;
     }
 }

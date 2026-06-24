@@ -68,6 +68,29 @@ public sealed record DealItem(
     DateTimeOffset? PriceUpdatedAt,   // when this special's price last changed
     DateTimeOffset PriceAsOf);        // when last confirmed in a crawl
 
+/// <summary>One observed price change for a store product (a <c>PriceSnapshot</c>, change-only — D3).</summary>
+public sealed record PriceHistoryPoint(
+    DateTimeOffset Date,       // CapturedAt — when this price took effect
+    decimal? Price,
+    bool IsOnSpecial,
+    decimal? WasPrice,         // NonSpecialPrice at the time (null for Foodstuffs — not published)
+    decimal? UnitPrice);
+
+/// <summary>One store's price history for a product — a step series (price holds until the next point).</summary>
+public sealed record StorePriceHistory(
+    string Store,
+    string Supermarket,
+    string Suburb,
+    IReadOnlyList<PriceHistoryPoint> Points);
+
+/// <summary>A product's price history across stores (one series per store).</summary>
+public sealed record ProductPriceHistory(
+    Guid Id,
+    string Name,
+    string? Brand,
+    string? Size,
+    IReadOnlyList<StorePriceHistory> Stores);
+
 /// <summary>A node in the shared canonical category tree (D22) — Department → Aisle → Shelf.</summary>
 public sealed record CategoryNode(
     Guid Id,

@@ -122,6 +122,28 @@ The "where's it cheapest" view: one canonical product, every store's real listin
 
 > **`supermarket`** = the store group (`Woolworths` | `NewWorld` | `PaknSave`). (Was `chain`.)
 
+### `GET /products/{id}/price-history` — price over time, per store
+
+One **step series per store** from the change-only snapshots (D3). Optional `?days=N` caps the range.
+
+**Response:** `ProductPriceHistory`:
+```json
+{
+  "id": "019ef1a2-880e-780a…", "name": "Mandarins", "brand": null, "size": null,
+  "stores": [
+    { "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
+      "points": [
+        { "date": "2026-06-22T…", "price": 3.49, "isOnSpecial": true, "wasPrice": null, "unitPrice": … },
+        { "date": "2026-06-23T…", "price": 2.99, "isOnSpecial": true, "wasPrice": null, "unitPrice": … },
+        { "date": "2026-06-24T…", "price": 3.49, "isOnSpecial": true, "wasPrice": null, "unitPrice": … }
+      ] }
+  ]
+}
+```
+> **Render as a step line** — points are **sparse by design** (each one is a real price *change*; the price holds
+> until the next point), not evenly spaced. History is **short for now** (crawling started recently) and grows
+> with each twice-daily crawl. `wasPrice` is `null` for Foodstuffs (not published — see /deals note).
+
 ### `GET /categories/{id}/products` — products inside a category (D22)
 
 The products under a category node (its **whole subtree**), each **merged across stores** and shown at its
@@ -192,6 +214,7 @@ The only **writes** the API makes (touch already-ingested data; no crawl/migrate
 | 1 | Category navigation | `GET /categories` (`?kind=aisle` for a menu) |
 | 2 | Products inside a chosen category | `GET /categories/{id}/products` (or `GET /products?category={id}`) |
 | 3 | Click a product → per-store prices | `GET /products/{id}` |
+| — | Price chart for a product | `GET /products/{id}/price-history` |
 | — | A search box | `GET /products/search?q=` |
 | — | A deals page | `GET /deals` |
 
