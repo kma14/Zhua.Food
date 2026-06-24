@@ -54,6 +54,27 @@ NZ), so `priceAsOf` is at most ~12h old.
 | GET | `/health` | `{ "status": "ok", "service": "zhua.api" }` |
 | GET | `/health/db` | `{ "db": "up" }` or `503` |
 
+### `GET /stores` — the physical stores we track
+
+The active stores (M1 = 7). For store pickers, a map, and to qualify the store names that appear in comparisons.
+
+**Query:** `?supermarket=Woolworths|NewWorld|PaknSave` (optional). Returns **active stores only**.
+
+**Response:** `StoreView[]` (ordered by supermarket, then name):
+```json
+[{
+  "id": "33333333-3333-3333-3333-333333333333",
+  "supermarket": "PaknSave",
+  "name": "PAK'nSAVE Albany",
+  "suburb": "Albany",
+  "latitude": -36.73, "longitude": 174.7067,
+  "productCount": 2329,                          // priced listings we currently hold for this store
+  "lastCrawledAt": "2026-06-24T10:28:00+00:00"   // last successful crawl finish (freshness); null if never crawled
+}]
+```
+> Woolworths runs **1 active store** (Takapuna) — it's nationally priced so branches are identical (D16). The
+> `store`/`supermarket`/`suburb` fields on product responses line up with these.
+
 ### `GET /categories` — the canonical category tree (D22)
 
 The shared taxonomy as a nested tree, with product counts. The front-end builds its category navigation from this.
@@ -219,6 +240,7 @@ The only **writes** the API makes (touch already-ingested data; no crawl/migrate
 
 | Step | UI shows | Call |
 |---|---|---|
+| 0 | Store list / picker / map | `GET /stores` |
 | 1 | Category navigation | `GET /categories` (`?kind=aisle` for a menu) |
 | 2 | Products inside a chosen category | `GET /categories/{id}/products` (or `GET /products?category={id}`) |
 | 3 | Click a product → per-store prices | `GET /products/{id}` |

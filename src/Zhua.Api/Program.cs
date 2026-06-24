@@ -26,6 +26,7 @@ app.MapGet("/health/db", async (ZhuaDbContext db) =>
         ? Results.Ok(new { db = "up" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
+app.MapStoreEndpoints();     // /stores (the physical stores we track)
 app.MapCategoryEndpoints();  // /categories (canonical category tree, D22)
 app.MapProductEndpoints();   // /products/search, /products/{id} (compare)
 app.MapDealEndpoints();      // /deals

@@ -107,6 +107,17 @@ public sealed record CategoryNode(
     int TotalProductCount,   // including all descendants (useful at Department/Aisle level)
     IReadOnlyList<CategoryNode> Children);
 
+/// <summary>A physical store the app tracks prices for (active stores only).</summary>
+public sealed record StoreView(
+    Guid Id,
+    string Supermarket,      // Woolworths | NewWorld | PaknSave
+    string Name,             // the store's display name, e.g. "PAK'nSAVE Albany"
+    string Suburb,
+    double Latitude,
+    double Longitude,
+    int ProductCount,                  // priced listings we currently hold for this store
+    DateTimeOffset? LastCrawledAt);    // when this store last finished a successful crawl (freshness)
+
 /// <summary>A pending cross-store match awaiting review (the queue).</summary>
 public sealed record MatchCandidateView(
     Guid Id,
