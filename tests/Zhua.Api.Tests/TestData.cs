@@ -35,6 +35,12 @@ internal static class TestData
     public static readonly Guid CandidateForList = new("cccc0000-0000-0000-0000-000000000001");
     public static readonly Guid CandidateToApprove = new("cccc0000-0000-0000-0000-000000000002");
     public static readonly Guid CandidateToReject = new("cccc0000-0000-0000-0000-000000000003");
+    public static readonly Guid CandidateOnLinkTarget = new("cccc0000-0000-0000-0000-000000000004");
+    public static readonly Guid CandidateOnCreateTarget = new("cccc0000-0000-0000-0000-000000000005");
+
+    // Dedicated unmatched listings for the manual link / create-canonical actions.
+    public static readonly Guid LinkTargetSp = new("dddd0000-0000-0000-0000-000000000001");
+    public static readonly Guid CreateTargetSp = new("dddd0000-0000-0000-0000-000000000002");
 
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-06-24T06:00:00Z");
 
@@ -91,11 +97,29 @@ internal static class TestData
             Sp(StoreSeed.PaknSaveHighlandPark, "unmatched-3", "Beef Mince Basic 1kg", 9.50m, canonicalId: null));
         await db.SaveChangesAsync();
 
+        // Two more unmatched listings (fixed ids) for the manual link / create-canonical actions.
+        db.StoreProducts.AddRange(
+            new StoreProduct
+            {
+                Id = LinkTargetSp, StoreId = StoreSeed.WoolworthsTakapuna, SourceSku = "link-target",
+                RawName = "Link Me 1kg", CurrentPrice = 5.00m, UnitPrice = 5.00m, UnitOfMeasure = "1kg",
+                FirstSeenAt = Now, LastSeenAt = Now,
+            },
+            new StoreProduct
+            {
+                Id = CreateTargetSp, StoreId = StoreSeed.NewWorldMetro, SourceSku = "create-target",
+                RawName = "Create Me 500g", RawBrand = "Acme", RawSize = "500g",
+                CurrentPrice = 6.00m, UnitPrice = 12.00m, UnitOfMeasure = "1kg", FirstSeenAt = Now, LastSeenAt = Now,
+            });
+        await db.SaveChangesAsync();
+
         Guid SpId(string sku) => db.StoreProducts.Single(sp => sp.SourceSku == sku).Id;
         db.MatchCandidates.AddRange(
             Candidate(CandidateForList, SpId("unmatched-1"), 0.60),
             Candidate(CandidateToApprove, SpId("unmatched-2"), 0.55),
-            Candidate(CandidateToReject, SpId("unmatched-3"), 0.50));
+            Candidate(CandidateToReject, SpId("unmatched-3"), 0.50),
+            Candidate(CandidateOnLinkTarget, LinkTargetSp, 0.40),
+            Candidate(CandidateOnCreateTarget, CreateTargetSp, 0.40));
         await db.SaveChangesAsync();
     }
 

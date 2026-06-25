@@ -266,7 +266,7 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 - ✅ **`?storeId=` store filter** (repeatable list) on `/categories`, `/categories/{id}/products`, `/products?category=`, `/products/search` — scopes results to the shopper's chosen stores and recomputes price/count within them (Foodstuffs is per-branch priced, D16); ids from `/stores`
 - ✅ Product images: `imageUrl` on search/category/compare/deals — Woolworths CDN + Foodstuffs fsimg derived (D24)
 - ✅ `GET /deals?supermarket=` (current specials, biggest saving first; was-price reconstructed for NW/PAK — D23)
-- ✅ `GET /admin/match-candidates` + `POST .../{id}/approve` · `.../{id}/reject` (review queue write)
+- ✅ `GET /admin/match-candidates` (+`storeProductId`/`candidateCanonicalId`) + `POST .../{id}/approve` · `.../{id}/reject`; plus `POST /admin/store-products/{id}/link-canonical` (link to an existing canonical) and `.../create-canonical` (mint a new one) — the 3 reviewer outcomes when candidates don't fit (Codex UI feedback)
 - ✅ `GET /health` + `GET /health/db`
 - ✅ Renamed the API-facing `chain` field/param → **`supermarket`** (Domain enum `Chain` stays internal); added price dates (`priceAsOf` = LastSeenAt, `priceUpdatedAt` = D3 change time) on every priced response. Front-end reference kept current in [docs/api.md](docs/api.md).
 - ✅ **Api integration tests** (`tests/Zhua.Api.Tests`, 27) — `WebApplicationFactory<Program>` + **Testcontainers** Postgres, migrated + seeded with a known fixture; covers every endpoint (happy path, `?storeId=`/`?supermarket=` filters, price math, images, 400/404, admin approve/reject). DbContext swapped to the container via `ConfigureTestServices` (not config) so the dev DB is never touched.

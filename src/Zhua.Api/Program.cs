@@ -31,6 +31,7 @@ app.MapCategoryEndpoints();  // /categories (canonical category tree, D22)
 app.MapProductEndpoints();   // /products/search, /products/{id} (compare)
 app.MapDealEndpoints();      // /deals
 app.MapMatchReviewEndpoints(); // /admin/match-candidates (+ approve/reject)
+app.MapStoreProductAdminEndpoints(); // /admin/store-products/{id}/link-canonical | create-canonical
 
 app.Run();
 

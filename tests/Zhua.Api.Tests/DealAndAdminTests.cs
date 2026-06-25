@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Zhua.Api.Contracts;
 
 namespace Zhua.Api.Tests;
@@ -50,6 +51,68 @@ public class DealAndAdminTests(ApiFactory factory)
         var c = items!.Single(m => m.Id == TestData.CandidateForList);
         Assert.Equal("Beef Mince Premium 1kg", c.StoreProductName);
         Assert.Equal("Woolworths", c.Supermarket);
+        Assert.NotEqual(Guid.Empty, c.StoreProductId);        // exposed for the link/create-canonical actions
+        Assert.Equal(TestData.MatchTarget, c.CandidateCanonicalId);
+    }
+
+    [Fact]
+    public async Task Link_canonical_links_the_listing_and_clears_its_candidates()
+    {
+        var res = await _client.PostAsJsonAsync(
+            $"/admin/store-products/{TestData.LinkTargetSp}/link-canonical",
+            new LinkCanonicalRequest(TestData.MatchTarget));
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var queue = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        Assert.DoesNotContain(queue!, m => m.Id == TestData.CandidateOnLinkTarget);
+    }
+
+    [Fact]
+    public async Task Link_canonical_unknown_store_product_is_404()
+    {
+        var res = await _client.PostAsJsonAsync(
+            $"/admin/store-products/{Guid.NewGuid()}/link-canonical",
+            new LinkCanonicalRequest(TestData.MatchTarget));
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Link_canonical_unknown_canonical_is_404()
+    {
+        var res = await _client.PostAsJsonAsync(
+            $"/admin/store-products/{TestData.LinkTargetSp}/link-canonical",
+            new LinkCanonicalRequest(Guid.NewGuid()));
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_canonical_mints_a_new_canonical_links_it_and_clears_candidates()
+    {
+        var res = await _client.PostAsJsonAsync(
+            $"/admin/store-products/{TestData.CreateTargetSp}/create-canonical",
+            new CreateCanonicalRequest(null, null, null, null));
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var newId = (await res.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("canonicalProductId").GetGuid();
+        Assert.NotEqual(Guid.Empty, newId);
+
+        // The new canonical defaults its name from the listing, so it's now findable + linked.
+        var hits = await _client.GetFromJsonAsync<List<ProductSummary>>("/products/search?q=create me");
+        var created = hits!.Single(p => p.Id == newId);
+        Assert.Equal(6.00m, created.CheapestPrice);
+
+        var queue = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        Assert.DoesNotContain(queue!, m => m.Id == TestData.CandidateOnCreateTarget);
+    }
+
+    [Fact]
+    public async Task Create_canonical_unknown_store_product_is_404()
+    {
+        var res = await _client.PostAsJsonAsync(
+            $"/admin/store-products/{Guid.NewGuid()}/create-canonical",
+            new CreateCanonicalRequest(null, null, null, null));
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 
     [Fact]

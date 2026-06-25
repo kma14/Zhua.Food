@@ -121,11 +121,19 @@ public sealed record StoreView(
 /// <summary>A pending cross-store match awaiting review (the queue).</summary>
 public sealed record MatchCandidateView(
     Guid Id,
+    Guid StoreProductId,             // the listing under review — target of the link/create-canonical actions
     string StoreProductName,
     string? Brand,
     string? Size,
     string Supermarket,
     decimal? Price,
+    Guid CandidateCanonicalId,       // the proposed canonical's id (for "approve", or to pre-fill a manual link)
     string CandidateCanonical,
     double Score,
     string? Reason);
+
+/// <summary>Manually link a store product to an existing canonical (when no candidate is right but another fits).</summary>
+public sealed record LinkCanonicalRequest(Guid CanonicalProductId);
+
+/// <summary>Create a new canonical from a store product and link it. All fields optional — default from the listing.</summary>
+public sealed record CreateCanonicalRequest(string? Name, string? Brand, string? Size, string? Category);

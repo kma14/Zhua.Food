@@ -236,17 +236,30 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
 > the product has no recoverable was-price and stays out of `/deals` until it re-prices. Woolworths publishes its
 > own was-price, so it's never affected. (Early on, expect mostly Woolworths until NW/PAK specials turn over.)
 
-### Admin — match review queue (D18)
+### Admin — match review (D18)
 
 The only **writes** the API makes (touch already-ingested data; no crawl/migrate). No auth yet — local/admin only.
+
+A reviewer looks at an unmatched/ambiguous listing (`StoreProduct`) and resolves it one of three ways:
+
+| Situation | Action |
+|---|---|
+| A proposed candidate is correct | **approve** it |
+| No candidate fits, but the listing **is** another existing canonical | **link** it to that canonical |
+| No candidate fits, and it's genuinely a **new** product | **create** a canonical from it |
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/admin/match-candidates` | pending queue, highest-confidence first (`page`,`size`). `MatchCandidateView[]` |
-| POST | `/admin/match-candidates/{id}/approve` | link the product to the canonical; clears its sibling candidates |
+| POST | `/admin/match-candidates/{id}/approve` | link the listing to the candidate's canonical; clears its sibling candidates |
 | POST | `/admin/match-candidates/{id}/reject` | matcher won't propose this pair again |
+| POST | `/admin/store-products/{id}/link-canonical` | body `{ "canonicalProductId": "…" }` — link the listing to an **existing** canonical; clears its pending candidates. `404` if the listing or canonical is unknown |
+| POST | `/admin/store-products/{id}/create-canonical` | body (all optional) `{ "name?", "brand?", "size?", "category?" }` — create a **new** canonical from the listing (defaults from its raw fields + finest store category) and link it; clears its pending candidates. Returns `{ canonicalProductId }`. `404` if the listing is unknown |
 
-`MatchCandidateView`: `{ id, storeProductName, brand, size, supermarket, price, candidateCanonical, score, reason }`.
+`MatchCandidateView`: `{ id, storeProductId, storeProductName, brand, size, supermarket, price, candidateCanonicalId, candidateCanonical, score, reason }`.
+
+> Use `storeProductId` (and `candidateCanonicalId`) from the queue to drive the link/create actions. To find a
+> canonical to **link** to, search the catalogue with [`GET /products/search?q=`](#get-productssearchq--search-canonical-products-by-namebrand) and use the result's `id`.
 
 ---
 

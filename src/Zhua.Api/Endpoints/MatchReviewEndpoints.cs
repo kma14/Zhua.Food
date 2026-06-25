@@ -26,9 +26,9 @@ public static class MatchReviewEndpoints
                 .OrderByDescending(m => m.Score).ThenBy(m => m.StoreProduct.RawName)
                 .Skip((page - 1) * size).Take(size)
                 .Select(m => new MatchCandidateView(
-                    m.Id, m.StoreProduct.RawName, m.StoreProduct.RawBrand, m.StoreProduct.RawSize,
+                    m.Id, m.StoreProductId, m.StoreProduct.RawName, m.StoreProduct.RawBrand, m.StoreProduct.RawSize,
                     m.StoreProduct.Store.Chain.ToString(), m.StoreProduct.CurrentPrice,
-                    m.CanonicalProduct.Name, m.Score, m.Reason))
+                    m.CanonicalProductId, m.CanonicalProduct.Name, m.Score, m.Reason))
                 .ToListAsync();
 
             return Results.Ok(items);
