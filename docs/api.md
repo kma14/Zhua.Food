@@ -44,6 +44,18 @@ On list/merged views (`/categories/{id}/products`, `/products?category=`) these 
 dates. `ProductSummary` (search) carries only `priceAsOf`. Prices update on the **twice-daily** crawl (6am/6pm
 NZ), so `priceAsOf` is at most ~12h old.
 
+### Filtering by store (`?storeId=`)
+
+Product-discovery endpoints take an optional **`storeId`** filter so the UI can scope everything to the stores a
+shopper actually uses (e.g. their nearby branches). The ids come from [`GET /stores`](#get-stores--the-physical-stores-we-track).
+
+- **Repeatable** → a list: `?storeId=<a>&storeId=<b>` means "available at store **a or b**".
+- Applies to **`GET /categories`**, **`GET /categories/{id}/products`** ≡ **`GET /products?category=`**, and **`GET /products/search`**.
+- When set, a product is included only if it's sold at one of those stores, and **`cheapestPrice` / `storeCount` /
+  `onSpecial` / counts are recomputed over just the selected stores** — not globally. This matters because
+  Foodstuffs branches are **independently priced** (D16), so "cheapest at *my* PAK'nSAVE" ≠ "cheapest anywhere".
+- Omit it for the all-stores view. An unknown id simply matches nothing; a malformed id → `400`.
+
 ---
 
 ## Endpoints
@@ -80,6 +92,7 @@ The active stores (M1 = 7). For store pickers, a map, and to qualify the store n
 The shared taxonomy as a nested tree, with product counts. The front-end builds its category navigation from this.
 
 **Query:** `?kind=department` (top level only) · `?kind=aisle` (two levels) · *(omit)* = full tree incl. shelves.
+Optional **`?storeId=`** (repeatable) — counts then reflect only products sold at those stores (see [Filtering by store](#filtering-by-store-storeid)).
 
 **Response:** array of root nodes (Departments), each:
 ```json
@@ -103,7 +116,7 @@ The shared taxonomy as a nested tree, with product counts. The front-end builds 
 
 ### `GET /products/search?q=` — search canonical products by name/brand
 
-**Query:** `q` (required), `page`, `size`.
+**Query:** `q` (required), `page`, `size`, optional **`?storeId=`** (repeatable — restrict to those stores; see [Filtering by store](#filtering-by-store-storeid)).
 
 **Response:** `ProductSummary[]`:
 ```json
@@ -177,7 +190,8 @@ cheapest store. This is "show me the products in this category." `id` comes from
 > **Two equivalent URLs (same data):** `GET /categories/{id}/products` (sub-resource) and
 > `GET /products?category={id}` (filter on the products resource). Use whichever fits the call site.
 
-**Query:** `sort=unitPrice` (default — comparable per kg/L/ea, nulls last) `| price` (raw cheapest); `page`, `size`.
+**Query:** `sort=unitPrice` (default — comparable per kg/L/ea, nulls last) `| price` (raw cheapest); `page`, `size`;
+optional **`?storeId=`** (repeatable — restrict to those stores, priced within them; see [Filtering by store](#filtering-by-store-storeid)).
 
 **Response:** `CategoryProduct[]`:
 ```json

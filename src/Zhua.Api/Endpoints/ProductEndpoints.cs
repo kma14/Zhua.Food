@@ -12,17 +12,20 @@ public static class ProductEndpoints
 
         // Products filtered by canonical category (?category={id}). Same data + shape as
         // GET /categories/{id}/products — this is the "filter on the products resource" form.
-        group.MapGet("/", async (Guid? category, ZhuaDbContext db, string sort = "unitPrice", int page = 1, int size = 20) =>
+        // Optional ?storeId= (repeatable) restricts to products sold at the given stores, priced within them.
+        group.MapGet("/", async (Guid? category, ZhuaDbContext db, Guid[]? storeId, string sort = "unitPrice", int page = 1, int size = 20) =>
         {
             if (category is null)
                 return Results.BadRequest(new { error = "query parameter 'category' is required" });
 
-            var items = await CategoryProductQuery.RunAsync(db, category.Value, sort, page, size);
+            var items = await CategoryProductQuery.RunAsync(db, category.Value, sort, page, size, storeId);
             return items is null ? Results.NotFound() : Results.Ok(items);
         });
 
         // Search canonical products by name or brand.
-        group.MapGet("/search", async (string? q, ZhuaDbContext db, int page = 1, int size = 20) =>
+        // Optional ?storeId= (repeatable) restricts to products sold at the given stores; price/count are then
+        // computed over just those stores (ids come from GET /stores).
+        group.MapGet("/search", async (string? q, ZhuaDbContext db, Guid[]? storeId, int page = 1, int size = 20) =>
         {
             if (string.IsNullOrWhiteSpace(q))
                 return Results.BadRequest(new { error = "query parameter 'q' is required" });
@@ -30,19 +33,22 @@ public static class ProductEndpoints
             size = Math.Clamp(size, 1, 100);
             page = Math.Max(page, 1);
             var like = $"%{q.Trim()}%";
+            var hasStoreFilter = storeId is { Length: > 0 };
 
             var items = await db.CanonicalProducts
                 .Where(c => EF.Functions.ILike(c.Name, like) || (c.Brand != null && EF.Functions.ILike(c.Brand, like)))
+                .Where(c => !hasStoreFilter || c.StoreProducts.Any(sp => sp.CurrentPrice != null && storeId!.Contains(sp.StoreId)))
                 .OrderBy(c => c.Name)
                 .Skip((page - 1) * size).Take(size)
                 .Select(c => new ProductSummary(
                     c.Id, c.Name, c.Brand, c.Size, c.Category,
-                    c.StoreProducts.Where(sp => sp.CurrentPrice != null)
+                    c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
                         .OrderBy(sp => sp.CurrentPrice).Select(sp => sp.ImageUrl).FirstOrDefault(),
-                    c.StoreProducts.Where(sp => sp.CurrentPrice != null).Min(sp => sp.CurrentPrice),
-                    c.StoreProducts.Count,
-                    c.StoreProducts.Any(sp => sp.IsOnSpecial),
-                    c.StoreProducts.Where(sp => sp.CurrentPrice != null)
+                    c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
+                        .Min(sp => sp.CurrentPrice),
+                    c.StoreProducts.Count(sp => !hasStoreFilter || storeId!.Contains(sp.StoreId)),
+                    c.StoreProducts.Any(sp => sp.IsOnSpecial && (!hasStoreFilter || storeId!.Contains(sp.StoreId))),
+                    c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
                         .OrderBy(sp => sp.CurrentPrice).Select(sp => (DateTimeOffset?)sp.LastSeenAt).FirstOrDefault()))
                 .ToListAsync();
 

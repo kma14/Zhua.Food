@@ -13,14 +13,20 @@ public static class CategoryEndpoints
         // The shared canonical category tree (D22): Department → Aisle → Shelf, with product counts.
         // The front-end uses this to build category navigation. Optional ?kind= caps the depth returned
         // (Department = top level only, Aisle = two levels) so a nav menu can fetch just what it needs.
-        group.MapGet("/", async (ZhuaDbContext db, string? kind) =>
+        // Optional ?storeId= (repeatable) restricts the counts to products sold at the given stores, so the nav
+        // can reflect "what's available at my stores" (ids come from GET /stores).
+        group.MapGet("/", async (ZhuaDbContext db, string? kind, Guid[]? storeId) =>
         {
+            var storeIds = storeId;
+            var hasStoreFilter = storeIds is { Length: > 0 };
+
             var cats = await db.CanonicalCategories
                 .Select(c => new { c.Id, c.Kind, c.Name, c.Slug, c.Path, c.ParentId })
                 .ToListAsync();
 
             var counts = await db.CanonicalProducts
-                .Where(p => p.CanonicalCategoryId != null)
+                .Where(p => p.CanonicalCategoryId != null
+                    && (!hasStoreFilter || p.StoreProducts.Any(sp => sp.CurrentPrice != null && storeIds!.Contains(sp.StoreId))))
                 .GroupBy(p => p.CanonicalCategoryId!.Value)
                 .Select(g => new { Id = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Id, x => x.Count);
@@ -57,10 +63,11 @@ public static class CategoryEndpoints
 
         // Products inside a category node (its whole subtree), each merged across stores and shown at its
         // cheapest store. ?sort=unitPrice (default, comparable per-kg/L/ea, nulls last) | price (raw cheapest).
+        // Optional ?storeId= (repeatable) restricts to products sold at the given stores, priced within them.
         // Same data as GET /products?category={id} (shared query).
-        group.MapGet("/{id:guid}/products", async (Guid id, ZhuaDbContext db, string sort = "unitPrice", int page = 1, int size = 20) =>
+        group.MapGet("/{id:guid}/products", async (Guid id, ZhuaDbContext db, Guid[]? storeId, string sort = "unitPrice", int page = 1, int size = 20) =>
         {
-            var items = await CategoryProductQuery.RunAsync(db, id, sort, page, size);
+            var items = await CategoryProductQuery.RunAsync(db, id, sort, page, size, storeId);
             return items is null ? Results.NotFound() : Results.Ok(items);
         });
 

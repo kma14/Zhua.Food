@@ -263,6 +263,7 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 - ✅ `GET /products/{id}/price-history` — per-store step series from the D3 snapshots (`?days=N`)
 - ✅ `GET /stores` (active stores: supermarket, suburb, geo, product count, last-crawl freshness; `?supermarket=` filter)
 - ✅ `GET /categories` (canonical tree, D22, `?kind=department|aisle` depth cap) + `GET /categories/{id}/products` ≡ `GET /products?category={id}` (merged-across-stores, cheapest store, normalised unit price)
+- ✅ **`?storeId=` store filter** (repeatable list) on `/categories`, `/categories/{id}/products`, `/products?category=`, `/products/search` — scopes results to the shopper's chosen stores and recomputes price/count within them (Foodstuffs is per-branch priced, D16); ids from `/stores`
 - ✅ Product images: `imageUrl` on search/category/compare/deals — Woolworths CDN + Foodstuffs fsimg derived (D24)
 - ✅ `GET /deals?supermarket=` (current specials, biggest saving first; was-price reconstructed for NW/PAK — D23)
 - ✅ `GET /admin/match-candidates` + `POST .../{id}/approve` · `.../{id}/reject` (review queue write)

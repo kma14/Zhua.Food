@@ -13,11 +13,14 @@ namespace Zhua.Api.Endpoints;
 internal static class CategoryProductQuery
 {
     /// <returns><c>null</c> if the category id doesn't exist; otherwise the requested page.</returns>
+    /// <param name="storeIds">If non-empty, restrict to products sold at these stores; price/cheapest/count
+    /// are then computed over just those stores (D16 — Foodstuffs branches are independently priced).</param>
     public static async Task<List<CategoryProduct>?> RunAsync(
-        ZhuaDbContext db, Guid categoryId, string sort, int page, int size)
+        ZhuaDbContext db, Guid categoryId, string sort, int page, int size, IReadOnlyList<Guid>? storeIds = null)
     {
         size = Math.Clamp(size, 1, 100);
         page = Math.Max(page, 1);
+        var hasStoreFilter = storeIds is { Count: > 0 };
 
         var cats = await db.CanonicalCategories.Select(c => new { c.Id, c.ParentId }).ToListAsync();
         if (cats.All(c => c.Id != categoryId)) return null;
@@ -39,11 +42,13 @@ internal static class CategoryProductQuery
             .Select(cp => new
             {
                 cp.Id, cp.Name, cp.Brand, cp.Size,
-                Stores = cp.StoreProducts.Where(sp => sp.CurrentPrice != null).Select(sp => new
-                {
-                    sp.CurrentPrice, sp.UnitPrice, sp.UnitOfMeasure, sp.RawName, sp.IsOnSpecial, sp.ImageUrl,
-                    StoreName = sp.Store.Name, sp.Store.Chain, sp.PriceUpdatedAt, sp.LastSeenAt,
-                }).ToList(),
+                Stores = cp.StoreProducts
+                    .Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeIds!.Contains(sp.StoreId)))
+                    .Select(sp => new
+                    {
+                        sp.CurrentPrice, sp.UnitPrice, sp.UnitOfMeasure, sp.RawName, sp.IsOnSpecial, sp.ImageUrl,
+                        StoreName = sp.Store.Name, sp.Store.Chain, sp.PriceUpdatedAt, sp.LastSeenAt,
+                    }).ToList(),
             })
             .ToListAsync();
 
