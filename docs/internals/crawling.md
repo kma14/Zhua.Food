@@ -5,8 +5,8 @@ If a site changes a key, a unit, or how it signals a special, ingestion silently
 special, empty category) **without** throwing. This file is the contract we depend on — when a crawl looks wrong,
 start here, then compare against the raw archive (see [§ When a site changes](#when-a-site-changes)).
 
-Code: [`src/Zhua.Crawling/`](../src/Zhua.Crawling/). The change-only price rule + was-price reconstruction live on
-the entity, not the crawler: [`StoreProduct.ApplyObservation`](../src/Zhua.Domain/Entities/StoreProduct.cs) (D3/D19/D23).
+Code: [`src/Zhua.Crawling/`](../../src/Zhua.Crawling/). The change-only price rule + was-price reconstruction live on
+the entity, not the crawler: [`StoreProduct.ApplyObservation`](../../src/Zhua.Domain/Entities/StoreProduct.cs) (D3/D19/D23).
 
 ---
 
@@ -54,7 +54,7 @@ observation is on special with no source was-price we recover it from our own pr
 
 ## Woolworths
 
-[`src/Zhua.Crawling/Woolworths/WoolworthsCrawler.cs`](../src/Zhua.Crawling/Woolworths/WoolworthsCrawler.cs) ·
+[`src/Zhua.Crawling/Woolworths/WoolworthsCrawler.cs`](../../src/Zhua.Crawling/Woolworths/WoolworthsCrawler.cs) ·
 `Chain.Woolworths` · national pricing → **1 active store** (Takapuna, D16).
 
 **Endpoint** (browse API, D10):
@@ -101,7 +101,7 @@ the session. Without this, crawls die partway through a department.
 
 ## Foodstuffs — New World & PAK'nSAVE
 
-[`src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs`](../src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs)
+[`src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs`](../../src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs)
 (shared base, D15) · `NewWorldCrawler` / `PaknSaveCrawler` differ only by **domain** (subclass overrides
 `SiteBaseUrl` / `ApiBaseUrl`). Both share the Foodstuffs taxonomy and are **independently priced per branch** (D16).
 
