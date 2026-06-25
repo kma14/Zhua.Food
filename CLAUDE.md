@@ -33,7 +33,8 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 | `Zhua.Api` | Query REST API (read) + admin match-review writes (D20). Never crawls or migrates. **Front-end API reference: [docs/api.md](docs/api.md).** |
 | `Zhua.Worker` | Ingestion — Quartz schedule + crawlers. |
 | `Zhua.Migrator` | One-shot migration runner. |
-| `tests/Zhua.Ingestion.Tests` | Ingestion / `CrawlOrchestrator` tests (EF InMemory). |
+| `tests/Zhua.Ingestion.Tests` | Ingestion / `CrawlOrchestrator` / parser / entity tests (EF InMemory). |
+| `tests/Zhua.Api.Tests` | Api integration tests — `WebApplicationFactory<Program>` + Testcontainers Postgres (real Npgsql), migrated + seeded. |
 
 ## Hard rules (do not violate)
 

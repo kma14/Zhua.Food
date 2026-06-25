@@ -269,8 +269,8 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 - ✅ `GET /admin/match-candidates` + `POST .../{id}/approve` · `.../{id}/reject` (review queue write)
 - ✅ `GET /health` + `GET /health/db`
 - ✅ Renamed the API-facing `chain` field/param → **`supermarket`** (Domain enum `Chain` stays internal); added price dates (`priceAsOf` = LastSeenAt, `priceUpdatedAt` = D3 change time) on every priced response. Front-end reference kept current in [docs/api.md](docs/api.md).
+- ✅ **Api integration tests** (`tests/Zhua.Api.Tests`, 27) — `WebApplicationFactory<Program>` + **Testcontainers** Postgres, migrated + seeded with a known fixture; covers every endpoint (happy path, `?storeId=`/`?supermarket=` filters, price math, images, 400/404, admin approve/reject). DbContext swapped to the container via `ConfigureTestServices` (not config) so the dev DB is never touched.
 - 🔲 `GET /admin/crawl-runs` (observability)
-- 🔲 Api integration tests (WebApplicationFactory + Testcontainers)
 - 🔲 Auth on `/admin/*` (currently open — local only)
 
 ### Phase 5 — Hardening 🔲

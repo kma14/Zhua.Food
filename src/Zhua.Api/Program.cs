@@ -33,3 +33,6 @@ app.MapDealEndpoints();      // /deals
 app.MapMatchReviewEndpoints(); // /admin/match-candidates (+ approve/reject)
 
 app.Run();
+
+// Exposes the implicit Program class to the integration-test project (WebApplicationFactory<Program>).
+public partial class Program;
