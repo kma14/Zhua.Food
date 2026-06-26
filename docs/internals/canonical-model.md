@@ -32,16 +32,21 @@ are needed, for two different audiences:
 
 ## The rules
 
-### R1 — Never display a canonical product name
-A shopper-facing response must label a product with a **real store name** (a representative store's `RawName`),
-never a synthesized canonical name. An invented title with no store behind it makes the user ask *"where is this
+### R1 — Never display the canonical *name* as a product title
+A product's **title** in any shopper view is a **real store name** (a representative store's `RawName`), never the
+synthesized canonical anchor name. An invented title with no store behind it makes the user ask *"where is this
 from?"*. The compare view shows every store's own name; list/search rows show a representative real name **with its
 store context** ("Pams Beef Eye Fillet — cheapest at PAK'nSAVE $29.99").
 
-### R2 — Canonical product is internal; not a named API resource
-No `name`/`description`/canonical fields in the shopper API. Drilling into "this item across stores" uses an
-**opaque item id** (backed by a canonical internally) — the *response* contains only real store data. *(Admin/review
-surfaces are exempt — the reviewer is allowed to see canonical internals; the shopper is not.)*
+### R2 — Expose the canonical's `id` + `description`, but not its anchor `name`
+The canonical is internal, but two of its fields *are* useful to the front-end and are exposed:
+- **`id`** — the grouping key / drill-in handle (when N store products collapse into one row, the UI needs the id).
+- **`description`** — a short, honest **grouping label**: *"we think these 6 are the same thing: <description>"*.
+  This is fine precisely because it's framed as our opinion (`we think`), not as the product's title (R1).
+
+What stays hidden is the internal **anchor `name`** (the matcher/AI matching target) and other match internals. So:
+the row's *title* is a real store name; the canonical `id` + `description` ride alongside as the group key and the
+"why these are merged" explanation. *(Admin/review surfaces may show everything — the reviewer is not a shopper.)*
 
 ### R3 — Canonical category is the curated, owned, user-facing set
 We define and maintain our own category vocabulary and tree. It is the **only** curation surface (rename/add/delete
@@ -60,13 +65,13 @@ or discard human-approved links. Wrong guesses are fixed via review, non-destruc
 
 The canonical still needs attributes — but as **matching features, not display values**:
 
-| Field | Purpose |
-|---|---|
-| `Id` | the stable identity (what links point at, what history/URLs hang off) |
-| internal `Name` | a clean, stable *match anchor* — the text the matcher/AI compares a store listing against |
-| `Description` *(new, optional)* | richer match signal (and good fodder for an LLM matcher) |
-| `Brand`, `Size`, `CanonicalCategoryId` | structured match filters |
-| `MatchKey` | idempotent upsert key for the matcher |
+| Field | Exposed to shopper API? | Purpose |
+|---|---|---|
+| `Id` | **yes** | stable identity — the group key / drill-in handle; what links, history, URLs hang off |
+| `Description` *(new)* | **yes** | dual-purpose: a human-readable **grouping label** ("we think these are: X") **and** a match signal (good LLM fodder) |
+| internal `Name` (anchor) | **no** | the *match target* — clean, stable text the matcher/AI compares a store listing against |
+| `Brand`, `Size`, `CanonicalCategoryId` | no | structured match filters |
+| `MatchKey` | no | idempotent upsert key for the matcher |
 
 The internal name/description should be a **stable controlled anchor** the matcher *searches against* — not a value
 re-minted from store data each run. (Today it's the latter; see the gap below.) This is the reconciliation of the
@@ -82,12 +87,13 @@ Why store-first:
 - **Recall** — you match the *real* text, so *"grass fed"* finds the item even when only the Woolworths listing
   says it and the canonical's anchor doesn't.
 
-Each result row: a representative real name (cheapest store's), cheapest price, store count. One canonical → one
-row; an unmatched listing → its own row.
+Each result row carries: a representative real name (cheapest store's) as the **title**, the **canonical `id`** (group
+key) and its **`description`** (the "we think these are: X" grouping label, R2), cheapest price, and store count. One
+canonical → one row; an unmatched listing → its own row.
 
-**Drill-in id caveat:** a matched row drills in by *canonical-backed item id*; an unmatched row only has a
-*store-product id*. The search response must carry enough to drill into both (an id + a "matched?" flag, or both
-ids), and the compare view must handle a "group of one."
+**Drill-in id caveat:** a matched row drills in by its *canonical id*; an unmatched row only has a *store-product
+id* (and no canonical `description`). The search response must carry enough to drill into both (the canonical `id`
+when present + the representative store-product id), and the compare view must handle a "group of one."
 
 ## Matcher direction (additive, AI-assisted later)
 
@@ -105,7 +111,7 @@ Target shape (see [matching.md](matching.md) for today's implementation):
 | Area | Today | Target (this note) |
 |---|---|---|
 | Search | queries `CanonicalProduct` names ([ProductEndpoints](../../src/Zhua.Api/Endpoints/ProductEndpoints.cs)) | queries `StoreProduct` text, groups by canonical |
-| Shopper API shows canonical name | yes — `ProductSummary.name`, `ProductComparison.name`, `CategoryProduct.product` | no — real store names only; canonical behind an opaque item id |
+| Shopper API & the canonical | exposes the canonical **name** as the title (`ProductSummary.name`, `ProductComparison.name`, `CategoryProduct.product`) | title = real store name; expose canonical **`id` + `description`** (group key + "we think these are: X" label) — but **not** the anchor name |
 | Canonical name source | re-minted from Foodstuffs every match run ([CanonicalMatcher:53](../../src/Zhua.Infrastructure/Matching/CanonicalMatcher.cs#L53)) | stable internal anchor; matcher links, never overwrites |
 | Curation surface | none (names derived) | category CRUD only |
 | Matcher | regenerative (Tier 1 rebuilds canonicals each run) | additive search-and-link; merge/split; AI-assisted |
@@ -116,9 +122,10 @@ Target shape (see [matching.md](matching.md) for today's implementation):
 
 ## Open decisions
 
-- Exact shape of the opaque **item id** / drill-in (canonical-backed id vs. representative store-product id for
-  singletons).
-- Whether the internal anchor name/description is **curated** or **seeded-then-frozen** from the first source.
+- Drill-in shape: return the **canonical `id`** for matched groups + the representative **store-product id** for
+  singletons (and how the compare endpoint accepts either).
+- How the `description` is generated — curated, seeded-then-frozen from the first source, or LLM-written — and
+  whether the anchor `name` is a separate field or just reuses `description`.
 - Merge/split endpoint design + what happens to history when two canonicals merge.
 - When AI matching comes in, and how its proposals flow through the existing review queue.
 
