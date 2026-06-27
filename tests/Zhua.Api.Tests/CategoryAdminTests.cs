@@ -26,7 +26,7 @@ public class CategoryAdminTests(ApiFactory factory)
     [Fact]
     public async Task Create_adds_a_category_to_the_tree()
     {
-        var res = await _client.PostAsJsonAsync("/admin/categories",
+        var res = await _client.PostAsJsonAsync("/categories",
             new CreateCategoryRequest("Shelf", "Frozen Yoghurt", TestData.AisleIceCream));
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
@@ -40,7 +40,7 @@ public class CategoryAdminTests(ApiFactory factory)
     [Fact]
     public async Task Create_unknown_kind_is_400()
     {
-        var res = await _client.PostAsJsonAsync("/admin/categories",
+        var res = await _client.PostAsJsonAsync("/categories",
             new CreateCategoryRequest("Banana", "X", TestData.AisleIceCream));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
@@ -48,7 +48,7 @@ public class CategoryAdminTests(ApiFactory factory)
     [Fact]
     public async Task Create_unknown_parent_is_404()
     {
-        var res = await _client.PostAsJsonAsync("/admin/categories",
+        var res = await _client.PostAsJsonAsync("/categories",
             new CreateCategoryRequest("Shelf", "Orphan", Guid.NewGuid()));
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
@@ -57,7 +57,7 @@ public class CategoryAdminTests(ApiFactory factory)
     public async Task Create_duplicate_path_is_409()
     {
         // "Beef" already exists under the Meat department at that path.
-        var res = await _client.PostAsJsonAsync("/admin/categories",
+        var res = await _client.PostAsJsonAsync("/categories",
             new CreateCategoryRequest("Aisle", "Beef", TestData.DeptMeat));
         Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
     }
@@ -65,7 +65,7 @@ public class CategoryAdminTests(ApiFactory factory)
     [Fact]
     public async Task Rename_changes_the_display_name_but_not_the_path()
     {
-        var res = await _client.PatchAsJsonAsync($"/admin/categories/{TestData.RenameMeShelf}",
+        var res = await _client.PatchAsJsonAsync($"/categories/{TestData.RenameMeShelf}",
             new RenameCategoryRequest("Renamed Shelf"));
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
@@ -80,7 +80,7 @@ public class CategoryAdminTests(ApiFactory factory)
     [Fact]
     public async Task Rename_unknown_is_404()
     {
-        var res = await _client.PatchAsJsonAsync($"/admin/categories/{Guid.NewGuid()}",
+        var res = await _client.PatchAsJsonAsync($"/categories/{Guid.NewGuid()}",
             new RenameCategoryRequest("Nope"));
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
@@ -93,7 +93,7 @@ public class CategoryAdminTests(ApiFactory factory)
             $"/categories/{TestData.ArchiveMeShelf}/products");
         Assert.Contains(before!, p => p.Id == TestData.FrozenProduct);
 
-        var res = await _client.DeleteAsync($"/admin/categories/{TestData.ArchiveMeShelf}");
+        var res = await _client.DeleteAsync($"/categories/{TestData.ArchiveMeShelf}");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
         // After: gone from the tree, and the node no longer resolves.
@@ -105,7 +105,7 @@ public class CategoryAdminTests(ApiFactory factory)
     [Fact]
     public async Task Archive_unknown_is_404()
     {
-        var res = await _client.DeleteAsync($"/admin/categories/{Guid.NewGuid()}");
+        var res = await _client.DeleteAsync($"/categories/{Guid.NewGuid()}");
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 }

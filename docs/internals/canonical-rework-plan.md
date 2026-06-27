@@ -49,9 +49,10 @@ Make the canonical **category** an owned, editable vocabulary — the *only* cur
 
 - [x] `CanonicalCategory.IsArchived` + migration (`CanonicalCategoryArchive`). **Delete = soft-archive** (chosen: the
       mapper regenerates Foodstuffs nodes, so a hard delete is futile).
-- [x] `/admin/categories`: `POST` (create, derived slug/path, 400/404/409), `PATCH /{id}` (rename display name only —
-      path/slug stay as the stable mapper key), `DELETE /{id}` (cascade soft-archive the subtree). *(Reparent/move
-      deferred — it changes `Path` and would duplicate against the mapper.)*
+- [x] Curation writes on the **`/categories`** resource (one controller, reads public + writes `[Authorize("Admin")]`):
+      `POST /categories` (create, derived slug/path, 400/404/409), `PATCH /{id}` (rename display name only — path/slug
+      stay as the stable mapper key), `DELETE /{id}` (cascade soft-archive). *(Reparent/move deferred — changes `Path`,
+      would duplicate against the mapper.)*
 - [x] Reads exclude archived (tree + category-products → archived id = `404`).
 - [x] Mapper respects archived: reuses by `Path` so it never un-archives or duplicates; `FinestMappedCategory` skips
       archived so products bubble to the nearest live ancestor.

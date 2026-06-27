@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +12,12 @@ namespace Zhua.Api.Controllers;
 /// <summary>
 /// Admin actions on a single store product's canonical link — the review steps the candidate queue can't cover
 /// (plan D18): when none of the proposed candidates is right, the reviewer either links the listing to a
-/// <i>different</i> existing canonical, or creates a brand-new one. Like the match-candidate writes, these touch
-/// already-ingested data only — never crawl or migrate (CLAUDE.md). No auth yet (local/admin only).
+/// <i>different</i> existing canonical, or creates a brand-new one. Touch already-ingested data only — never crawl
+/// or migrate (CLAUDE.md). Guarded by the <c>Admin</c> policy (enforcement pending the auth task — see Program.cs).
 /// </summary>
 [ApiController]
 [Route("admin/store-products")]
+[Authorize("Admin")]
 public sealed class StoreProductsAdminController(ZhuaDbContext db) : ControllerBase
 {
     /// <summary>Link this listing to an EXISTING canonical (the reviewer searched and picked the right one).</summary>

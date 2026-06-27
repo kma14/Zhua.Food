@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Zhua.Api.Contracts;
@@ -7,11 +8,13 @@ using Zhua.Infrastructure.Persistence;
 namespace Zhua.Api.Controllers;
 
 /// <summary>
-/// Admin review queue for cross-store matches (plan D18). These are among the only writes the Api makes — they
-/// touch already-ingested data, never crawl or migrate (CLAUDE.md). No auth yet (local/admin only).
+/// Admin review queue for cross-store matches (plan D18) — a fully-privileged resource. These are among the only
+/// writes the Api makes; they touch already-ingested data, never crawl or migrate (CLAUDE.md). Guarded by the
+/// <c>Admin</c> policy (enforcement pending the auth task — see Program.cs).
 /// </summary>
 [ApiController]
 [Route("admin/match-candidates")]
+[Authorize("Admin")]
 public sealed class MatchCandidatesController(ZhuaDbContext db, TimeProvider clock) : ControllerBase
 {
     /// <summary>The pending queue (highest-confidence first).</summary>

@@ -250,7 +250,8 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
 
 ### Admin — match review (D18)
 
-The only **writes** the API makes (touch already-ingested data; no crawl/migrate). No auth yet — local/admin only.
+Writes that touch already-ingested data (no crawl/migrate). The fully-admin endpoints below live under `/admin/*` and
+are guarded by the **`Admin`** role policy (enforcement pending the auth task; open for now).
 
 A reviewer looks at an unmatched/ambiguous listing (`StoreProduct`) and resolves it one of three ways:
 
@@ -273,16 +274,18 @@ A reviewer looks at an unmatched/ambiguous listing (`StoreProduct`) and resolves
 > Use `storeProductId` (and `candidateCanonicalId`) from the queue to drive the link/create actions. To find a
 > canonical to **link** to, search the catalogue with [`GET /products/search?q=`](#get-productssearchq--search-canonical-products-by-namebrand) and use the result's `id`.
 
-### Admin — category curation (D25)
+### Category curation (D25) — writes on the `/categories` resource
 
 The canonical **category** tree is the one curated, owned vocabulary, so it has create/rename/delete (the category is
-user-facing; canonical *products* are an internal join and aren't curated). Admin writes only — no auth yet.
+user-facing; canonical *products* are an internal join and aren't curated). These are **writes on the same
+`/categories` resource** as the public reads — guarded by the **`Admin`** role policy (enforcement pending the auth
+task; open for now).
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/admin/categories` | body `{ "kind": "Department\|Aisle\|Shelf", "name", "parentId?" }` — create a category; `slug`/`path` are derived from the name (+ parent). Returns `CategorySummary`. `400` bad kind/name, `404` unknown parent, `409` if the derived `path` already exists |
-| PATCH | `/admin/categories/{id}` | body `{ "name" }` — rename the **display name** only (`path`/`slug` stay, so the crawl-time mapper keeps matching it). Returns `CategorySummary`. `404` if unknown |
-| DELETE | `/admin/categories/{id}` | **soft-delete**: archives the node + its whole subtree. Returns `{ "archived": n }`. `404` if unknown |
+| POST | `/categories` | body `{ "kind": "Department\|Aisle\|Shelf", "name", "parentId?" }` — create a category; `slug`/`path` are derived from the name (+ parent). Returns `CategorySummary`. `400` bad kind/name, `404` unknown parent, `409` if the derived `path` already exists |
+| PATCH | `/categories/{id}` | body `{ "name" }` — rename the **display name** only (`path`/`slug` stay, so the crawl-time mapper keeps matching it). Returns `CategorySummary`. `404` if unknown |
+| DELETE | `/categories/{id}` | **soft-delete**: archives the node + its whole subtree. Returns `{ "archived": n }`. `404` if unknown |
 
 `CategorySummary`: `{ id, kind, name, slug, path, parentId }`.
 
