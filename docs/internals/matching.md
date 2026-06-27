@@ -40,7 +40,7 @@ banners and across branches. So we just **group every Foodstuffs `StoreProduct` 
 
 - The canonical's stable key: **`MatchKey = "foodstuffs:{sku}"`** (this is what makes re-runs idempotent).
 - **`Name` + `Description` are seeded once on creation and never re-minted from store data** (D25 / phase 1) — so a
-  store renaming its listing can't clobber the owned canonical text. `Description` (= `Name` at seed time) is the
+  store renaming its listing can't overwrite the owned canonical text. `Description` (= `Name` at seed time) is the
   owned grouping label. Brand/size/category are still refreshed each run (match filters, not display).
 - Representative fields come from the group's **longest name** (most descriptive).
 - `Category` (the denormalised leaf) = the listing's **finest store category** (Shelf > Aisle > Department).
@@ -100,7 +100,7 @@ it makes) — full contract in [../api.md](../api.md#admin--match-review-d18). T
 - **Woolworths listings (what the queue actually contains): safe.** Tier 2 skips already-linked products and the
   matcher never nulls a link, so a manual link/create **survives**. *(Caveat: a hand-made canonical isn't in the
   `(brand,size)` index — `MatchKey != null` only — so the matcher won't auto-attach **other** products to it later.)*
-- **Foodstuffs listings: would be clobbered.** Tier 1 unconditionally regroups Foodstuffs by `SourceSku` and
+- **Foodstuffs listings: would be overwritten.** Tier 1 unconditionally regroups Foodstuffs by `SourceSku` and
   overwrites the link, orphaning the hand-made canonical. In practice the UI only acts on the Woolworths queue, so
   this is a narrow edge — but calling these endpoints on a Foodstuffs listing is unsafe today.
 

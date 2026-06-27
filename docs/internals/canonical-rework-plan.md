@@ -18,8 +18,8 @@ overwriting it**. Fully additive — nothing removed.
 - [x] Infra: EF config + migration (`20260627024936_CanonicalProductDescription`); one-time backfill `Description = Name` (3920 rows).
 - [x] Matcher: `Name`/`Description` set **only on creation**, never re-minted; new canonical seeds `Description` from the representative listing. `create-canonical` also sets it.
 - [x] API: `description` added to `ProductSummary` / `ProductComparison` / `CategoryProduct`.
-- [x] Tests: matcher no-clobber (rename listing → re-run → text held); API returns `description` (search/compare/category). 87 green.
-- [x] Docs: api.md (new field + grouping-label note), matching.md (no-clobber note).
+- [x] Tests: matcher no-overwrite (rename listing → re-run → text held); API returns `description` (search/compare/category). 87 green.
+- [x] Docs: api.md (new field + grouping-label note), matching.md (no-overwrite note).
 
 **Done:** API returns canonical `id` + `description`; re-running the matcher never changes an existing canonical's
 text. Codex can adopt the grouping label now.
