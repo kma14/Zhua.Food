@@ -101,24 +101,15 @@ Target shape (see [matching.md](matching.md) for today's implementation). **Per 
 1. **Already linked?** → leave it. (Idempotent: re-runs don't redo settled work; human-approved links survive.)
 2. **Deterministic link?** → if a canonical already groups an equivalent listing by a hard key (Foodstuffs branches
    share `productId`), link with no AI. Cheap and exact.
-3. **Otherwise → AI decides.** Shortlist a few canonical candidates by `brand + size + category`, then ask an LLM
-   *"which of these (if any) is this listing?"*. A confident pick links; low confidence → the **review queue**;
-   nothing fits → **propose a new canonical** (its `description` seeded from the listing, pending review).
+3. **Otherwise → decide which canonical (or a new one).** **For now this is *manual*** — today's heuristic matcher
+   auto-links the confident cases and the rest go to the **human review queue** (`approve`/`reject`/`link-canonical`/
+   `create-canonical`). **Later** this step becomes **AI-assisted** (shortlist candidates → LLM picks) — a deferred
+   workstream with its own design + cost analysis: **[ai-matching.md](ai-matching.md)**.
 
-The canonical set only **grows by linking**; an anchor's `description` is never overwritten from store data.
+The canonical set only **grows by linking**; a `description` is never overwritten from store data.
 
 **Operations** the editable overlay implies (pointer moves only, never touching store listings):
 `link` / `unlink` / `merge` ("these two canonicals are one") / `split` ("this group swept in a different product").
-
-### AI cost — affordable, because we shortlist
-
-The driver is **candidates-per-prompt**, not the model. Shortlist via the `brand+size+category` pre-filter (a
-handful of candidates) → each call is a few hundred input tokens + a tiny JSON answer, on a cheap/fast model.
-- **AI runs only on *unlinked* listings** — steps 1–2 absorb the bulk for free (Foodstuffs is deterministic).
-- **One-time backfill** (the cross-store ambiguous set, ~Woolworths) ≈ single-digit dollars.
-- **Steady state** = only *new* listings per crawl (tens–hundreds) ≈ pennies per crawl.
-- **Anti-pattern to avoid:** putting all canonicals in every prompt (~50–60k tokens/product) — 100× worse. Cache
-  the system prompt; if the catalogue ever explodes, switch the shortlist step to embeddings retrieval.
 
 ## Current vs target
 
@@ -140,7 +131,7 @@ handful of candidates) → each call is a few hundred input tokens + a tiny JSON
   singletons (and how the compare endpoint accepts either).
 - How the `description` is first generated — seeded-then-frozen from the listing, curated, or LLM-written.
   *(Resolved: one `description` field, no separate anchor name.)*
-- AI step: model choice, confidence thresholds (link vs. queue vs. new-canonical), and prompt-caching the shortlist.
+- The AI-assisted step (model, thresholds, retrieval) is deferred — its own design lives in [ai-matching.md](ai-matching.md).
 - Merge/split endpoint design + what happens to history when two canonicals merge.
 - When AI matching comes in, and how its proposals flow through the existing review queue.
 
