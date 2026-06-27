@@ -2,7 +2,8 @@
 
 Design note (not all implemented yet — see [Current vs target](#current-vs-target)). It settles *what* canonical
 products and categories are for, *who* may see them, and *how* search and matching should work as we onboard more
-supermarkets. Sibling deep-dives: [matching.md](matching.md) (the matcher), [crawling.md](crawling.md) (ingestion).
+supermarkets. **Implementation is sequenced in [canonical-rework-plan.md](canonical-rework-plan.md).** Sibling
+deep-dives: [matching.md](matching.md) (the matcher), [crawling.md](crawling.md) (ingestion).
 
 ## TL;DR — the principles
 
