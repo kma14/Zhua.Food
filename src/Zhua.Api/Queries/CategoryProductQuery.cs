@@ -22,7 +22,8 @@ internal static class CategoryProductQuery
         page = Math.Max(page, 1);
         var hasStoreFilter = storeIds is { Count: > 0 };
 
-        var cats = await db.CanonicalCategories.Select(c => new { c.Id, c.ParentId }).ToListAsync();
+        // Archived nodes are hidden (D25 phase 3): excluded from the subtree, and an archived id resolves to 404.
+        var cats = await db.CanonicalCategories.Where(c => !c.IsArchived).Select(c => new { c.Id, c.ParentId }).ToListAsync();
         if (cats.All(c => c.Id != categoryId)) return null;
 
         // The node + all its descendants.

@@ -273,6 +273,23 @@ A reviewer looks at an unmatched/ambiguous listing (`StoreProduct`) and resolves
 > Use `storeProductId` (and `candidateCanonicalId`) from the queue to drive the link/create actions. To find a
 > canonical to **link** to, search the catalogue with [`GET /products/search?q=`](#get-productssearchq--search-canonical-products-by-namebrand) and use the result's `id`.
 
+### Admin — category curation (D25)
+
+The canonical **category** tree is the one curated, owned vocabulary, so it has create/rename/delete (the category is
+user-facing; canonical *products* are an internal join and aren't curated). Admin writes only — no auth yet.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/admin/categories` | body `{ "kind": "Department\|Aisle\|Shelf", "name", "parentId?" }` — create a category; `slug`/`path` are derived from the name (+ parent). Returns `CategorySummary`. `400` bad kind/name, `404` unknown parent, `409` if the derived `path` already exists |
+| PATCH | `/admin/categories/{id}` | body `{ "name" }` — rename the **display name** only (`path`/`slug` stay, so the crawl-time mapper keeps matching it). Returns `CategorySummary`. `404` if unknown |
+| DELETE | `/admin/categories/{id}` | **soft-delete**: archives the node + its whole subtree. Returns `{ "archived": n }`. `404` if unknown |
+
+`CategorySummary`: `{ id, kind, name, slug, path, parentId }`.
+
+> **Soft-delete** — archived nodes vanish from `GET /categories` and from category-product queries (an archived id →
+> `404`), and the **mapper never un-archives them**, so a deliberately-removed node stays gone across crawls.
+> Products under an archived node bubble up to the nearest live ancestor on the next match run.
+
 ---
 
 ## Front-end flow

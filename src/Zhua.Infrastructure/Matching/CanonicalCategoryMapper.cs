@@ -93,7 +93,9 @@ public sealed class CanonicalCategoryMapper(ZhuaDbContext db) : ICanonicalCatego
                     foreach (var sp in cp.StoreProducts)
                     {
                         if (preferFoodstuffs != (sp.Store.Chain is Chain.NewWorld or Chain.PaknSave)) continue;
-                        var c = sp.Categories.FirstOrDefault(x => x.Kind == kind && x.CanonicalCategory is not null);
+                        // Skip archived nodes (D25 phase 3) so a product bubbles up to its nearest live ancestor.
+                        var c = sp.Categories.FirstOrDefault(x => x.Kind == kind
+                            && x.CanonicalCategory is { IsArchived: false });
                         if (c is not null) return c.CanonicalCategory;
                     }
                 }

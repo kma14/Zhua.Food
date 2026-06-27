@@ -43,18 +43,22 @@ name on the UI.
 
 **Coordinate with Codex** — response shape + the search route change. (Option: keep the old fields populated during a transition.)
 
-## Phase 3 — Category CRUD (the curation surface) 🟢
+## Phase 3 — Category CRUD (the curation surface) 🟢 ✅ DONE (2026-06-27)
 
 Make the canonical **category** an owned, editable vocabulary — the *only* curation surface.
 
-- [ ] `/admin/categories`: `POST` (create / set parent), `PATCH /{id}` (rename, move), `DELETE /{id}`.
-- [ ] Delete/rename policy: reparent-children-or-block; unlink-products-or-block. Rename is already mapper-safe
-      (upsert by `Path`, name set on create only); decide delete vs. an `archived` flag so the mapper can't
-      regenerate a deliberately removed node.
-- [ ] Mapper: respect manually-added/renamed/archived nodes.
-- [ ] Tests + api.md.
+- [x] `CanonicalCategory.IsArchived` + migration (`CanonicalCategoryArchive`). **Delete = soft-archive** (chosen: the
+      mapper regenerates Foodstuffs nodes, so a hard delete is futile).
+- [x] `/admin/categories`: `POST` (create, derived slug/path, 400/404/409), `PATCH /{id}` (rename display name only —
+      path/slug stay as the stable mapper key), `DELETE /{id}` (cascade soft-archive the subtree). *(Reparent/move
+      deferred — it changes `Path` and would duplicate against the mapper.)*
+- [x] Reads exclude archived (tree + category-products → archived id = `404`).
+- [x] Mapper respects archived: reuses by `Path` so it never un-archives or duplicates; `FinestMappedCategory` skips
+      archived so products bubble to the nearest live ancestor.
+- [x] Tests: 8 API CRUD (create/rename/archive + 400/404/409) + mapper archived-stays-archived-and-bubbles. 96 green.
+- [x] Docs: api.md (category-curation admin section).
 
-Independent of Phases 1–2 — can slot in whenever.
+Independent of Phases 1–2.
 
 ## Phase 4 — Correction toolkit: unlink / merge / split 🟢
 

@@ -26,6 +26,13 @@ public class CanonicalCategory
 
     public CanonicalCategory? Parent { get; set; }
 
+    /// <summary>
+    /// Soft-delete (plan D25, phase 3): an archived node is hidden from the browse tree + category-product queries
+    /// and the <see cref="CanonicalCategory"/> is owned curation, so the mapper never un-archives it — that's how a
+    /// deliberately-removed node survives the mapper rebuilding the Foodstuffs taxonomy on every crawl.
+    /// </summary>
+    public bool IsArchived { get; set; }
+
     public ICollection<CanonicalCategory> Children { get; } = new List<CanonicalCategory>();
 
     /// <summary>Per-store categories mapped to this canonical node (Foodstuffs by identity, others fuzzy — D22).</summary>

@@ -22,10 +22,17 @@ internal static class TestData
     public static readonly Guid ShelfBeefMince = new("aaaa0000-0000-0000-0000-000000000003");
     public static readonly Guid AisleChicken = new("aaaa0000-0000-0000-0000-000000000004");
 
+    // Dedicated Frozen branch for category-CRUD tests — isolated so create/rename/archive don't touch the Meat tree.
+    public static readonly Guid DeptFrozen = new("aaaa0000-0000-0000-0000-000000000010");
+    public static readonly Guid AisleIceCream = new("aaaa0000-0000-0000-0000-000000000011");
+    public static readonly Guid RenameMeShelf = new("aaaa0000-0000-0000-0000-000000000012");
+    public static readonly Guid ArchiveMeShelf = new("aaaa0000-0000-0000-0000-000000000013");
+
     // Canonical products
     public static readonly Guid BeefMince = new("bbbb0000-0000-0000-0000-000000000001");
     public static readonly Guid EyeFillet = new("bbbb0000-0000-0000-0000-000000000002");
     public static readonly Guid ChickenBreast = new("bbbb0000-0000-0000-0000-000000000003");
+    public static readonly Guid FrozenProduct = new("bbbb0000-0000-0000-0000-000000000010"); // under ArchiveMeShelf
 
     // A throwaway canonical the match candidates point at, so approving one doesn't alter the products other
     // tests inspect. Uncategorised + a name no search probes, so it's invisible to every other test.
@@ -50,12 +57,18 @@ internal static class TestData
             Cat(DeptMeat, CategoryKind.Department, "Meat, Poultry & Seafood", "meat-poultry-seafood", "meat-poultry-seafood", null),
             Cat(AisleBeef, CategoryKind.Aisle, "Beef", "beef", "meat-poultry-seafood/beef", DeptMeat),
             Cat(ShelfBeefMince, CategoryKind.Shelf, "Beef Mince", "beef-mince", "meat-poultry-seafood/beef/beef-mince", AisleBeef),
-            Cat(AisleChicken, CategoryKind.Aisle, "Chicken", "chicken", "meat-poultry-seafood/chicken", DeptMeat));
+            Cat(AisleChicken, CategoryKind.Aisle, "Chicken", "chicken", "meat-poultry-seafood/chicken", DeptMeat),
+            // Frozen branch (category-CRUD tests only)
+            Cat(DeptFrozen, CategoryKind.Department, "Frozen", "frozen", "frozen", null),
+            Cat(AisleIceCream, CategoryKind.Aisle, "Ice Cream & Desserts", "ice-cream-desserts", "frozen/ice-cream-desserts", DeptFrozen),
+            Cat(RenameMeShelf, CategoryKind.Shelf, "Rename Me", "rename-me", "frozen/ice-cream-desserts/rename-me", AisleIceCream),
+            Cat(ArchiveMeShelf, CategoryKind.Shelf, "Archive Me", "archive-me", "frozen/ice-cream-desserts/archive-me", AisleIceCream));
 
         db.CanonicalProducts.AddRange(
             Canon(BeefMince, "Beef Mince 1kg", "beef mince (grouped)", "Pams", "1kg", "Beef Mince", ShelfBeefMince),
             Canon(EyeFillet, "Beef Eye Fillet", null, "Pams", null, "Beef", AisleBeef),
             Canon(ChickenBreast, "Chicken Breast", null, "Tegel", "500g", "Chicken", AisleChicken),
+            Canon(FrozenProduct, "Vanilla Ice Cream 2L", "vanilla ice cream", "Tip Top", "2L", "Archive Me", ArchiveMeShelf),
             new CanonicalProduct { Id = MatchTarget, Name = "Generic Match Target", Category = "Uncategorised" });
 
         // Beef Mince across three stores — PAK'nSAVE Albany cheapest; Woolworths on special.
@@ -71,7 +84,10 @@ internal static class TestData
                 img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5106653.png"),
             // Chicken breast only at New World
             Sp(StoreSeed.NewWorldMetro, "nw-chicken", "Tegel Chicken Breast 500g", 9.99m, ChickenBreast,
-                img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png"));
+                img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png"),
+            // Frozen product under ArchiveMeShelf (so archiving the shelf hides it from browse)
+            Sp(StoreSeed.WoolworthsTakapuna, "frozen-1", "Tip Top Vanilla Ice Cream 2L", 7.50m, FrozenProduct,
+                img: "https://assets.woolworths.com.au/images/frozen.jpg"));
 
         await db.SaveChangesAsync();
 

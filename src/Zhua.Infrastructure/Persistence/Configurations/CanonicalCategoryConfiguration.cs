@@ -16,6 +16,7 @@ public class CanonicalCategoryConfiguration : IEntityTypeConfiguration<Canonical
         b.Property(x => x.Slug).HasMaxLength(200);
 
         b.HasIndex(x => x.Path).IsUnique(); // stable upsert key across mapper re-runs
+        b.Property(x => x.IsArchived).HasDefaultValue(false); // soft-delete (D25 phase 3)
 
         // Self-referencing tree (Department → Aisle → Shelf). Restrict to avoid cascade cycles.
         b.HasOne(x => x.Parent)

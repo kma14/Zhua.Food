@@ -22,6 +22,7 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
         var hasStoreFilter = storeId is { Length: > 0 };
 
         var cats = await db.CanonicalCategories
+            .Where(c => !c.IsArchived) // soft-deleted nodes are hidden from browse (D25 phase 3)
             .Select(c => new { c.Id, c.Kind, c.Name, c.Slug, c.Path, c.ParentId })
             .ToListAsync();
 

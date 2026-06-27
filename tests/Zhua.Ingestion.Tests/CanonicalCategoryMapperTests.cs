@@ -52,6 +52,55 @@ public class CanonicalCategoryMapperTests
         }
     }
 
+    [Fact]
+    public async Task Archived_node_stays_archived_on_rerun_and_products_bubble_to_the_live_ancestor()
+    {
+        // A NW product sitting under both its Department and its Shelf store categories (D11 many-to-many).
+        await using (var db = NewContext())
+        {
+            var nw = new Store { Chain = Chain.NewWorld, Name = "NW", Suburb = "X", Latitude = -36.8, Longitude = 174.7 };
+            db.Stores.Add(nw);
+            var dept = new StoreCategory { Store = nw, Kind = CategoryKind.Department, ExternalId = "Meat, Poultry & Seafood", Slug = "meat", Name = "Meat, Poultry & Seafood" };
+            var shelf = new StoreCategory { Store = nw, Kind = CategoryKind.Shelf, ExternalId = "Beef Steaks", Slug = "beef-steaks", Name = "Beef Steaks", Parent = dept };
+            db.StoreCategories.AddRange(dept, shelf);
+            var canon = new CanonicalProduct { Name = "Angus Sirloin 300g", Category = "Uncategorized" };
+            var p = new StoreProduct { Store = nw, SourceSku = "NW-1", RawName = "Angus Sirloin 300g", FirstSeenAt = DateTimeOffset.UtcNow, CanonicalProduct = canon };
+            p.Categories.Add(dept);
+            p.Categories.Add(shelf);
+            db.StoreProducts.Add(p);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await new CanonicalCategoryMapper(db).MapAsync();
+
+        Guid shelfId;
+        await using (var db = NewContext())
+        {
+            var shelf = await db.CanonicalCategories.SingleAsync(c => c.Kind == CategoryKind.Shelf);
+            shelfId = shelf.Id;
+            Assert.Equal(shelf.Id, (await db.CanonicalProducts.SingleAsync()).CanonicalCategoryId); // finest = shelf
+        }
+
+        // Archive the shelf, then re-run the mapper.
+        await using (var db = NewContext())
+        {
+            var shelf = await db.CanonicalCategories.SingleAsync(c => c.Id == shelfId);
+            shelf.IsArchived = true;
+            await db.SaveChangesAsync();
+        }
+        await using (var db = NewContext()) await new CanonicalCategoryMapper(db).MapAsync();
+
+        await using (var check = NewContext())
+        {
+            var shelf = await check.CanonicalCategories.SingleAsync(c => c.Id == shelfId);
+            Assert.True(shelf.IsArchived);                                                   // not un-archived
+            Assert.Equal(1, await check.CanonicalCategories.CountAsync(c => c.Kind == CategoryKind.Shelf)); // no duplicate at the path
+
+            var dept = await check.CanonicalCategories.SingleAsync(c => c.Kind == CategoryKind.Department);
+            Assert.Equal(dept.Id, (await check.CanonicalProducts.SingleAsync()).CanonicalCategoryId); // bubbled up
+        }
+    }
+
     private async Task SeedAsync()
     {
         await using var db = NewContext();

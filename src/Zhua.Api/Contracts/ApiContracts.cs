@@ -135,6 +135,15 @@ public sealed record MatchCandidateView(
     double Score,
     string? Reason);
 
+/// <summary>Create a curated canonical category (plan D25 phase 3). Kind = Department | Aisle | Shelf.</summary>
+public sealed record CreateCategoryRequest(string Kind, string Name, Guid? ParentId);
+
+/// <summary>Rename a canonical category's display name (plan D25 phase 3) — its path/slug stay as the stable key.</summary>
+public sealed record RenameCategoryRequest(string Name);
+
+/// <summary>A canonical category as returned by the admin create/rename actions.</summary>
+public sealed record CategorySummary(Guid Id, string Kind, string Name, string Slug, string Path, Guid? ParentId);
+
 /// <summary>Manually link a store product to an existing canonical (when no candidate is right but another fits).</summary>
 public sealed record LinkCanonicalRequest(Guid CanonicalProductId);
 
