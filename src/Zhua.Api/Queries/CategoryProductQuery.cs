@@ -3,7 +3,7 @@ using Zhua.Api.Contracts;
 using Zhua.Application.Pricing;
 using Zhua.Infrastructure.Persistence;
 
-namespace Zhua.Api.Endpoints;
+namespace Zhua.Api.Queries;
 
 /// <summary>
 /// Shared "products inside a category node" query — backs both <c>GET /categories/{id}/products</c> and
