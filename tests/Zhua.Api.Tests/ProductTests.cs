@@ -20,6 +20,7 @@ public class ProductTests(ApiFactory factory)
         Assert.Equal(11.00m, mince.CheapestPrice);          // MIN across stores
         Assert.Equal(3, mince.StoreCount);
         Assert.NotNull(mince.ImageUrl);
+        Assert.Equal("beef mince (grouped)", mince.Description); // owned grouping label (D25)
     }
 
     [Fact]
@@ -65,6 +66,7 @@ public class ProductTests(ApiFactory factory)
         Assert.Equal("PAK'nSAVE Albany", c.Prices[0].Store); // cheapest first
         Assert.Equal(11.00m, c.CheapestPrice);
         Assert.Equal(2.50m, c.Saving);                       // 13.50 − 11.00
+        Assert.Equal("beef mince (grouped)", c.Description);  // owned grouping label (D25)
         Assert.NotNull(c.ImageUrl);                          // representative
         Assert.All(c.Prices, p => Assert.NotNull(p.ImageUrl));
     }

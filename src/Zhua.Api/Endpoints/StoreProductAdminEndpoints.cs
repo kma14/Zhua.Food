@@ -46,6 +46,7 @@ public static class StoreProductAdminEndpoints
             var canonical = new CanonicalProduct
             {
                 Name = Clean(body?.Name) ?? sp.RawName,
+                Description = Clean(body?.Name) ?? sp.RawName,   // owned grouping label (plan D25)
                 Brand = Clean(body?.Brand) ?? sp.RawBrand,
                 Size = Clean(body?.Size) ?? sp.RawSize,
                 Category = Clean(body?.Category) ?? leaf ?? "Uncategorised",

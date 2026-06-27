@@ -53,9 +53,9 @@ internal static class TestData
             Cat(AisleChicken, CategoryKind.Aisle, "Chicken", "chicken", "meat-poultry-seafood/chicken", DeptMeat));
 
         db.CanonicalProducts.AddRange(
-            Canon(BeefMince, "Beef Mince 1kg", "Pams", "1kg", "Beef Mince", ShelfBeefMince),
-            Canon(EyeFillet, "Beef Eye Fillet", "Pams", null, "Beef", AisleBeef),
-            Canon(ChickenBreast, "Chicken Breast", "Tegel", "500g", "Chicken", AisleChicken),
+            Canon(BeefMince, "Beef Mince 1kg", "beef mince (grouped)", "Pams", "1kg", "Beef Mince", ShelfBeefMince),
+            Canon(EyeFillet, "Beef Eye Fillet", null, "Pams", null, "Beef", AisleBeef),
+            Canon(ChickenBreast, "Chicken Breast", null, "Tegel", "500g", "Chicken", AisleChicken),
             new CanonicalProduct { Id = MatchTarget, Name = "Generic Match Target", Category = "Uncategorised" });
 
         // Beef Mince across three stores — PAK'nSAVE Albany cheapest; Woolworths on special.
@@ -126,8 +126,8 @@ internal static class TestData
     private static CanonicalCategory Cat(Guid id, CategoryKind kind, string name, string slug, string path, Guid? parent) =>
         new() { Id = id, Kind = kind, Name = name, Slug = slug, Path = path, ParentId = parent };
 
-    private static CanonicalProduct Canon(Guid id, string name, string? brand, string? size, string category, Guid catId) =>
-        new() { Id = id, Name = name, Brand = brand, Size = size, Category = category, CanonicalCategoryId = catId };
+    private static CanonicalProduct Canon(Guid id, string name, string? description, string? brand, string? size, string category, Guid catId) =>
+        new() { Id = id, Name = name, Description = description, Brand = brand, Size = size, Category = category, CanonicalCategoryId = catId };
 
     private static StoreProduct Sp(
         Guid storeId, string sku, string name, decimal price, Guid? canonicalId,

@@ -46,11 +46,12 @@ public sealed class CanonicalMatcher(ZhuaDbContext db, TimeProvider clock) : ICa
 
             if (!canonByKey.TryGetValue(key, out var canon))
             {
-                canon = new CanonicalProduct { MatchKey = key, Name = rep.RawName, Category = "Uncategorized" };
+                // Name + Description are owned/stable (plan D25): seed once from the representative listing, then
+                // never re-mint them from store data. Description doubles as the match anchor + grouping label.
+                canon = new CanonicalProduct { MatchKey = key, Name = rep.RawName, Description = rep.RawName, Category = "Uncategorized" };
                 db.CanonicalProducts.Add(canon);
                 canonByKey[key] = canon;
             }
-            canon.Name = rep.RawName;
             canon.Brand = rep.RawBrand;
             canon.Size = rep.RawSize;
             canon.UnitOfMeasure = rep.UnitOfMeasure;

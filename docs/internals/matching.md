@@ -39,7 +39,10 @@ banners and across branches. So we just **group every Foodstuffs `StoreProduct` 
 `CanonicalProduct` per SKU**, and link every branch's listing to it. 100% reliable, fully automatic.
 
 - The canonical's stable key: **`MatchKey = "foodstuffs:{sku}"`** (this is what makes re-runs idempotent).
-- Representative fields (name/brand/size) come from the group's **longest name** (most descriptive).
+- **`Name` + `Description` are seeded once on creation and never re-minted from store data** (D25 / phase 1) — so a
+  store renaming its listing can't clobber the owned canonical text. `Description` (= `Name` at seed time) is the
+  owned grouping label. Brand/size/category are still refreshed each run (match filters, not display).
+- Representative fields come from the group's **longest name** (most descriptive).
 - `Category` (the denormalised leaf) = the listing's **finest store category** (Shelf > Aisle > Department).
 
 This is why every Foodstuffs listing is *always* already canonicalised, and the review queue is **Woolworths-only**.

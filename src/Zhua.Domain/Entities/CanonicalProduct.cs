@@ -17,6 +17,13 @@ public class CanonicalProduct
 
     public required string Name { get; set; }
 
+    /// <summary>
+    /// The one owned, stable phrase for this canonical (plan D25): doubles as the matcher's match anchor AND the
+    /// shopper-facing grouping label ("we think these are: X"). Unlike <see cref="Name"/>, it is **never re-minted
+    /// from store data** by the matcher — set on creation, then owned by us. Seeded from the representative listing.
+    /// </summary>
+    public string? Description { get; set; }
+
     public string? Brand { get; set; }
 
     public string? Size { get; set; }

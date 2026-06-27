@@ -33,6 +33,15 @@ CanonicalCategory   e.g. "Chicken Breast, Thighs & Tenders"   ← shared taxonom
 **Typical UI flow:** `GET /categories` (build nav) → list products in a category → `GET /products/{id}` (the
 cross-store price compare). See [Front-end flow](#front-end-flow) below.
 
+### `description` — the grouping label (D25)
+
+Priced product responses (`search`, `compare`, `category products`) carry a **`description`** on the canonical
+product. It's our **owned grouping label** — the honest "we think these N store listings are the same: *X*" phrase —
+**not** a store's product title. Today it's seeded equal to the canonical `name`; over time it becomes a curated/clean
+phrase and `name` is retired (see [internals/canonical-model.md](internals/canonical-model.md)). **Front-end
+guidance:** a product's **title should be a real store name** (`originalName` / per-store `storeName`); show
+`description` as the *grouping caption*, never as the title. May be `null`.
+
 ### Price dates (every priced response carries these)
 
 | Field | Means | Show as |
@@ -123,6 +132,7 @@ Optional **`?storeId=`** (repeatable) — counts then reflect only products sold
 [{
   "id": "019ef1a2-8825-700e-bc5a-7927f3bd7e6d",
   "name": "100% Pure Goat's Milk Powder", "brand": "Healtheries", "size": "450g",
+  "description": "100% Pure Goat's Milk Powder",  // owned grouping label (D25) — see note below
   "category": "UHT Milk & Milk Powder",     // canonical category leaf name (denormalized)
   "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5005182.png",  // cheapest store's image
   "cheapestPrice": 37.19,                    // MIN across its stores
@@ -141,6 +151,7 @@ The "where's it cheapest" view: one canonical product, every store's real listin
 {
   "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
   "name": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
+  "description": "Boneless Skinless Chicken Breast",  // owned grouping label (D25)
   "category": "Chicken Breast, Thighs & Tenders",
   "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // representative (cheapest store's)
   "cheapestPrice": 8.99,
@@ -198,6 +209,7 @@ optional **`?storeId=`** (repeatable — restrict to those stores, priced within
 [{
   "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
   "product": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
+  "description": "Boneless Skinless Chicken Breast",  // owned grouping label (D25)
   "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // cheapest store's image
   "originalName": "Boneless Skinless Chicken Breast",   // the cheapest store's own name
   "cheapestPrice": 8.99,

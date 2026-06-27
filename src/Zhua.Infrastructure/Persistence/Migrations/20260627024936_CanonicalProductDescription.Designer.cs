@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Zhua.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Zhua.Infrastructure.Persistence;
 namespace Zhua.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ZhuaDbContext))]
-    partial class ZhuaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260627024936_CanonicalProductDescription")]
+    partial class CanonicalProductDescription
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

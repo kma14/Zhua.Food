@@ -81,6 +81,35 @@ public class CanonicalMatcherTests
     }
 
     [Fact]
+    public async Task Description_is_seeded_once_and_never_re_minted_from_store_data()
+    {
+        await SeedAsync();
+        await using (var db = NewContext()) await new CanonicalMatcher(db, _clock).RunAsync();
+
+        Guid colbyId;
+        await using (var check = NewContext())
+        {
+            var colby = await check.CanonicalProducts.SingleAsync(c => c.MatchKey == "foodstuffs:C1");
+            colbyId = colby.Id;
+            Assert.Equal("Smooth & Creamy Colby Cheese", colby.Description); // seeded from the representative listing
+        }
+
+        // The store renames its listing; re-running the matcher must NOT overwrite the owned canonical text (D25).
+        await using (var edit = NewContext())
+        {
+            foreach (var sp in await edit.StoreProducts.Where(p => p.SourceSku == "C1").ToListAsync())
+                sp.RawName = "TOTALLY DIFFERENT NAME";
+            await edit.SaveChangesAsync();
+        }
+        await using (var db = NewContext()) await new CanonicalMatcher(db, _clock).RunAsync();
+
+        await using var after = NewContext();
+        var unchanged = await after.CanonicalProducts.SingleAsync(c => c.Id == colbyId);
+        Assert.Equal("Smooth & Creamy Colby Cheese", unchanged.Description); // owned phrase held
+        Assert.Equal("Smooth & Creamy Colby Cheese", unchanged.Name);        // name also no longer re-minted
+    }
+
+    [Fact]
     public async Task Rerun_is_idempotent_and_keeps_one_canonical_per_sku()
     {
         await SeedAsync();

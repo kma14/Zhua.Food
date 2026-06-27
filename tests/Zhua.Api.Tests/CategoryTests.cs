@@ -65,6 +65,7 @@ public class CategoryTests(ApiFactory factory)
 
         var mince = items.Single(i => i.Id == TestData.BeefMince);
         Assert.Equal(11.00m, mince.CheapestPrice);
+        Assert.Equal("beef mince (grouped)", mince.Description); // owned grouping label (D25)
         Assert.Equal("PAK'nSAVE Albany", mince.CheapestStore);
         Assert.Equal("PaknSave", mince.Supermarket);
         Assert.Equal(3, mince.StoreCount);

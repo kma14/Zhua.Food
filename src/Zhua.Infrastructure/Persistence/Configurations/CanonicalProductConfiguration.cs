@@ -12,6 +12,7 @@ public class CanonicalProductConfiguration : IEntityTypeConfiguration<CanonicalP
         b.Property(x => x.MatchKey).HasMaxLength(100);
         b.HasIndex(x => x.MatchKey).IsUnique().HasFilter("\"MatchKey\" IS NOT NULL"); // stable per-canonical key (D18)
         b.Property(x => x.Name).HasMaxLength(300);
+        b.Property(x => x.Description).HasMaxLength(300);
         b.Property(x => x.Brand).HasMaxLength(150);
         b.Property(x => x.Size).HasMaxLength(50);
         b.Property(x => x.UnitOfMeasure).HasMaxLength(20);

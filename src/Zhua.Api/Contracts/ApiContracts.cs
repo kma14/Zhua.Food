@@ -4,6 +4,7 @@ namespace Zhua.Api.Contracts;
 public sealed record ProductSummary(
     Guid Id,
     string Name,
+    string? Description,          // owned grouping label — "we think these are: X" (plan D25); null until backfilled
     string? Brand,
     string? Size,
     string Category,
@@ -32,6 +33,7 @@ public sealed record StorePrice(
 public sealed record ProductComparison(
     Guid Id,
     string Name,
+    string? Description,      // owned grouping label (plan D25)
     string? Brand,
     string? Size,
     string Category,
@@ -44,6 +46,7 @@ public sealed record ProductComparison(
 public sealed record CategoryProduct(
     Guid Id,
     string Product,            // canonical/display name
+    string? Description,       // owned grouping label (plan D25)
     string? Brand,
     string? Size,
     string? ImageUrl,          // the cheapest store's product image

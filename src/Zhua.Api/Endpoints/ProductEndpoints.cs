@@ -41,7 +41,7 @@ public static class ProductEndpoints
                 .OrderBy(c => c.Name)
                 .Skip((page - 1) * size).Take(size)
                 .Select(c => new ProductSummary(
-                    c.Id, c.Name, c.Brand, c.Size, c.Category,
+                    c.Id, c.Name, c.Description, c.Brand, c.Size, c.Category,
                     c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
                         .OrderBy(sp => sp.CurrentPrice).Select(sp => sp.ImageUrl).FirstOrDefault(),
                     c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
@@ -75,7 +75,7 @@ public static class ProductEndpoints
             decimal? saving = priced.Count > 1 ? priced.Max() - priced.Min() : null;
             var image = prices.Select(p => p.ImageUrl).FirstOrDefault(u => u != null); // cheapest-first → cheapest store's
 
-            return Results.Ok(new ProductComparison(c.Id, c.Name, c.Brand, c.Size, c.Category, image, cheapest, saving, prices));
+            return Results.Ok(new ProductComparison(c.Id, c.Name, c.Description, c.Brand, c.Size, c.Category, image, cheapest, saving, prices));
         });
 
         // Price history: one step-series per store (change-only snapshots, D3). ?days=N caps the range.

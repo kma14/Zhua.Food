@@ -41,7 +41,7 @@ internal static class CategoryProductQuery
             .Where(cp => cp.CanonicalCategoryId != null && subtree.Contains(cp.CanonicalCategoryId.Value))
             .Select(cp => new
             {
-                cp.Id, cp.Name, cp.Brand, cp.Size,
+                cp.Id, cp.Name, cp.Description, cp.Brand, cp.Size,
                 Stores = cp.StoreProducts
                     .Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeIds!.Contains(sp.StoreId)))
                     .Select(sp => new
@@ -58,7 +58,7 @@ internal static class CategoryProductQuery
             var norm = UnitPriceNormalizer.ToComparable(cheapest.UnitPrice, cheapest.UnitOfMeasure);
             var image = cheapest.ImageUrl ?? p.Stores.Select(s => s.ImageUrl).FirstOrDefault(u => u != null);
             return new CategoryProduct(
-                p.Id, p.Name, p.Brand, p.Size, image, cheapest.RawName,
+                p.Id, p.Name, p.Description, p.Brand, p.Size, image, cheapest.RawName,
                 cheapest.CurrentPrice,
                 norm is { } n ? decimal.Round(n.Price, 2) : null, norm?.Unit,
                 p.Stores.Count, cheapest.StoreName, cheapest.Chain.ToString(),

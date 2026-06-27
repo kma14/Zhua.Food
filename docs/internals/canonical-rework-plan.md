@@ -9,22 +9,20 @@ Legend: 🟢 additive/non-breaking · 🟡 coordinate with Codex · 🔴 breakin
 
 ---
 
-## Phase 1 — `description` field 🟢  ← start here
+## Phase 1 — `description` field 🟢 ✅ DONE (2026-06-27)
 
 Give the canonical one owned, stable `description` (grouping label + match anchor), expose it, and **stop the matcher
 overwriting it**. Fully additive — nothing removed.
 
-- [ ] Domain: add `CanonicalProduct.Description` (`string?`).
-- [ ] Infra: EF config + migration; one-time backfill `Description = Name` where null.
-- [ ] Matcher: set `Name`/`Description` **only when creating** a canonical — never rewrite an existing one
-      ([CanonicalMatcher:53](../../src/Zhua.Infrastructure/Matching/CanonicalMatcher.cs#L53)). New canonical seeds
-      `Description` from the representative listing.
-- [ ] API: add `description` to `ProductSummary` / `ProductComparison` / `CategoryProduct` (alongside existing fields).
-- [ ] Tests: matcher no-clobber (re-run ⇒ description unchanged); API returns `id` + `description`.
-- [ ] Docs: api.md (new field), matching.md (no-clobber note).
+- [x] Domain: add `CanonicalProduct.Description` (`string?`).
+- [x] Infra: EF config + migration (`20260627024936_CanonicalProductDescription`); one-time backfill `Description = Name` (3920 rows).
+- [x] Matcher: `Name`/`Description` set **only on creation**, never re-minted; new canonical seeds `Description` from the representative listing. `create-canonical` also sets it.
+- [x] API: `description` added to `ProductSummary` / `ProductComparison` / `CategoryProduct`.
+- [x] Tests: matcher no-clobber (rename listing → re-run → text held); API returns `description` (search/compare/category). 87 green.
+- [x] Docs: api.md (new field + grouping-label note), matching.md (no-clobber note).
 
-**Done when:** API returns canonical `id` + `description`; re-running the matcher never changes an existing
-canonical's text. Codex can adopt the grouping label immediately.
+**Done:** API returns canonical `id` + `description`; re-running the matcher never changes an existing canonical's
+text. Codex can adopt the grouping label now.
 
 ## Phase 2 — Search: store-first, grouped by canonical 🟡
 
