@@ -29,15 +29,19 @@ text. Codex can adopt the grouping label now.
 Search the **real** store text, collapse by canonical. Closes the recall/coverage gap and stops forcing a synthetic
 name on the UI.
 
-- [ ] Rewrite `/products/search`: query `StoreProduct` `RawName`/`RawBrand` (active stores) → group by
+- [ ] Rewrite product search: query `StoreProduct` `RawName`/`RawBrand` (active stores) → group by
       `CanonicalProductId` (null ⇒ a group of one).
 - [ ] Each row: representative (cheapest) **real store name** as title + canonical `id` + `description` + cheapest
       price + store count + image + on-special; carry a `matched` flag and the right drill-in id (canonical id when
       matched, else representative store-product id).
+- [ ] **REST cleanup of `/products` (agreed 2026-06-27):** collapse search + category-filter into **one filtered
+      collection** — `GET /products?q=&category=&storeId=&sort=&page=&size=`, **one** list DTO; **drop
+      `/products/search`** (verb-in-path) and the "bare `/products` 400s without `?category=`" wart. Keep
+      `/products/{id}` + `/price-history`; `/categories/{id}/products` stays as the sub-resource alias.
 - [ ] Tests: a term in only one store's wording is found; duplicates collapse; unmatched listings appear.
-- [ ] Docs: api.md search section + the store-first note.
+- [ ] Docs: api.md `/products` section + the store-first note.
 
-**Coordinate with Codex** — response shape changes. (Option: keep the old fields populated during a transition.)
+**Coordinate with Codex** — response shape + the search route change. (Option: keep the old fields populated during a transition.)
 
 ## Phase 3 — Category CRUD (the curation surface) 🟢
 
