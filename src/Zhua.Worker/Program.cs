@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using Quartz;
-using Zhua.Application.Ingestion;
+using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
 using Zhua.Crawling.Foodstuffs;
 using Zhua.Crawling.Woolworths;
@@ -16,23 +16,23 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 
 var conn = builder.Configuration.GetConnectionString("Default") ?? DbDefaults.DevConnectionString;
-builder.Services.AddPersistence(conn).AddIngestion().AddMatching();
+builder.Services.AddPersistence(conn).AddCrawling().AddMatching();
 
 // Crawler implementations (composition root). One per chain; the orchestrator picks by Store.Chain.
 builder.Services.AddSingleton<IStoreCrawler, WoolworthsCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, NewWorldCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, PaknSaveCrawler>();
 
-// No CLI command = scheduled mode (plan D4/D7): Quartz fires the ingestion job on a cron (default twice-daily).
+// No CLI command = scheduled mode (plan D4/D7): Quartz fires the crawling job on a cron (default twice-daily).
 var scheduled = args.Length == 0;
 if (scheduled)
 {
     var cron = builder.Configuration["Crawl:Cron"] ?? "0 0 6,18 * * ?"; // 06:00 & 18:00 local, daily
     builder.Services.AddQuartz(q =>
     {
-        var job = new JobKey("ingestion");
-        q.AddJob<IngestionJob>(job);
-        q.AddTrigger(t => t.ForJob(job).WithIdentity("ingestion-trigger")
+        var job = new JobKey("crawling");
+        q.AddJob<CrawlJob>(job);
+        q.AddTrigger(t => t.ForJob(job).WithIdentity("crawling-trigger")
             .WithCronSchedule(cron, x => x.InTimeZone(TimeZoneInfo.Local)));
     });
     builder.Services.AddQuartzHostedService(o => o.WaitForJobsToComplete = true);
@@ -153,7 +153,7 @@ if (args.Length > 0 && args[0].Equals("recon", StringComparison.OrdinalIgnoreCas
 
 if (scheduled)
 {
-    // Scheduled mode: Quartz hosted service runs the cron-driven ingestion job until the process is stopped.
+    // Scheduled mode: Quartz hosted service runs the cron-driven crawling job until the process is stopped.
     await host.RunAsync();
     return;
 }

@@ -53,14 +53,14 @@
 
 ### 2.1 🟢 Keep as-is (good calls)
 
-- **Two logical pipelines (ingestion vs query) sharing one Postgres + shared entities.** Right level of separation for an MVP. No microservices, no queue, no event sourcing — agree.
+- **Two logical pipelines (crawling vs query) sharing one Postgres + shared entities.** Right level of separation for an MVP. No microservices, no queue, no event sourcing — agree.
 - **Domain model** (Store / StoreProduct / CanonicalProduct / PriceSnapshot / CrawlRun). This is the correct decomposition. The `StoreProduct → CanonicalProduct` split is exactly the right shape for cross-store comparison.
 - **Append-only price history** as a principle. Never mutate historical prices — agree.
 - **Stack** (.NET 9 / EF Core / Postgres / Serilog / Docker Compose) — solid, boring, maintainable. 👍
 
 ### 2.2 🟡 Recommended changes (with rationale)
 
-**R1 — Make ingestion and query *separate processes/containers*, not just separate layers.** ✅ **APPROVED**
+**R1 — Make crawling and query *separate processes/containers*, not just separate layers.** ✅ **APPROVED**
 Run `Zhua.Api` (web) and `Zhua.Worker` (crawler+scheduler) as **two deployables sharing the same class libraries and DB**.
 *Why:* Playwright/Chromium is memory-heavy and occasionally crashes. If the crawler shares a process with the API, a browser leak or OOM takes down your query API too. Two processes give you fault isolation for almost zero extra complexity (you're already using Compose). This is the single most valuable change.
 
@@ -70,7 +70,7 @@ Define one `IStoreCrawler` abstraction; implementations may use **`HttpClient` (
 
 **R3 — `StoreProduct.CanonicalProductId` must be NULLABLE, and matching must be ASYNC/offline.** ✅ **APPROVED**
 Crawl → store raw product + price *immediately*. Resolve to a CanonicalProduct as a *separate* step that can run later or be done by hand.
-*Why:* Product matching ("Anchor Fresh Blue Milk 2L" @ Woolworths == "Anchor Blue Milk 2L" canonical == the New World SKU) is the hardest problem in the whole system. If ingestion blocks on matching, a matching bug stops all data collection. Decouple them: ingestion is dumb and always succeeds; matching is a curated/rules-based step on top. For MVP with ~15 categories × 3 stores, **manual / rules-based seed mapping is fine** — do not build ML matching yet.
+*Why:* Product matching ("Anchor Fresh Blue Milk 2L" @ Woolworths == "Anchor Blue Milk 2L" canonical == the New World SKU) is the hardest problem in the whole system. If crawling blocks on matching, a matching bug stops all data collection. Decouple them: crawling is dumb and always succeeds; matching is a curated/rules-based step on top. For MVP with ~15 categories × 3 stores, **manual / rules-based seed mapping is fine** — do not build ML matching yet.
 
 **R4 — Denormalize "current price" onto `StoreProduct` for fast reads.** ✅ **APPROVED** (pairs with D3 change-only)
 Each crawl: **always** update `StoreProduct.CurrentPrice / CurrentSpecial / LastSeenAt / PriceUpdatedAt` (fixed row count, no growth) — and append a `PriceSnapshot` **only when the price tuple changed** (see D3).
@@ -130,7 +130,7 @@ Zhua.Food.sln
 │  ├─ Zhua.Infrastructure/    # EF Core DbContext, configurations, migrations, repository impls
 │  ├─ Zhua.Crawling/          # IStoreCrawler + per-store crawlers (HttpClient and/or Playwright), parsers, normalization
 │  ├─ Zhua.Api/               # ASP.NET Core Web API (QUERY side). Thin controllers → Application services.
-│  ├─ Zhua.Worker/            # Worker Service (INGESTION side). Quartz jobs → Crawling → Persistence.
+│  ├─ Zhua.Worker/            # Worker Service (CRAWLING side). Quartz jobs → Crawling → Persistence.
 │  └─ Zhua.Migrator/          # One-shot EF migration runner (plan D5; the Compose `migrator`).
 └─ tests/
    ├─ Zhua.Domain.Tests/
@@ -172,7 +172,7 @@ StoreCategory   PriceSnapshot ─*──1─ CrawlRun ─*──1─ Store
 
 ---
 
-## 5. Ingestion pipeline design
+## 5. Crawling pipeline design
 
 ```
 Quartz trigger (default twice-daily)
@@ -186,7 +186,7 @@ Quartz trigger (default twice-daily)
 
 - **Transport (D2):** Playwright (Chromium) for all 3 stores — one uniform pattern, and the real browser carries store cookies + survives anti-bot. **Parse the JSON the page fetches (`page.on("response")` interception), not the DOM** — the JSON contract is far more stable than HTML/CSS, so this is the *less*-fragile choice; DOM scraping is fallback only.
 - **Politeness/robustness:** stores crawled **sequentially** (single process, no same-host concurrency); modest request spacing + retry/backoff on 429/5xx + timeout; **every run wrapped in a `CrawlRun`** so failures are observable, not silent.
-- **Matching is a separate concern** (R3): a `CanonicalMatcher` step (or manual admin action) assigns `CanonicalProductId` after the fact. Ingestion never blocks on it.
+- **Matching is a separate concern** (R3): a `CanonicalMatcher` step (or manual admin action) assigns `CanonicalProductId` after the fact. Crawling never blocks on it.
 - **Parser fixtures:** save real sample responses as test fixtures; parser unit tests run against them so a site layout change fails a test instead of silently producing garbage.
 - **Schedule (R6/D7):** Quartz cron per store, cadence from config — **default twice-daily**, optional per-store override; `Store.IsActive` gates whether it runs.
 - **Manual trigger (R7):** the same `CrawlOrchestrator` is invokable as a Worker CLI one-shot (`crawl [--store <chain>] --once`) for local dev/debug; the public Api never triggers it.
@@ -233,20 +233,20 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 - ✅ Docker Compose: `postgres` (host **5433**) + one-shot `migrator`
   - ⚠️ pin `Microsoft.EntityFrameworkCore.Relational` in the executables, else the migrator runs on EF 9.0.1 and **silently no-ops**.
 
-### Phase 1 — Ingestion spike ✅
+### Phase 1 — Crawling spike ✅
 - ✅ Prior-art recon (§10); per-store strategy
 - ✅ Spike folded into build (Playwright-for-all, D2 rev)
-- ✅ Ingestion contracts + `CrawlOrchestrator` (D3 change-only + R4 refresh)
+- ✅ Crawling contracts + `CrawlOrchestrator` (D3 change-only + R4 refresh)
 - ✅ Woolworths crawler end-to-end → real Postgres rows (browse-by-category, D10)
 - ✅ Worker CLI one-shot runner + parser golden-file tests
 
-### Phase 2 — Full ingestion ✅
+### Phase 2 — Full crawling ✅
 - ✅ New World + PAK'nSAVE crawlers — shared `FoodstuffsCrawler` (D15)
 - ✅ Persistence: change-only snapshots (D3) + LastSeenAt refresh (R4)
 - ✅ Worker CLI manual crawl `crawl [--store <chain>]`
 - ✅ Politeness: base delay + Woolworths WAF cooldown-retry/backoff (D17)
 - ✅ **Beyond plan:** `StoreCategory` tree (D11) · raw archive (D12) · promo tags (D13) · **9 stores, 3 branches/chain** (D16, Woolworths reduced to 1 active) · departments expanding to Fridge/Deli + Frozen (D17)
-- ✅ Quartz scheduler (D4/D7): Worker with **no args** = scheduled mode — cron-driven `IngestionJob` (crawl all active stores → match), `Crawl:Cron` config (default twice-daily `0 0 6,18 * * ?`, local tz), `[DisallowConcurrentExecution]`. CLI `crawl`/`match`/`recon` still work as one-shots.
+- ✅ Quartz scheduler (D4/D7): Worker with **no args** = scheduled mode — cron-driven `CrawlingJob` (crawl all active stores → match), `Crawl:Cron` config (default twice-daily `0 0 6,18 * * ?`, local tz), `[DisallowConcurrentExecution]`. CLI `crawl`/`match`/`recon` still work as one-shots.
 
 ### Phase 3 — Canonical matching ✅ core done (D18; offline `match` command, decoupled per R3)
 - ✅ **Tier 1 (free):** group Foodstuffs NW↔PAK by shared `productId` → one `CanonicalProduct` per SKU (upserted by `MatchKey`) — same-product compare across all 6 Foodstuffs stores. **3783 canonicals.**
@@ -286,6 +286,7 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 
 | # | Decision | Choice | Rationale | Date |
 |---|---|---|---|---|
+| D27 | Strict Clean Architecture — thin Api over Application use cases | ✅ **The Api depends on Application only; no EF/DbContext in controllers.** Read/admin logic moved into Application **use-case interfaces + DTOs** (`IProductService`/`ICategoryService`/`IStoreQueries`/`IDealQueries`/`IItemService`/`IMatchReview`/`IHealthQueries`; DTOs now in `Zhua.Application.Contracts`); **Infrastructure** implements them over `ZhuaDbContext` (`src/Zhua.Infrastructure/Services/`), registered in `AddPersistence`. Controllers inject the interfaces and map a transport-agnostic `Result<T>` → HTTP via a `ZhuaController` base. The **only** Api→Infrastructure touch is the `Program.cs` composition root. **Enforced by `tests/Zhua.Api.Tests/ArchitectureTests.cs` (NetArchTest)** — Api-controllers ↛ Infra/EF, Application ↛ Infra, Domain isolated. Supersedes D19/D20's lax "Api calls `AddPersistence` and queries EF directly". Pure refactor — API shapes unchanged, 99 tests green. | the lax framing let controllers query EF directly, drifting the read side into a mess with **zero** Application use cases — a real layering violation the user flagged as first-class. The fix had to be a **hard rule (CLAUDE.md) + an executable test**, not a buried decision; a thin Api keeps the boundary and makes the use cases reusable/testable | 2026-06-29 |
 | D1 | Api vs Worker process split | ✅ Two processes (R1) | fault isolation from Playwright | 2026-06-20 |
 | D2 | Crawler strategy per store | ✅ **Playwright (browser) for all 3**, intercepting the page's **JSON** (not DOM); DOM parse = fallback. Geolocation store context (R2; §10) | one uniform pattern to maintain + browser anti-bot cover; JSON contract is more stable than HTML. (Note: user's "API is fragile" premise is inverted — HTML is the fragile layer — but Playwright-for-all stands on uniformity + anti-bot grounds) | 2026-06-20 (rev) |
 | D3 | Snapshot write strategy | ✅ Change-only (full price tuple) + always refresh current/LastSeenAt | ~100× less storage; each row is a real change event | 2026-06-20 |
@@ -303,7 +304,7 @@ Legend: ✅ done · 🚧 in progress · 🔲 todo
 | D15 | Foodstuffs crawler | ✅ **One shared `FoodstuffsCrawler` base for New World + PAK'nSAVE** (same platform/API; only domain + store differ). POST `api-prod.{site}/v1/edge/search/paginated/products` (Algolia-backed), filtered by department name (`category0NI`), paginated by `totalPages`. Needs an **anonymous Bearer token** — captured from the page's own api-prod requests during warmup. Each product carries `categoryTrees[{level0/1/2}]` (→ Department/Aisle/Shelf, often several), so we crawl per-department and the product self-describes its path(s). Price is in **cents**. **No GTIN, no image URL** in this API (canonical falls back to brand+name; image via fsimg CDN later). storeId via `ExternalStoreId` or geolocation. Verified: NW Beef=24, NW=328 / PAK'nSAVE=641. | shared platform → one crawler covers two banners ~free; shared Foodstuffs `productId` makes **cross-banner same-product compare (D9) nearly free** — and NW-vs-PAK'nSAVE price gaps are the core "where's it cheapest" value | 2026-06-22 |
 | D16 | 3 branches per chain | ✅ **Seed 3 stores per chain (9 total)** to compare same-brand branch prices. Woolworths = Takapuna/Glenfield/Browns Bay (geolocation); New World = Metro/Shore City/Browns Bay; PAK'nSAVE = Albany/Botany/Highland Park (only Albany is online on the Shore; Botany+Highland Park are the Chinese-dense online stores). **Result → only 1 Woolworths kept active** (the other two deactivated; national pricing makes them redundant). | **measured: Woolworths 0% / NW 39.6% / PAK'nSAVE 48.9%** of shared products differ in price across branches — Foodstuffs is franchise-priced, so branch matters; proves per-store pricing + branch-level compare | 2026-06-22 |
 | D20 | Query API | ✅ **Controller-based read endpoints** in `Zhua.Api` (`[ApiController]` controllers + DTOs in `Contracts`; converted from minimal-API on 2026-06-27 per preference — same routes/shapes): `/products/search`, `/products/{id}` (same-product compare — the core view), `/deals`. Plus an **admin match-review** group (`/admin/match-candidates` + approve/reject) — the only writes, touching already-ingested data (no crawl/migrate, CLAUDE.md); approve links the product + clears its sibling candidates. Api uses `AddPersistence` only (D19). | turns the pipeline's data into the answers to the 5 core questions + lets the review queue be cleared over HTTP instead of SQL; verified live (e.g. Rolling Meadow Colby 1kg = PAK $12.56 special vs NW $16.56) | 2026-06-23 |
-| D19 | Architecture cleanup | ✅ **Targeted de-anemia + hygiene** after a code review. Moved the **D3 change-only price rule onto `StoreProduct.ApplyObservation`** (Domain value object `StoreProductObservation` keeps Domain independent of Application's `ScrapedProduct`); the orchestrator now just maps + links the snapshot to its run and extracts `LinkCategories`/`SyncTags`. **Category/tag linking + crawl-run lifecycle stay in the orchestrator** (use-case orchestration over DB-loaded dimensions — not entity behaviour). Split `AddInfrastructure` → `AddPersistence` (read, Api) / `AddIngestion` / `AddMatching` (write, Worker). `Directory.Build.props` (shared TFM/Nullable + **`TreatWarningsAsErrors`**). Dev connection string centralised in `DbDefaults`. | anemic model is fine for a pipeline, but D3 is a real invariant worth protecting on the entity (API backfill etc. will write too); the rest is genuinely orchestration. DI split enforces the two-pipeline rule; shared props lock consistency | 2026-06-23 |
+| D19 | Architecture cleanup | ✅ **Targeted de-anemia + hygiene** after a code review. Moved the **D3 change-only price rule onto `StoreProduct.ApplyObservation`** (Domain value object `StoreProductObservation` keeps Domain independent of Application's `ScrapedProduct`); the orchestrator now just maps + links the snapshot to its run and extracts `LinkCategories`/`SyncTags`. **Category/tag linking + crawl-run lifecycle stay in the orchestrator** (use-case orchestration over DB-loaded dimensions — not entity behaviour). Split `AddInfrastructure` → `AddPersistence` (read, Api) / `AddCrawling` / `AddMatching` (write, Worker). `Directory.Build.props` (shared TFM/Nullable + **`TreatWarningsAsErrors`**). Dev connection string centralised in `DbDefaults`. | anemic model is fine for a pipeline, but D3 is a real invariant worth protecting on the entity (API backfill etc. will write too); the rest is genuinely orchestration. DI split enforces the two-pipeline rule; shared props lock consistency | 2026-06-23 |
 | D18 | Canonical matching | ✅ **Two-tier offline matcher** (`match` command, R3). T1: Foodstuffs NW↔PAK share `productId` → one `CanonicalProduct` per SKU (upsert by `MatchKey`, idempotent). T2: Woolworths↔Foodstuffs by **brand + normalised size (hard filter) + name-token overlap** — single clear winner ≥0.8 auto-links, else → `MatchCandidate` review queue (Pending/Approved/Rejected, persisted, never re-asked). Per-store `RawName` always kept. | no GTIN/shared-id bridges Woolworths↔Foodstuffs and names diverge wildly, so confident cases auto-link and the rest become a **review queue** (not the user spelunking the DB). Result: 3783 canonicals, 545 WW auto-linked, 760 pending | 2026-06-23 |
 | D17 | Woolworths WAF backoff | ✅ Keep Woolworths at **shelf-level** crawl (finest categories) and survive the WAF rate-limit with **cooldown-and-retry + session refresh** (12/24/36s on an empty/blocked body), base delay 600ms. ~300 req/crawl. Aisle-level (≈half the requests) considered but not taken. | shelf granularity (Beef Steaks vs Mince) helps D9 canonical matching; backoff makes the high request volume reliable rather than dropping departments | 2026-06-23 |
 | D25 | Canonical layer = internal join, not a catalog (target) | 🔜 **Reframe (design note: [docs/internals/item-model.md](docs/internals/item-model.md)).** A **canonical product is an internal grouping key** ("we *think* these store listings are the same item") — **never shown to a shopper, never in the shopper-facing API**; its name/description exist only as **matching features** (and future AI input). The shopper UI **always displays a real store name**, never a synthesized one (an invented title → "where's this from?"). A **canonical category is the one owned, curated, user-facing vocabulary** (the only curation surface). **Search store products, group by canonical** (search real text → full coverage incl. unmatched + real recall; dedupe via the canonical). Matching becomes **additive + identity-stable + non-destructive + reviewable** (link/unlink/**merge/split**, pointer-moves only); the canonical name becomes a **stable match anchor** the matcher links against, not a value re-minted from store data each run. Implies breaking API changes (search flip, drop canonical names from the shopper API behind an opaque item id) — sequence with Codex; admin/review surfaces still see canonical internals. | the canonical is the differentiator (same-product cross-store compare) but it's a *machine* construct: an opinion that gets corrected, not a label. Showing/curating product names confuses users and fights the pipeline; owning **category** names is intuitive and stable. Store products stay the immutable truth; the canonical is the editable overlay | 2026-06-27 |

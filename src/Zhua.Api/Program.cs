@@ -15,7 +15,7 @@ builder.Services.AddAuthorization(options =>
 
 var conn = builder.Configuration.GetConnectionString("Default") ?? DbDefaults.DevConnectionString;
 
-// Query side: persistence only — no ingestion/matching services (D19). Never migrates (D5), never crawls.
+// Query side: persistence only — no crawling/matching services (D19). Never migrates (D5), never crawls.
 builder.Services.AddPersistence(conn);
 
 var app = builder.Build();

@@ -1,7 +1,7 @@
 # zhua.food — crawling logic reference
 
 **The most fragile part of the system.** Every field below is read out of a supermarket's own JSON response.
-If a site changes a key, a unit, or how it signals a special, ingestion silently degrades (wrong price, missing
+If a site changes a key, a unit, or how it signals a special, crawling silently degrades (wrong price, missing
 special, empty category) **without** throwing. This file is the contract we depend on — when a crawl looks wrong,
 start here, then compare against the raw archive (see [§ When a site changes](#when-a-site-changes)).
 

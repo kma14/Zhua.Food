@@ -1,7 +1,7 @@
 namespace Zhua.Application.Matching;
 
 /// <summary>
-/// Offline item-product matcher (plan D9/D18) — runs after crawls, decoupled from ingestion (R3).
+/// Offline item-product matcher (plan D9/D18) — runs after crawls, decoupled from crawling (R3).
 /// Idempotent and re-runnable: it auto-links what it's confident about and queues the rest as
 /// <see cref="Domain.Entities.MatchCandidate"/>s for human review, never re-asking an answered pair.
 /// </summary>

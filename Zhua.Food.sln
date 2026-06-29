@@ -21,7 +21,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zhua.Migrator", "src\Zhua.M
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zhua.Ingestion.Tests", "tests\Zhua.Ingestion.Tests\Zhua.Ingestion.Tests.csproj", "{FE618C75-B56D-47A8-BC92-13F0B77C0257}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zhua.Crawling.Tests", "tests\Zhua.Crawling.Tests\Zhua.Crawling.Tests.csproj", "{FE618C75-B56D-47A8-BC92-13F0B77C0257}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zhua.Api.Tests", "tests\Zhua.Api.Tests\Zhua.Api.Tests.csproj", "{009AAD97-06A0-4B32-A57B-0B79E52701BD}"
 EndProject

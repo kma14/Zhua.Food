@@ -14,7 +14,7 @@ public class Product
 
     public Store Store { get; set; } = null!;
 
-    /// <summary>Nullable: matching is async/offline (plan R3) — ingestion never blocks on it.</summary>
+    /// <summary>Nullable: matching is async/offline (plan R3) — crawling never blocks on it.</summary>
     public Guid? ItemId { get; set; }
 
     public Item? Item { get; set; }

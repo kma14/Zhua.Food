@@ -3,7 +3,7 @@
 Design note (not all implemented yet — see [Current vs target](#current-vs-target)). It settles *what* item
 products and categories are for, *who* may see them, and *how* search and matching should work as we onboard more
 supermarkets. **Implementation is sequenced in [item-rework-plan.md](item-rework-plan.md).** Sibling
-deep-dives: [matching.md](matching.md) (the matcher), [crawling.md](crawling.md) (ingestion).
+deep-dives: [matching.md](matching.md) (the matcher), [crawling.md](crawling.md) (crawling).
 
 ## TL;DR — the principles
 

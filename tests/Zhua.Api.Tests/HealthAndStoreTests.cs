@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Zhua.Api.Contracts;
 
 namespace Zhua.Api.Tests;
 

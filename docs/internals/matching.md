@@ -6,7 +6,7 @@ fuzzy text. When "same-product compare" looks wrong (two stores not merged, or t
 
 Code: [`CanonicalMatcher`](../../src/Zhua.Infrastructure/Matching/CanonicalMatcher.cs) +
 [`ProductNormalizer`](../../src/Zhua.Application/Matching/ProductNormalizer.cs) (the pure text helpers).
-Sibling docs: crawling/ingestion → [crawling.md](crawling.md); the target redesign of the whole canonical layer →
+Sibling docs: crawling/crawling → [crawling.md](crawling.md); the target redesign of the whole canonical layer →
 [item-model.md](item-model.md); the deferred LLM matcher → [ai-matching.md](ai-matching.md).
 
 ---
@@ -22,13 +22,13 @@ CanonicalCategory   "Chicken Breast, Thighs & Tenders"   ← shared taxonomy tag
 
 The matcher's whole job is the **middle arrow**: deciding which `StoreProduct`s are the same real-world item and
 linking them to one `CanonicalProduct`. `StoreProduct.CanonicalProductId` is **nullable** — matching is offline and
-**never blocks ingestion** (R3). Categorisation (the top arrow) is a separate step that runs right after — see
+**never blocks crawling** (R3). Categorisation (the top arrow) is a separate step that runs right after — see
 [CanonicalCategoryMapper](../../src/Zhua.Infrastructure/Matching/CanonicalCategoryMapper.cs) (D22).
 
 ## Where & when it runs
 
 - **Offline, in the Worker** — never the Api (the Api only *reviews* matches, it doesn't compute them).
-- The scheduled `IngestionJob` runs it **after every crawl**, then runs the category mapper. Also on demand:
+- The scheduled `CrawlingJob` runs it **after every crawl**, then runs the category mapper. Also on demand:
   `dotnet run --project src/Zhua.Worker -- match`.
 - **Re-runnable from scratch every time** and converges to the same result (idempotent — see below).
 
@@ -120,7 +120,7 @@ too). Low priority until the review UI is actually exercised.
 
 ## Tests
 
-`CanonicalMatcherTests` and `ProductNormalizerTests` in `tests/Zhua.Ingestion.Tests` (EF InMemory + pure unit tests)
+`CanonicalMatcherTests` and `ProductNormalizerTests` in `tests/Zhua.Crawling.Tests` (EF InMemory + pure unit tests)
 cover the tiers, the thresholds, idempotency, and the normalisation rules.
 
 ---

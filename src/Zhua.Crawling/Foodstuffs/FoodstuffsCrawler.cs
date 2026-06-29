@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Playwright;
-using Zhua.Application.Ingestion;
+using Zhua.Application.Crawling;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
 

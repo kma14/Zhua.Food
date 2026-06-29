@@ -109,5 +109,5 @@ Phase 4 (unlink/merge/split) ─ independent (light dep on 1) ─
 Recommended order: **1 → 3 → 4 → 2 → 5** (get all the additive value + the manual correction toolkit in first;
 do the two Codex-coordinated/breaking steps last). Adjust per Codex's front-end progress.
 
-Each phase: branch off, migration via `Infrastructure`, build clean (warnings = errors), ingestion + Api tests green,
+Each phase: branch off, migration via `Infrastructure`, build clean (warnings = errors), crawling + Api tests green,
 redeploy the `api` container, update api.md, commit.
