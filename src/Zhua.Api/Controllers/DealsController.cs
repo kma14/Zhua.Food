@@ -21,7 +21,7 @@ public sealed class DealsController(ZhuaDbContext db) : ControllerBase
         if (supermarket is not null && chainFilter is null)
             return BadRequest(new { error = $"unknown supermarket '{supermarket}'" });
 
-        var deals = await db.StoreProducts
+        var deals = await db.Products
             .Where(sp => sp.Store.IsActive
                 && sp.IsOnSpecial
                 && sp.CurrentNonSpecialPrice != null

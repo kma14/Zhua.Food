@@ -30,10 +30,10 @@ public class StoreCategory
 
     public ICollection<StoreCategory> Children { get; } = new List<StoreCategory>();
 
-    public ICollection<StoreProduct> Products { get; } = new List<StoreProduct>();
+    public ICollection<Product> Products { get; } = new List<Product>();
 
-    /// <summary>Which canonical category this store node maps to (plan D22); null until mapped/unmappable.</summary>
-    public Guid? CanonicalCategoryId { get; set; }
+    /// <summary>Which category this store node maps to (plan D22); null until mapped/unmappable.</summary>
+    public Guid? CategoryId { get; set; }
 
-    public CanonicalCategory? CanonicalCategory { get; set; }
+    public Category? Category { get; set; }
 }

@@ -9,15 +9,15 @@ namespace Zhua.Worker;
 
 /// <summary>
 /// The scheduled ingestion job (plan D4/D7): crawl every active store sequentially and politely, then run the
-/// canonical matcher so new products self-sort into auto-matched / review. <see cref="DisallowConcurrentExecutionAttribute"/>
+/// item matcher so new products self-sort into auto-matched / review. <see cref="DisallowConcurrentExecutionAttribute"/>
 /// stops a slow run from overlapping the next trigger.
 /// </summary>
 [DisallowConcurrentExecution]
 public sealed class IngestionJob(
     ZhuaDbContext db,
     ICrawlOrchestrator orchestrator,
-    ICanonicalMatcher matcher,
-    ICanonicalCategoryMapper categoryMapper,
+    IItemMatcher matcher,
+    ICategoryMapper categoryMapper,
     ILogger<IngestionJob> log) : IJob
 {
     public async Task Execute(IJobExecutionContext context)
@@ -46,11 +46,11 @@ public sealed class IngestionJob(
         }
 
         var m = await matcher.RunAsync(ct);
-        log.LogInformation("[scheduled] match: canonicals={Canonicals} linked={Linked} pendingReview={Pending}",
-            m.CanonicalProducts, m.AutoLinked, m.PendingReview);
+        log.LogInformation("[scheduled] match: items={Items} linked={Linked} pendingReview={Pending}",
+            m.Items, m.AutoLinked, m.PendingReview);
 
         var cm = await categoryMapper.MapAsync(ct);
-        log.LogInformation("[scheduled] categories: canonical={Canonical} mappedStoreCats={Mapped} categorizedProducts={Products}",
-            cm.CanonicalCategories, cm.MappedStoreCategories, cm.CategorizedProducts);
+        log.LogInformation("[scheduled] categories: item={Item} mappedStoreCats={Mapped} categorizedProducts={Products}",
+            cm.Categories, cm.MappedStoreCategories, cm.CategorizedProducts);
     }
 }

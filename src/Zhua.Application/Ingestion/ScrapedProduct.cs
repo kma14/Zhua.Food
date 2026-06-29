@@ -1,7 +1,7 @@
 namespace Zhua.Application.Ingestion;
 
 /// <summary>
-/// A product as returned by a store crawler — raw, pre-persistence, pre-canonical-matching.
+/// A product as returned by a store crawler — raw, pre-persistence, pre-item-matching.
 /// Price semantics: <see cref="Price"/> is what you pay now; <see cref="NonSpecialPrice"/> is the
 /// regular ("was") price, set when on special so we can show the discount.
 /// </summary>
@@ -16,7 +16,7 @@ public sealed record ScrapedProduct
 
     public string? Size { get; init; }
 
-    /// <summary>Barcode, if exposed — feeds canonical matching (plan D9).</summary>
+    /// <summary>Barcode, if exposed — feeds item matching (plan D9).</summary>
     public string? Gtin { get; init; }
 
     public string? Url { get; init; }

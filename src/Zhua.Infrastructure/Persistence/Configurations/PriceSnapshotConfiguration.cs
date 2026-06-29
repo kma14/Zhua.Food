@@ -14,9 +14,9 @@ public class PriceSnapshotConfiguration : IEntityTypeConfiguration<PriceSnapshot
         b.Property(x => x.UnitPrice).HasPrecision(12, 4);
         b.Property(x => x.Currency).HasMaxLength(3);
 
-        b.HasOne(x => x.StoreProduct)
+        b.HasOne(x => x.Product)
             .WithMany(sp => sp.PriceSnapshots)
-            .HasForeignKey(x => x.StoreProductId)
+            .HasForeignKey(x => x.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
 
         b.HasOne(x => x.CrawlRun)
@@ -25,7 +25,7 @@ public class PriceSnapshotConfiguration : IEntityTypeConfiguration<PriceSnapshot
             .OnDelete(DeleteBehavior.Cascade);
 
         // Core history query: latest/over-time snapshots for a store product.
-        b.HasIndex(x => new { x.StoreProductId, x.CapturedAt });
+        b.HasIndex(x => new { x.ProductId, x.CapturedAt });
         b.HasIndex(x => x.CrawlRunId);
     }
 }

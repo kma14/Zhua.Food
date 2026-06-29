@@ -8,12 +8,12 @@ using Zhua.Infrastructure.Persistence;
 namespace Zhua.Api.Controllers;
 
 /// <summary>
-/// Admin review queue for cross-store matches (plan D18) — a fully-privileged resource. These are among the only
-/// writes the Api makes; they touch already-ingested data, never crawl or migrate (CLAUDE.md). Guarded by the
+/// The cross-store match review queue (plan D18) — a wholly-admin resource (no public face). These are among the
+/// only writes the Api makes; they touch already-ingested data, never crawl or migrate (CLAUDE.md). Guarded by the
 /// <c>Admin</c> policy (enforcement pending the auth task — see Program.cs).
 /// </summary>
 [ApiController]
-[Route("admin/match-candidates")]
+[Route("match-candidates")]
 [Authorize("Admin")]
 public sealed class MatchCandidatesController(ZhuaDbContext db, TimeProvider clock) : ControllerBase
 {
@@ -26,47 +26,54 @@ public sealed class MatchCandidatesController(ZhuaDbContext db, TimeProvider clo
 
         var items = await db.MatchCandidates
             .Where(m => m.Status == MatchStatus.Pending)
-            .OrderByDescending(m => m.Score).ThenBy(m => m.StoreProduct.RawName)
+            .OrderByDescending(m => m.Score).ThenBy(m => m.Product.RawName)
             .Skip((page - 1) * size).Take(size)
             .Select(m => new MatchCandidateView(
-                m.Id, m.StoreProductId, m.StoreProduct.RawName, m.StoreProduct.RawBrand, m.StoreProduct.RawSize,
-                m.StoreProduct.Store.Chain.ToString(), m.StoreProduct.CurrentPrice,
-                m.CanonicalProductId, m.CanonicalProduct.Name, m.Score, m.Reason))
+                m.Id, m.ProductId, m.Product.RawName, m.Product.RawBrand, m.Product.RawSize,
+                m.Product.Store.Chain.ToString(), m.Product.CurrentPrice,
+                m.ItemId, m.Item.Name, m.Score, m.Reason))
             .ToListAsync();
 
         return Ok(items);
     }
 
-    /// <summary>Approve → link the product to the canonical, and clear the product's other pending candidates.</summary>
-    [HttpPost("{id:guid}/approve")]
-    public async Task<IActionResult> Approve(Guid id)
+    /// <summary>
+    /// Decide a candidate by moving its status. <c>approved</c> links the listing to the proposed item and
+    /// clears the listing's other pending candidates; <c>rejected</c> tells the matcher not to propose this pair
+    /// again. Any other status → 400; an already-decided candidate → 409.
+    /// </summary>
+    [HttpPatch("{id:guid}")]
+    public async Task<IActionResult> Decide(Guid id, [FromBody] UpdateMatchCandidateRequest body)
     {
-        var m = await db.MatchCandidates.Include(x => x.StoreProduct).FirstOrDefaultAsync(x => x.Id == id);
+        var target = (body.Status ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "approved" => MatchStatus.Approved,
+            "rejected" => MatchStatus.Rejected,
+            _ => (MatchStatus?)null,
+        };
+        if (target is null)
+            return BadRequest(new { error = "status must be 'approved' or 'rejected'" });
+
+        var m = await db.MatchCandidates.Include(x => x.Product).FirstOrDefaultAsync(x => x.Id == id);
         if (m is null) return NotFound();
         if (m.Status != MatchStatus.Pending) return Conflict(new { error = $"already {m.Status}" });
 
-        m.Approve(clock.GetUtcNow());
-        m.StoreProduct.CanonicalProductId = m.CanonicalProductId;
+        if (target == MatchStatus.Approved)
+        {
+            m.Approve(clock.GetUtcNow());
+            m.Product.ItemId = m.ItemId;
 
-        var siblings = await db.MatchCandidates
-            .Where(x => x.StoreProductId == m.StoreProductId && x.Id != m.Id && x.Status == MatchStatus.Pending)
-            .ToListAsync();
-        db.MatchCandidates.RemoveRange(siblings);
+            var siblings = await db.MatchCandidates
+                .Where(x => x.ProductId == m.ProductId && x.Id != m.Id && x.Status == MatchStatus.Pending)
+                .ToListAsync();
+            db.MatchCandidates.RemoveRange(siblings);
+        }
+        else
+        {
+            m.Reject(clock.GetUtcNow());
+        }
 
         await db.SaveChangesAsync();
-        return Ok(new { m.Id, status = m.Status.ToString(), m.StoreProduct.CanonicalProductId });
-    }
-
-    /// <summary>Reject → the matcher won't propose this pair again.</summary>
-    [HttpPost("{id:guid}/reject")]
-    public async Task<IActionResult> Reject(Guid id)
-    {
-        var m = await db.MatchCandidates.FirstOrDefaultAsync(x => x.Id == id);
-        if (m is null) return NotFound();
-        if (m.Status != MatchStatus.Pending) return Conflict(new { error = $"already {m.Status}" });
-
-        m.Reject(clock.GetUtcNow());
-        await db.SaveChangesAsync();
-        return Ok(new { m.Id, status = m.Status.ToString() });
+        return Ok(new MatchCandidateDecision(m.Id, m.Status.ToString(), m.Product.ItemId));
     }
 }

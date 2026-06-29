@@ -11,7 +11,7 @@ using Zhua.Infrastructure.Persistence;
 namespace Zhua.Api.Controllers;
 
 /// <summary>
-/// The shared canonical category tree (plan D22) — the one curated, owned vocabulary. Reads are public; the
+/// The shared category tree (plan D22) — the one curated, owned vocabulary. Reads are public; the
 /// curation writes (create / rename / soft-delete, plan D25 phase 3) live on the same resource, guarded by the
 /// <c>Admin</c> policy. Writes touch already-ingested data only — never crawl or migrate (CLAUDE.md).
 /// </summary>
@@ -31,15 +31,15 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
     {
         var hasStoreFilter = storeId is { Length: > 0 };
 
-        var cats = await db.CanonicalCategories
+        var cats = await db.Categories
             .Where(c => !c.IsArchived) // soft-deleted nodes are hidden from browse (D25 phase 3)
             .Select(c => new { c.Id, c.Kind, c.Name, c.Slug, c.Path, c.ParentId })
             .ToListAsync();
 
-        var counts = await db.CanonicalProducts
-            .Where(p => p.CanonicalCategoryId != null
-                && (!hasStoreFilter || p.StoreProducts.Any(sp => sp.CurrentPrice != null && storeId!.Contains(sp.StoreId))))
-            .GroupBy(p => p.CanonicalCategoryId!.Value)
+        var counts = await db.Items
+            .Where(p => p.CategoryId != null
+                && (!hasStoreFilter || p.Products.Any(sp => sp.CurrentPrice != null && storeId!.Contains(sp.StoreId))))
+            .GroupBy(p => p.CategoryId!.Value)
             .Select(g => new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count);
 
@@ -61,16 +61,15 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Products inside a category node (its whole subtree), each merged across stores and shown at its cheapest
-    /// store. ?sort=unitPrice (default) | price; optional ?storeId= (repeatable). Same data as
-    /// GET /products?category={id} (shared query). An archived id resolves to 404.
+    /// Products inside a category node (its whole subtree), grouped by item — the browse alias of
+    /// GET /products?category={id} (same ProductGroup[] shape). Optional ?storeId= (repeatable). Archived id → 404.
     /// </summary>
     [HttpGet("{id:guid}/products")]
     public async Task<IActionResult> Products(
-        Guid id, [FromQuery] Guid[]? storeId, [FromQuery] string sort = "unitPrice", [FromQuery] int page = 1, [FromQuery] int size = 20)
+        Guid id, [FromQuery] Guid[]? storeId, [FromQuery] int page = 1, [FromQuery] int size = 20)
     {
-        var items = await CategoryProductQuery.RunAsync(db, id, sort, page, size, storeId);
-        return items is null ? NotFound() : Ok(items);
+        var groups = await ProductQuery.RunAsync(db, q: null, categoryId: id, storeId, page, size);
+        return groups is null ? NotFound() : Ok(groups);
     }
 
     // ---- curation writes (admin only — plan D25 phase 3) ----
@@ -87,21 +86,21 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
         if (string.IsNullOrWhiteSpace(name))
             return BadRequest(new { error = "name is required" });
 
-        CanonicalCategory? parent = null;
+        Category? parent = null;
         if (body.ParentId is { } pid)
         {
-            parent = await db.CanonicalCategories.FirstOrDefaultAsync(c => c.Id == pid);
+            parent = await db.Categories.FirstOrDefaultAsync(c => c.Id == pid);
             if (parent is null) return NotFound(new { error = "parent category not found" });
             if (parent.IsArchived) return BadRequest(new { error = "parent category is archived" });
         }
 
         var slug = Slugify(name);
         var path = parent is null ? slug : $"{parent.Path}/{slug}";
-        if (await db.CanonicalCategories.AnyAsync(c => c.Path == path))
+        if (await db.Categories.AnyAsync(c => c.Path == path))
             return Conflict(new { error = $"a category already exists at path '{path}'" });
 
-        var cat = new CanonicalCategory { Kind = kind, Name = name, Slug = slug, Path = path, ParentId = parent?.Id };
-        db.CanonicalCategories.Add(cat);
+        var cat = new Category { Kind = kind, Name = name, Slug = slug, Path = path, ParentId = parent?.Id };
+        db.Categories.Add(cat);
         await db.SaveChangesAsync();
         return Ok(Summary(cat));
     }
@@ -115,7 +114,7 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
         if (string.IsNullOrWhiteSpace(name))
             return BadRequest(new { error = "name is required" });
 
-        var cat = await db.CanonicalCategories.FirstOrDefaultAsync(c => c.Id == id);
+        var cat = await db.Categories.FirstOrDefaultAsync(c => c.Id == id);
         if (cat is null) return NotFound();
 
         cat.Name = name; // display only — path/slug are the stable identity the mapper upserts by
@@ -128,7 +127,7 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
     [Authorize("Admin")]
     public async Task<IActionResult> Archive(Guid id)
     {
-        var cats = await db.CanonicalCategories.ToListAsync();
+        var cats = await db.Categories.ToListAsync();
         var root = cats.FirstOrDefault(c => c.Id == id);
         if (root is null) return NotFound();
 
@@ -136,7 +135,7 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
             .GroupBy(c => c.ParentId!.Value).ToDictionary(g => g.Key, g => g.ToList());
 
         var count = 0;
-        var stack = new Stack<CanonicalCategory>([root]);
+        var stack = new Stack<Category>([root]);
         while (stack.Count > 0)
         {
             var n = stack.Pop();
@@ -162,10 +161,10 @@ public sealed class CategoriesController(ZhuaDbContext db) : ControllerBase
 
     private static int SubtreeCount(MutableNode n) => n.Children.Sum(c => c.DirectCount + SubtreeCount(c));
 
-    private static CategorySummary Summary(CanonicalCategory c) =>
+    private static CategorySummary Summary(Category c) =>
         new(c.Id, c.Kind.ToString(), c.Name, c.Slug, c.Path, c.ParentId);
 
-    /// <summary>Matches <c>CanonicalCategoryMapper.Slugify</c> so a curated node lines up with the Foodstuffs taxonomy.</summary>
+    /// <summary>Matches <c>CategoryMapper.Slugify</c> so a curated node lines up with the Foodstuffs taxonomy.</summary>
     private static string Slugify(string name)
     {
         var sb = new StringBuilder(name.Length);

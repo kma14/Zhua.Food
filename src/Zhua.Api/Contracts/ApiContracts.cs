@@ -1,65 +1,34 @@
 namespace Zhua.Api.Contracts;
 
-/// <summary>A canonical product in search results, with its cheapest price across stores.</summary>
-public sealed record ProductSummary(
-    Guid Id,
-    string Name,
-    string? Description,          // owned grouping label — "we think these are: X" (plan D25); null until backfilled
-    string? Brand,
-    string? Size,
-    string Category,
-    string? ImageUrl,             // cheapest store's product image (Foodstuffs may resolve to a CDN placeholder)
-    decimal? CheapestPrice,
-    int StoreCount,
-    bool OnSpecialSomewhere,
-    DateTimeOffset? PriceAsOf);   // cheapest store's LastSeenAt — when that price was last confirmed
+/// <summary>
+/// A group of store listings we think are the same product (D25), plus the item metadata. The <c>Products</c> list
+/// is the payload — every per-store listing as-is; the API computes **no** cheapest/saving/count, so the client
+/// ranks them however it likes (cheapest, nearest, on-special). Root carries only item metadata (the item itself is
+/// internal: just <c>itemId</c> + <c>description</c>). An unmatched listing is a group of one (<c>itemId: null</c>).
+/// </summary>
+public sealed record ProductGroup(
+    Guid? ItemId,                 // internal grouping id; null = an unmatched listing (a group of one)
+    string? Description,          // item grouping caption ("we think these are: X", D25); client decides usage
+    string? Category,             // item category leaf name (denormalized); null if unmatched
+    IReadOnlyList<ProductListing> Products);
 
-/// <summary>What one store charges for a canonical product (keeps the store's own name).</summary>
-public sealed record StorePrice(
-    string Store,
+/// <summary>One store's listing of a product — pure per-listing facts (no group aggregates).</summary>
+public sealed record ProductListing(
+    Guid Id,                 // this listing's product id — drill in via GET /products/{id}
+    string Store,            // the store's display name, e.g. "PAK'nSAVE Albany"
     string Supermarket,      // Woolworths | NewWorld | PaknSave (internally Domain enum Chain)
     string Suburb,
-    string StoreName,        // the store's own RawName for this product
-    string? ImageUrl,        // this store's product image
+    string Name,             // the store's own listing name
+    string? Brand,
+    string? Size,
+    string? ImageUrl,
     decimal? Price,
     bool IsOnSpecial,
-    decimal? NonSpecialPrice,
-    decimal? UnitPrice,
-    string? UnitOfMeasure,
+    decimal? WasPrice,       // regular price when on special (Woolworths published / Foodstuffs reconstructed, D23)
+    decimal? UnitPrice,      // normalised COMPARABLE unit price (per kg/L/ea) — server-normalised; null if N/A
+    string? Unit,            // "1kg" | "1L" | "1ea"
     DateTimeOffset? PriceUpdatedAt,   // when this store's price last changed (D3)
     DateTimeOffset PriceAsOf);        // when it was last confirmed in a crawl (LastSeenAt)
-
-/// <summary>Same-product cross-store comparison (the core "where's it cheapest" view).</summary>
-public sealed record ProductComparison(
-    Guid Id,
-    string Name,
-    string? Description,      // owned grouping label (plan D25)
-    string? Brand,
-    string? Size,
-    string Category,
-    string? ImageUrl,        // representative image (the cheapest store's)
-    decimal? CheapestPrice,
-    decimal? Saving,         // dearest − cheapest across stores
-    IReadOnlyList<StorePrice> Prices);
-
-/// <summary>One product inside a category (merged across stores), shown at its cheapest store.</summary>
-public sealed record CategoryProduct(
-    Guid Id,
-    string Product,            // canonical/display name
-    string? Description,       // owned grouping label (plan D25)
-    string? Brand,
-    string? Size,
-    string? ImageUrl,          // the cheapest store's product image
-    string? OriginalName,      // the cheapest store's own raw name
-    decimal? CheapestPrice,    // lowest shelf price across its stores
-    decimal? UnitPrice,        // normalised comparable unit price (per kg/L/ea); null if not comparable
-    string? Unit,              // "1kg" | "1L" | "1ea"
-    int StoreCount,
-    string CheapestStore,
-    string Supermarket,
-    bool OnSpecialSomewhere,
-    DateTimeOffset? PriceUpdatedAt,   // cheapest store's: when its price last changed
-    DateTimeOffset PriceAsOf);        // cheapest store's: when last confirmed in a crawl
 
 /// <summary>A product currently on special at a store.</summary>
 public sealed record DealItem(
@@ -99,14 +68,14 @@ public sealed record ProductPriceHistory(
     string? Size,
     IReadOnlyList<StorePriceHistory> Stores);
 
-/// <summary>A node in the shared canonical category tree (D22) — Department → Aisle → Shelf.</summary>
+/// <summary>A node in the shared category tree (D22) — Department → Aisle → Shelf.</summary>
 public sealed record CategoryNode(
     Guid Id,
     string Kind,              // Department | Aisle | Shelf
     string Name,
     string Slug,
     string Path,             // full slug path, e.g. "meat-poultry-seafood/beef"
-    int ProductCount,        // canonical products directly on this node
+    int ProductCount,        // items directly on this node
     int TotalProductCount,   // including all descendants (useful at Department/Aisle level)
     IReadOnlyList<CategoryNode> Children);
 
@@ -124,28 +93,47 @@ public sealed record StoreView(
 /// <summary>A pending cross-store match awaiting review (the queue).</summary>
 public sealed record MatchCandidateView(
     Guid Id,
-    Guid StoreProductId,             // the listing under review — target of the link/create-canonical actions
-    string StoreProductName,
+    Guid ProductId,             // the listing under review — target of PATCH /products/{id}
+    string ProductName,
     string? Brand,
     string? Size,
     string Supermarket,
     decimal? Price,
-    Guid CandidateCanonicalId,       // the proposed canonical's id (for "approve", or to pre-fill a manual link)
-    string CandidateCanonical,
+    Guid CandidateItemId,       // the proposed item's id (approve uses it, or pre-fill a manual link)
+    string CandidateItem,
     double Score,
     string? Reason);
 
-/// <summary>Create a curated canonical category (plan D25 phase 3). Kind = Department | Aisle | Shelf.</summary>
+/// <summary>Create a curated category (plan D25 phase 3). Kind = Department | Aisle | Shelf.</summary>
 public sealed record CreateCategoryRequest(string Kind, string Name, Guid? ParentId);
 
-/// <summary>Rename a canonical category's display name (plan D25 phase 3) — its path/slug stay as the stable key.</summary>
+/// <summary>Rename a category's display name (plan D25 phase 3) — its path/slug stay as the stable key.</summary>
 public sealed record RenameCategoryRequest(string Name);
 
-/// <summary>A canonical category as returned by the admin create/rename actions.</summary>
+/// <summary>A category as returned by the admin create/rename actions.</summary>
 public sealed record CategorySummary(Guid Id, string Kind, string Name, string Slug, string Path, Guid? ParentId);
 
-/// <summary>Manually link a store product to an existing canonical (when no candidate is right but another fits).</summary>
-public sealed record LinkCanonicalRequest(Guid CanonicalProductId);
+/// <summary>
+/// Set a store product's item link — PATCH /store-products/{id}. A item id links it (the reviewer's manual
+/// override when no candidate fits); <c>null</c> clears it (unlink).
+/// </summary>
+public sealed record UpdateProductLinkRequest(Guid? ItemId);
 
-/// <summary>Create a new canonical from a store product and link it. All fields optional — default from the listing.</summary>
-public sealed record CreateCanonicalRequest(string? Name, string? Brand, string? Size, string? Category);
+/// <summary>A store product's item link after a PATCH.</summary>
+public sealed record ProductLinkView(Guid Id, Guid? ItemId);
+
+/// <summary>
+/// Create a item (internal join key, plan D25) — POST /items. <c>Name</c> is the grouping anchor;
+/// <c>Description</c> defaults to it. The review UI pre-fills these from the listing it's creating the item for,
+/// then links that listing via PATCH /store-products/{id}.
+/// </summary>
+public sealed record CreateItemRequest(string Name, string? Description, string? Brand, string? Size, string? Category);
+
+/// <summary>A item (internal — never a shopper label) as returned by the admin create action.</summary>
+public sealed record ItemView(Guid Id, string Name, string? Description, string? Brand, string? Size, string Category);
+
+/// <summary>Decide a pending match candidate — PATCH /match-candidates/{id}. Status = <c>approved</c> | <c>rejected</c>.</summary>
+public sealed record UpdateMatchCandidateRequest(string Status);
+
+/// <summary>A match candidate's state after a decision (ItemId is set only when approved).</summary>
+public sealed record MatchCandidateDecision(Guid Id, string Status, Guid? ItemId);

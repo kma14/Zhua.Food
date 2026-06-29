@@ -12,18 +12,18 @@ public class MatchCandidateConfiguration : IEntityTypeConfiguration<MatchCandida
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.Reason).HasMaxLength(300);
 
-        b.HasOne(x => x.StoreProduct)
+        b.HasOne(x => x.Product)
             .WithMany()
-            .HasForeignKey(x => x.StoreProductId)
+            .HasForeignKey(x => x.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        b.HasOne(x => x.CanonicalProduct)
+        b.HasOne(x => x.Item)
             .WithMany()
-            .HasForeignKey(x => x.CanonicalProductId)
+            .HasForeignKey(x => x.ItemId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // One decision per (product, canonical) pair — lets the matcher upsert and skip answered pairs (D18).
-        b.HasIndex(x => new { x.StoreProductId, x.CanonicalProductId }).IsUnique();
+        // One decision per (product, item) pair — lets the matcher upsert and skip answered pairs (D18).
+        b.HasIndex(x => new { x.ProductId, x.ItemId }).IsUnique();
         b.HasIndex(x => x.Status);
     }
 }

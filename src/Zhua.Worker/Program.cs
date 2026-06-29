@@ -79,20 +79,20 @@ if (args.Length > 0 && args[0].Equals("crawl", StringComparison.OrdinalIgnoreCas
     return;
 }
 
-// R3 offline canonical matching (plan D9/D18). Re-runnable after crawls. Usage: Zhua.Worker match
+// R3 offline item matching (plan D9/D18). Re-runnable after crawls. Usage: Zhua.Worker match
 if (args.Length > 0 && args[0].Equals("match", StringComparison.OrdinalIgnoreCase))
 {
     using var scope = host.Services.CreateScope();
-    var matcher = scope.ServiceProvider.GetRequiredService<ICanonicalMatcher>();
-    Console.WriteLine("[match] canonical matching ...");
+    var matcher = scope.ServiceProvider.GetRequiredService<IItemMatcher>();
+    Console.WriteLine("[match] item matching ...");
     var r = await matcher.RunAsync();
-    Console.WriteLine($"[match] canonicals={r.CanonicalProducts}, auto-linked store-products={r.AutoLinked}, "
+    Console.WriteLine($"[match] items={r.Items}, auto-linked store-products={r.AutoLinked}, "
         + $"pending review={r.PendingReview}, already decided={r.AlreadyDecided}");
 
-    var categoryMapper = scope.ServiceProvider.GetRequiredService<ICanonicalCategoryMapper>();
-    Console.WriteLine("[match] canonical category mapping ...");
+    var categoryMapper = scope.ServiceProvider.GetRequiredService<ICategoryMapper>();
+    Console.WriteLine("[match] category mapping ...");
     var cm = await categoryMapper.MapAsync();
-    Console.WriteLine($"[match] canonical categories={cm.CanonicalCategories}, "
+    Console.WriteLine($"[match] categories={cm.Categories}, "
         + $"mapped store-categories={cm.MappedStoreCategories}, categorized products={cm.CategorizedProducts}");
     return;
 }

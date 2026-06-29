@@ -55,35 +55,33 @@ public class CategoryTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Category_products_merge_across_stores_at_cheapest()
+    public async Task Category_products_group_listings_across_stores()
     {
-        var items = await _client.GetFromJsonAsync<List<CategoryProduct>>(
+        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>(
             $"/categories/{TestData.AisleBeef}/products");
 
-        Assert.NotNull(items);
-        Assert.Equal(2, items!.Count); // mince (shelf) + eye fillet (aisle) — whole subtree
+        Assert.NotNull(groups);
+        Assert.Equal(2, groups!.Count); // mince (shelf) + eye fillet (aisle) — whole subtree
 
-        var mince = items.Single(i => i.Id == TestData.BeefMince);
-        Assert.Equal(11.00m, mince.CheapestPrice);
-        Assert.Equal("beef mince (grouped)", mince.Description); // owned grouping label (D25)
-        Assert.Equal("PAK'nSAVE Albany", mince.CheapestStore);
-        Assert.Equal("PaknSave", mince.Supermarket);
-        Assert.Equal(3, mince.StoreCount);
-        Assert.True(mince.OnSpecialSomewhere);             // Woolworths has it on special
-        Assert.NotNull(mince.ImageUrl);
+        var mince = groups.Single(g => g.ItemId == TestData.BeefMince);
+        Assert.Equal("beef mince (grouped)", mince.Description); // item grouping caption (D25)
+        Assert.Equal(3, mince.Products.Count);
+        Assert.Equal("PAK'nSAVE Albany", mince.Products[0].Store);   // cheapest first
+        Assert.Equal(11.00m, mince.Products[0].Price);
+        Assert.Contains(mince.Products, p => p.IsOnSpecial);    // Woolworths has it on special
     }
 
     [Fact]
     public async Task Category_products_storeId_filter_scopes_to_store()
     {
-        var items = await _client.GetFromJsonAsync<List<CategoryProduct>>(
+        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>(
             $"/categories/{TestData.AisleBeef}/products?storeId={StoreSeed.PaknSaveAlbany}");
 
-        Assert.NotNull(items);
-        Assert.Single(items!);                              // only the mince is at Albany
-        Assert.Equal(TestData.BeefMince, items![0].Id);
-        Assert.Equal("PAK'nSAVE Albany", items[0].CheapestStore);
-        Assert.Equal(1, items[0].StoreCount);
+        Assert.NotNull(groups);
+        Assert.Single(groups!);                             // only the mince is at Albany
+        Assert.Equal(TestData.BeefMince, groups![0].ItemId);
+        Assert.Single(groups[0].Products);
+        Assert.Equal("PAK'nSAVE Albany", groups[0].Products[0].Store);
     }
 
     [Fact]

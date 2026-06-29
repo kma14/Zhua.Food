@@ -66,9 +66,9 @@ public class CrawlOrchestratorTests
         Assert.Equal(1, result.SnapshotsWritten);
 
         await using var db = NewContext();
-        Assert.Equal(1, await db.StoreProducts.CountAsync());
+        Assert.Equal(1, await db.Products.CountAsync());
         Assert.Equal(1, await db.PriceSnapshots.CountAsync());
-        Assert.Equal(3.50m, (await db.StoreProducts.SingleAsync()).CurrentPrice);
+        Assert.Equal(3.50m, (await db.Products.SingleAsync()).CurrentPrice);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class CrawlOrchestratorTests
 
         await using var db = NewContext();
         Assert.Equal(1, await db.PriceSnapshots.CountAsync());
-        Assert.Equal(_clock.GetUtcNow(), (await db.StoreProducts.SingleAsync()).LastSeenAt);
+        Assert.Equal(_clock.GetUtcNow(), (await db.Products.SingleAsync()).LastSeenAt);
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public class CrawlOrchestratorTests
         });
 
         await using var db = NewContext();
-        var sp = await db.StoreProducts.Include(p => p.Tags).SingleAsync();
+        var sp = await db.Products.Include(p => p.Tags).SingleAsync();
         Assert.Single(sp.Tags);                                  // stale IsSpecial dropped
         Assert.Equal("IsGreatPrice", sp.Tags.Single().Code);
         Assert.Equal(2, await db.ProductTags.CountAsync());      // both rows kept in the shared dimension

@@ -233,7 +233,7 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
             Name = name,
             Brand = brand,
             Size = size,
-            Gtin = null,        // Foodstuffs search API exposes no barcode (canonical match falls back to brand+name, D9)
+            Gtin = null,        // Foodstuffs search API exposes no barcode (item match falls back to brand+name, D9)
             ImageUrl = ImageUrlFor(sku), // not in the API — derived from the fsimg CDN (see ImageUrlFor)
             Category = path.Count > 0 ? path[^1].Name : null,
             CategoryPath = path,

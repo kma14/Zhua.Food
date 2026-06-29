@@ -6,7 +6,7 @@ namespace Zhua.Domain.Entities;
 /// A product as it appears inside one specific store (raw, as-crawled).
 /// Carries a denormalized "current price" for fast reads (plan R4); full history lives in <see cref="PriceSnapshot"/>.
 /// </summary>
-public class StoreProduct
+public class Product
 {
     public Guid Id { get; set; }
 
@@ -15,9 +15,9 @@ public class StoreProduct
     public Store Store { get; set; } = null!;
 
     /// <summary>Nullable: matching is async/offline (plan R3) — ingestion never blocks on it.</summary>
-    public Guid? CanonicalProductId { get; set; }
+    public Guid? ItemId { get; set; }
 
-    public CanonicalProduct? CanonicalProduct { get; set; }
+    public Item? Item { get; set; }
 
     /// <summary>Store categories this product appears under (many-to-many; plan D11) — a product sits in several shelves.</summary>
     public ICollection<StoreCategory> Categories { get; } = new List<StoreCategory>();
@@ -34,7 +34,7 @@ public class StoreProduct
 
     public string? RawSize { get; set; }
 
-    /// <summary>Barcode captured at crawl time — feeds canonical matching (plan D9).</summary>
+    /// <summary>Barcode captured at crawl time — feeds item matching (plan D9).</summary>
     public string? Gtin { get; set; }
 
     public string? Url { get; set; }
@@ -71,7 +71,7 @@ public class StoreProduct
     /// observation of a new product counts as a change). Returns the new snapshot, or null if nothing changed.
     /// The caller links the snapshot to its <see cref="CrawlRun"/> (an orchestration concern).
     /// </summary>
-    public PriceSnapshot? ApplyObservation(StoreProductObservation obs, DateTimeOffset now)
+    public PriceSnapshot? ApplyObservation(ProductObservation obs, DateTimeOffset now)
     {
         var nonSpecialPrice = ReconstructWasPrice(obs);
 
@@ -118,7 +118,7 @@ public class StoreProduct
     /// time we saw the product (prior state unknown). The guard <c>prior &gt; obs.Price</c> avoids fabricating a
     /// non-discount (zero/negative saving) from noisy data.
     /// </summary>
-    private decimal? ReconstructWasPrice(StoreProductObservation obs)
+    private decimal? ReconstructWasPrice(ProductObservation obs)
     {
         if (!obs.IsOnSpecial || obs.NonSpecialPrice is not null)
             return obs.NonSpecialPrice;

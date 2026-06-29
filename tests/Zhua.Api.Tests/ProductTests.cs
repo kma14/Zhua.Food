@@ -11,68 +11,70 @@ public class ProductTests(ApiFactory factory)
     private readonly HttpClient _client = factory.CreateClient();
 
     [Fact]
-    public async Task Search_finds_by_name_with_cheapest_and_image()
+    public async Task Search_groups_listings_by_item_with_all_stores()
     {
-        var items = await _client.GetFromJsonAsync<List<ProductSummary>>("/products/search?q=mince");
+        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>("/products?q=mince");
 
-        Assert.NotNull(items);
-        var mince = items!.Single(i => i.Id == TestData.BeefMince);
-        Assert.Equal(11.00m, mince.CheapestPrice);          // MIN across stores
-        Assert.Equal(3, mince.StoreCount);
-        Assert.NotNull(mince.ImageUrl);
-        Assert.Equal("beef mince (grouped)", mince.Description); // owned grouping label (D25)
+        Assert.NotNull(groups);
+        var mince = groups!.Single(g => g.ItemId == TestData.BeefMince);
+        Assert.Equal("beef mince (grouped)", mince.Description);   // item caption (D25)
+        Assert.Equal(3, mince.Products.Count);                     // all three store listings, no aggregation
+        Assert.Equal(TestData.MincePak, mince.Products[0].Id);     // ordered cheapest-first by default
+        Assert.Equal(11.00m, mince.Products[0].Price);
+        var ww = mince.Products.Single(p => p.Supermarket == "Woolworths");
+        Assert.True(ww.IsOnSpecial);
+        Assert.Equal(15.00m, ww.WasPrice);
+
+        // Store-first search also surfaces UNMATCHED listings (a group of one).
+        Assert.Contains(groups!, g => g.ItemId is null && g.Products.Single().Name == "Beef Mince Premium 1kg");
     }
 
     [Fact]
-    public async Task Search_requires_q_else_400()
+    public async Task Bare_products_returns_the_catalogue_paginated()
     {
-        var res = await _client.GetAsync("/products/search");
-        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>("/products?size=5");
+        Assert.NotNull(groups);
+        Assert.NotEmpty(groups!);                                  // no longer 400s without a filter
+        Assert.True(groups!.Count <= 5);
     }
 
     [Fact]
-    public async Task Search_storeId_filter_recomputes_within_store()
+    public async Task Search_storeId_filter_scopes_to_that_store()
     {
-        var items = await _client.GetFromJsonAsync<List<ProductSummary>>(
-            $"/products/search?q=mince&storeId={StoreSeed.WoolworthsTakapuna}");
+        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>(
+            $"/products?q=mince&storeId={StoreSeed.WoolworthsTakapuna}");
 
-        var mince = items!.Single(i => i.Id == TestData.BeefMince);
-        Assert.Equal(12.00m, mince.CheapestPrice);          // Woolworths price, not the global 11.00
-        Assert.Equal(1, mince.StoreCount);
+        var mince = groups!.Single(g => g.ItemId == TestData.BeefMince);
+        Assert.Single(mince.Products);                            // only the Woolworths listing
+        Assert.Equal(12.00m, mince.Products[0].Price);
+        Assert.Equal("Woolworths Takapuna", mince.Products[0].Store);
     }
 
     [Fact]
     public async Task Products_by_category_matches_the_subresource()
     {
-        var viaProducts = await _client.GetFromJsonAsync<List<CategoryProduct>>(
+        var viaProducts = await _client.GetFromJsonAsync<List<ProductGroup>>(
             $"/products?category={TestData.AisleBeef}");
-        Assert.Equal(2, viaProducts!.Count);
+        Assert.Equal(2, viaProducts!.Count);                     // mince group + eye fillet
+        Assert.Contains(viaProducts!, g => g.ItemId == TestData.BeefMince);
     }
 
     [Fact]
-    public async Task Products_without_category_is_400()
+    public async Task Detail_returns_the_group_with_every_store_cheapest_first()
     {
-        var res = await _client.GetAsync("/products");
-        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var g = await _client.GetFromJsonAsync<ProductGroup>($"/products/{TestData.MincePak}");
+
+        Assert.NotNull(g);
+        Assert.Equal(TestData.BeefMince, g!.ItemId);
+        Assert.Equal("beef mince (grouped)", g.Description);
+        Assert.Equal(3, g.Products.Count);
+        Assert.Equal("PAK'nSAVE Albany", g.Products[0].Store);   // cheapest first
+        Assert.Equal(11.00m, g.Products[0].Price);
+        Assert.All(g.Products, p => Assert.NotNull(p.ImageUrl));
     }
 
     [Fact]
-    public async Task Compare_lists_every_store_cheapest_first()
-    {
-        var c = await _client.GetFromJsonAsync<ProductComparison>($"/products/{TestData.BeefMince}");
-
-        Assert.NotNull(c);
-        Assert.Equal(3, c!.Prices.Count);
-        Assert.Equal("PAK'nSAVE Albany", c.Prices[0].Store); // cheapest first
-        Assert.Equal(11.00m, c.CheapestPrice);
-        Assert.Equal(2.50m, c.Saving);                       // 13.50 − 11.00
-        Assert.Equal("beef mince (grouped)", c.Description);  // owned grouping label (D25)
-        Assert.NotNull(c.ImageUrl);                          // representative
-        Assert.All(c.Prices, p => Assert.NotNull(p.ImageUrl));
-    }
-
-    [Fact]
-    public async Task Compare_unknown_product_is_404()
+    public async Task Detail_unknown_product_is_404()
     {
         var res = await _client.GetAsync($"/products/{Guid.NewGuid()}");
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
@@ -82,12 +84,12 @@ public class ProductTests(ApiFactory factory)
     public async Task Price_history_returns_a_per_store_step_series()
     {
         var h = await _client.GetFromJsonAsync<ProductPriceHistory>(
-            $"/products/{TestData.BeefMince}/price-history");
+            $"/products/{TestData.MincePak}/price-history");
 
         Assert.NotNull(h);
         var pak = h!.Stores.Single(s => s.Store == "PAK'nSAVE Albany");
         Assert.Equal(2, pak.Points.Count);
-        Assert.Equal(11.50m, pak.Points[0].Price);           // ordered by CapturedAt
+        Assert.Equal(11.50m, pak.Points[0].Price);               // ordered by CapturedAt
         Assert.Equal(11.00m, pak.Points[1].Price);
     }
 

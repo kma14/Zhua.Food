@@ -23,7 +23,7 @@ public class Store
 
     public bool IsActive { get; set; } = true;
 
-    public ICollection<StoreProduct> StoreProducts { get; } = new List<StoreProduct>();
+    public ICollection<Product> Products { get; } = new List<Product>();
 
     public ICollection<CrawlRun> CrawlRuns { get; } = new List<CrawlRun>();
 

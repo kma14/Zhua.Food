@@ -1,104 +1,67 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Zhua.Api.Contracts;
 using Zhua.Api.Queries;
+using Zhua.Domain.Enums;
 using Zhua.Infrastructure.Persistence;
 
 namespace Zhua.Api.Controllers;
 
+/// <summary>
+/// Products — the real per-store listings, grouped by item (D25). The collection searches/filters the listings and
+/// returns one group per item with all its store listings; the client ranks them (cheapest / nearest / on-special),
+/// the API computes no aggregates. The item is internal — only its id + description + category ride along as group
+/// metadata. The single admin write (set a listing's item link) lives here too, role-guarded. Never crawls or
+/// migrates (CLAUDE.md).
+/// </summary>
 [ApiController]
 [Route("products")]
 public sealed class ProductsController(ZhuaDbContext db) : ControllerBase
 {
     /// <summary>
-    /// Products filtered by canonical category (?category={id}). Same data + shape as GET /categories/{id}/products
-    /// — the "filter on the products resource" form. Optional ?storeId= (repeatable) restricts to products sold at
-    /// the given stores, priced within them.
+    /// The product collection: search (<c>?q=</c>, real store names/brands), filter by <c>?category=</c> and/or
+    /// <c>?storeId=</c> (repeatable), paged. Listings are grouped by item — one group per product, each with all its
+    /// store listings; unmatched listings are a group of one. <c>?category=</c> returns only matched listings (the
+    /// item carries the category). An unknown/archived category → 404.
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> ByCategory(
-        [FromQuery] Guid? category, [FromQuery] Guid[]? storeId, [FromQuery] string sort = "unitPrice", [FromQuery] int page = 1, [FromQuery] int size = 20)
+    public async Task<IActionResult> List(
+        [FromQuery] string? q, [FromQuery] Guid? category, [FromQuery] Guid[]? storeId,
+        [FromQuery] int page = 1, [FromQuery] int size = 20)
     {
-        if (category is null)
-            return BadRequest(new { error = "query parameter 'category' is required" });
-
-        var items = await CategoryProductQuery.RunAsync(db, category.Value, sort, page, size, storeId);
-        return items is null ? NotFound() : Ok(items);
+        var groups = await ProductQuery.RunAsync(db, q, category, storeId, page, size);
+        return groups is null ? NotFound() : Ok(groups);
     }
 
     /// <summary>
-    /// Search canonical products by name or brand. Optional ?storeId= (repeatable) restricts to products sold at
-    /// the given stores; price/count are then computed over just those stores (ids come from GET /stores).
+    /// The group for one product — that listing plus its cross-store siblings (every listing sharing its item),
+    /// so the client has the full "where's it cheapest" picture. <c>{id}</c> is a product id; an unmatched listing
+    /// returns a group of one.
     /// </summary>
-    [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] string? q, [FromQuery] Guid[]? storeId, [FromQuery] int page = 1, [FromQuery] int size = 20)
-    {
-        if (string.IsNullOrWhiteSpace(q))
-            return BadRequest(new { error = "query parameter 'q' is required" });
-
-        size = Math.Clamp(size, 1, 100);
-        page = Math.Max(page, 1);
-        var like = $"%{q.Trim()}%";
-        var hasStoreFilter = storeId is { Length: > 0 };
-
-        var items = await db.CanonicalProducts
-            .Where(c => EF.Functions.ILike(c.Name, like) || (c.Brand != null && EF.Functions.ILike(c.Brand, like)))
-            .Where(c => !hasStoreFilter || c.StoreProducts.Any(sp => sp.CurrentPrice != null && storeId!.Contains(sp.StoreId)))
-            .OrderBy(c => c.Name)
-            .Skip((page - 1) * size).Take(size)
-            .Select(c => new ProductSummary(
-                c.Id, c.Name, c.Description, c.Brand, c.Size, c.Category,
-                c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
-                    .OrderBy(sp => sp.CurrentPrice).Select(sp => sp.ImageUrl).FirstOrDefault(),
-                c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
-                    .Min(sp => sp.CurrentPrice),
-                c.StoreProducts.Count(sp => !hasStoreFilter || storeId!.Contains(sp.StoreId)),
-                c.StoreProducts.Any(sp => sp.IsOnSpecial && (!hasStoreFilter || storeId!.Contains(sp.StoreId))),
-                c.StoreProducts.Where(sp => sp.CurrentPrice != null && (!hasStoreFilter || storeId!.Contains(sp.StoreId)))
-                    .OrderBy(sp => sp.CurrentPrice).Select(sp => (DateTimeOffset?)sp.LastSeenAt).FirstOrDefault()))
-            .ToListAsync();
-
-        return Ok(items);
-    }
-
-    /// <summary>Same-product cross-store comparison (cheapest first) — the core "where's it cheapest" view.</summary>
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> Compare(Guid id)
+    public async Task<IActionResult> Detail(Guid id)
     {
-        var c = await db.CanonicalProducts.FirstOrDefaultAsync(x => x.Id == id);
-        if (c is null) return NotFound();
-
-        var prices = await db.StoreProducts
-            .Where(sp => sp.CanonicalProductId == id)
-            .OrderBy(sp => sp.CurrentPrice == null).ThenBy(sp => sp.CurrentPrice) // priced first, cheapest first
-            .Select(sp => new StorePrice(
-                sp.Store.Name, sp.Store.Chain.ToString(), sp.Store.Suburb, sp.RawName, sp.ImageUrl,
-                sp.CurrentPrice, sp.IsOnSpecial, sp.CurrentNonSpecialPrice, sp.UnitPrice, sp.UnitOfMeasure,
-                sp.PriceUpdatedAt, sp.LastSeenAt))
-            .ToListAsync();
-
-        var priced = prices.Where(p => p.Price is not null).Select(p => p.Price!.Value).ToList();
-        decimal? cheapest = priced.Count > 0 ? priced.Min() : null;
-        decimal? saving = priced.Count > 1 ? priced.Max() - priced.Min() : null;
-        var image = prices.Select(p => p.ImageUrl).FirstOrDefault(u => u != null); // cheapest-first → cheapest store's
-
-        return Ok(new ProductComparison(c.Id, c.Name, c.Description, c.Brand, c.Size, c.Category, image, cheapest, saving, prices));
+        var group = await ProductQuery.SingleAsync(db, id);
+        return group is null ? NotFound() : Ok(group);
     }
 
     /// <summary>
-    /// Price history: one step-series per store (change-only snapshots, D3). ?days=N caps the range. Sparse by
-    /// design — each point is a real price change; render as a step line (price holds until the next).
+    /// Price history for a product across its stores: one step-series per store (change-only snapshots, D3).
+    /// <c>{id}</c> is a product id; the series cover its whole item group. <c>?days=N</c> caps the range.
     /// </summary>
     [HttpGet("{id:guid}/price-history")]
     public async Task<IActionResult> PriceHistory(Guid id, [FromQuery] int? days)
     {
-        var c = await db.CanonicalProducts.FirstOrDefaultAsync(x => x.Id == id);
-        if (c is null) return NotFound();
+        var product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
+        if (product is null) return NotFound();
 
         var since = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : DateTimeOffset.MinValue;
+        var group = product.ItemId is { } itemId
+            ? db.Products.Where(p => p.ItemId == itemId)
+            : db.Products.Where(p => p.Id == id);
 
-        var rows = await db.StoreProducts
-            .Where(sp => sp.CanonicalProductId == id)
+        var rows = await group
             .Select(sp => new
             {
                 sp.Store.Name, sp.Store.Chain, sp.Store.Suburb,
@@ -116,6 +79,38 @@ public sealed class ProductsController(ZhuaDbContext db) : ControllerBase
             .Select(r => new StorePriceHistory(r.Name, r.Chain.ToString(), r.Suburb, r.Points))
             .ToList();
 
-        return Ok(new ProductPriceHistory(c.Id, c.Name, c.Brand, c.Size, stores));
+        return Ok(new ProductPriceHistory(id, product.RawName, product.RawBrand, product.RawSize, stores));
+    }
+
+    /// <summary>
+    /// Admin: set this listing's item link — an item id links it (clears its pending match candidates), <c>null</c>
+    /// unlinks. The reviewer's manual override when no candidate fits; to link a brand-new item, create it via
+    /// <c>POST /items</c> first, then PATCH with the returned id. Guarded by the <c>Admin</c> policy.
+    /// </summary>
+    [HttpPatch("{id:guid}")]
+    [Authorize("Admin")]
+    public async Task<IActionResult> UpdateLink(Guid id, [FromBody] UpdateProductLinkRequest body)
+    {
+        var product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
+        if (product is null) return NotFound(new { error = "product not found" });
+
+        if (body.ItemId is { } itemId)
+        {
+            if (!await db.Items.AnyAsync(i => i.Id == itemId))
+                return NotFound(new { error = "item not found" });
+
+            product.ItemId = itemId;
+            var pending = await db.MatchCandidates
+                .Where(m => m.ProductId == id && m.Status == MatchStatus.Pending)
+                .ToListAsync();
+            db.MatchCandidates.RemoveRange(pending);   // this listing is resolved now
+        }
+        else
+        {
+            product.ItemId = null;                     // unlink
+        }
+
+        await db.SaveChangesAsync();
+        return Ok(new ProductLinkView(product.Id, product.ItemId));
     }
 }

@@ -8,9 +8,9 @@ public class PriceSnapshot
 {
     public Guid Id { get; set; }
 
-    public Guid StoreProductId { get; set; }
+    public Guid ProductId { get; set; }
 
-    public StoreProduct StoreProduct { get; set; } = null!;
+    public Product Product { get; set; } = null!;
 
     /// <summary>The crawl run that produced this snapshot (observability).</summary>
     public Guid CrawlRunId { get; set; }

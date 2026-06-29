@@ -7,7 +7,7 @@ fuzzy text. When "same-product compare" looks wrong (two stores not merged, or t
 Code: [`CanonicalMatcher`](../../src/Zhua.Infrastructure/Matching/CanonicalMatcher.cs) +
 [`ProductNormalizer`](../../src/Zhua.Application/Matching/ProductNormalizer.cs) (the pure text helpers).
 Sibling docs: crawling/ingestion → [crawling.md](crawling.md); the target redesign of the whole canonical layer →
-[canonical-model.md](canonical-model.md); the deferred LLM matcher → [ai-matching.md](ai-matching.md).
+[item-model.md](item-model.md); the deferred LLM matcher → [ai-matching.md](ai-matching.md).
 
 ---
 

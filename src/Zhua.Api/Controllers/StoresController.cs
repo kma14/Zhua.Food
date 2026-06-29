@@ -27,7 +27,7 @@ public sealed class StoresController(ZhuaDbContext db) : ControllerBase
             .OrderBy(s => s.Chain).ThenBy(s => s.Name)
             .Select(s => new StoreView(
                 s.Id, s.Chain.ToString(), s.Name, s.Suburb, s.Latitude, s.Longitude,
-                s.StoreProducts.Count(sp => sp.CurrentPrice != null),
+                s.Products.Count(sp => sp.CurrentPrice != null),
                 s.CrawlRuns.Where(r => r.Status == CrawlRunStatus.Succeeded)
                     .Max(r => (DateTimeOffset?)r.FinishedAt)))
             .ToListAsync();

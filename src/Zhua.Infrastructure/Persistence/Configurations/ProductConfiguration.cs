@@ -4,9 +4,9 @@ using Zhua.Domain.Entities;
 
 namespace Zhua.Infrastructure.Persistence.Configurations;
 
-public class StoreProductConfiguration : IEntityTypeConfiguration<StoreProduct>
+public class ProductConfiguration : IEntityTypeConfiguration<Product>
 {
-    public void Configure(EntityTypeBuilder<StoreProduct> b)
+    public void Configure(EntityTypeBuilder<Product> b)
     {
         b.HasKey(x => x.Id);
         b.Property(x => x.SourceSku).HasMaxLength(100);
@@ -22,18 +22,18 @@ public class StoreProductConfiguration : IEntityTypeConfiguration<StoreProduct>
         b.Property(x => x.UnitPrice).HasPrecision(12, 4);
 
         b.HasOne(x => x.Store)
-            .WithMany(s => s.StoreProducts)
+            .WithMany(s => s.Products)
             .HasForeignKey(x => x.StoreId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        b.HasOne(x => x.CanonicalProduct)
-            .WithMany(c => c.StoreProducts)
-            .HasForeignKey(x => x.CanonicalProductId)
+        b.HasOne(x => x.Item)
+            .WithMany(c => c.Products)
+            .HasForeignKey(x => x.ItemId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // A store's own SKU is unique within that store.
         b.HasIndex(x => new { x.StoreId, x.SourceSku }).IsUnique();
-        b.HasIndex(x => x.CanonicalProductId);
+        b.HasIndex(x => x.ItemId);
         b.HasIndex(x => x.Gtin);
     }
 }

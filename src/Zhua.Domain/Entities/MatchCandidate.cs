@@ -3,20 +3,20 @@ using Zhua.Domain.Enums;
 namespace Zhua.Domain.Entities;
 
 /// <summary>
-/// A proposed link between a <see cref="StoreProduct"/> and a <see cref="CanonicalProduct"/> that the matcher
+/// A proposed link between a <see cref="Product"/> and a <see cref="Item"/> that the matcher
 /// was NOT confident enough to apply automatically (plan D18) — the human review queue. Approving sets the
-/// product's <see cref="StoreProduct.CanonicalProductId"/>; rejecting suppresses the pair on future runs.
+/// product's <see cref="Product.ItemId"/>; rejecting suppresses the pair on future runs.
 /// Decisions persist across re-runs so the matcher never re-asks an answered question.
 /// </summary>
 public class MatchCandidate
 {
     public Guid Id { get; set; }
 
-    public Guid StoreProductId { get; set; }
-    public StoreProduct StoreProduct { get; set; } = null!;
+    public Guid ProductId { get; set; }
+    public Product Product { get; set; } = null!;
 
-    public Guid CanonicalProductId { get; set; }
-    public CanonicalProduct CanonicalProduct { get; set; } = null!;
+    public Guid ItemId { get; set; }
+    public Item Item { get; set; } = null!;
 
     /// <summary>Match confidence in [0,1] — name-token overlap given equal brand + size.</summary>
     public double Score { get; set; }
@@ -30,7 +30,7 @@ public class MatchCandidate
 
     public DateTimeOffset? ReviewedAt { get; set; }
 
-    /// <summary>Human confirms the match (D18). The caller also sets the product's CanonicalProductId.</summary>
+    /// <summary>Human confirms the match (D18). The caller also sets the product's ItemId.</summary>
     public void Approve(DateTimeOffset now)
     {
         Status = MatchStatus.Approved;

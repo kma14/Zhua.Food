@@ -1,6 +1,6 @@
 # zhua.food — canonical-layer rework: implementation plan
 
-Executes the target design in [canonical-model.md](canonical-model.md) (D25), **one phase at a time**. Each phase is
+Executes the target design in [item-model.md](item-model.md) (D25), **one phase at a time**. Each phase is
 independently shippable and tested. **Ordering rule:** additive/internal first, **breaking-for-Codex last and
 coordinated** (the front-end builds against the live API). AI matching is *not* in this plan — it's deferred
 ([ai-matching.md](ai-matching.md)).
@@ -24,24 +24,29 @@ overwriting it**. Fully additive — nothing removed.
 **Done:** API returns canonical `id` + `description`; re-running the matcher never changes an existing canonical's
 text. Codex can adopt the grouping label now.
 
-## Phase 2 — Search: store-first, grouped by canonical 🟡
+## Phase 2 — Search: store-first, grouped by item 🟡 ✅ DONE (2026-06-29)
 
-Search the **real** store text, collapse by canonical. Closes the recall/coverage gap and stops forcing a synthetic
-name on the UI.
+Search the **real** store text, group by item. Closes the recall/coverage gap and stops forcing a synthetic name on
+the UI. **Final shape (after design review):** the API returns the **group + raw listings, no aggregates** — the
+client ranks them (cheapest is *not* always what the shopper wants; nearest store often matters more), and it's a
+small set (≤7 stores/group).
 
-- [ ] Rewrite product search: query `StoreProduct` `RawName`/`RawBrand` (active stores) → group by
-      `CanonicalProductId` (null ⇒ a group of one).
-- [ ] Each row: representative (cheapest) **real store name** as title + canonical `id` + `description` + cheapest
-      price + store count + image + on-special; carry a `matched` flag and the right drill-in id (canonical id when
-      matched, else representative store-product id).
-- [ ] **REST cleanup of `/products` (agreed 2026-06-27):** collapse search + category-filter into **one filtered
-      collection** — `GET /products?q=&category=&storeId=&sort=&page=&size=`, **one** list DTO; **drop
-      `/products/search`** (verb-in-path) and the "bare `/products` 400s without `?category=`" wart. Keep
-      `/products/{id}` + `/price-history`; `/categories/{id}/products` stays as the sub-resource alias.
-- [ ] Tests: a term in only one store's wording is found; duplicates collapse; unmatched listings appear.
-- [ ] Docs: api.md `/products` section + the store-first note.
+- [x] Store-first query (`ProductQuery`): filter `Product` `RawName`/`RawBrand` (active, priced) → group by
+      `ItemId ?? Id` (unmatched ⇒ a group of one) → return **every** listing in the group, not a representative.
+- [x] `ProductGroup` = item metadata (`itemId` + `description` + `category`) + **`products[]`** (the payload). Each
+      `ProductListing` is pure per-listing facts incl. a **server-normalised comparable `unitPrice`/`unit`** (domain
+      logic stays server-side). **No** root `cheapestPrice`/`saving`/`storeCount`/`onSpecialSomewhere` — the UI derives them.
+- [x] **One `/products` collection:** `GET /products?q=&category=&storeId=&page=&size=` (dropped `?sort=` — the UI
+      sorts the small list); **dropped `/products/search`** and the bare-`/products`-400 wart. `GET /products/{id}`
+      (a product id) returns the **`ProductGroup` it belongs to**. `/categories/{id}/products` = the browse alias.
+- [x] **Controller merge:** `StoreProductsController` deleted — admin link is now `PATCH /products/{id}`. 3
+      product-ish controllers → 2 (`ProductsController` + `ItemsController`).
+- [x] Tests + api.md rewritten. 96 green.
+- [ ] **Deferred (evolve as required):** `Cache-Control`/`ETag` on these reads (read-mostly, twice-daily updates →
+      high cache hit-rate); SQL-side grouping + rate-limiting if the catalogue/store count grows.
 
-**Coordinate with Codex** — response shape + the search route change. (Option: keep the old fields populated during a transition.)
+**Breaking for Codex** — shopper search/compare flipped to the grouped shape; bundled with the rename's breaking
+wave (2026-06-29).
 
 ## Phase 3 — Category CRUD (the curation surface) 🟢 ✅ DONE (2026-06-27)
 
@@ -61,17 +66,24 @@ Make the canonical **category** an owned, editable vocabulary — the *only* cur
 
 Independent of Phases 1–2.
 
-## Phase 4 — Correction toolkit: unlink / merge / split 🟢
+## Phase 4 — Correction toolkit: merge (unlink/split already done) 🟢
 
 The pointer-move operations a "we *think*" overlay needs (non-destructive; never touch store listings).
 
-- [ ] `POST /admin/store-products/{id}/unlink` (clear `CanonicalProductId`).
-- [ ] `POST /admin/canonicals/{id}/merge { intoId }` (repoint members + candidates, then remove the empty one;
-      decide price-history handling).
-- [ ] Split = already covered by `link-canonical` / `create-canonical` (move a member out) — add a convenience only
-      if needed.
+- [x] **Unlink** — folded into `PATCH /store-products/{id}` `{ "canonicalProductId": null }` (shipped with the RESTful
+      admin refactor, see note below).
+- [ ] `POST /canonicals/{id}/merge { intoId }` — *or* a RESTful equivalent (repoint members + candidates, then remove
+      the empty one; decide price-history handling). The one genuinely-verb-shaped action left; model as a `merge`
+      sub-resource or a `PATCH` that repoints, TBD when built.
+- [x] **Split** — already covered: move a member out via `PATCH /store-products/{id}` (relink) or `POST
+      /canonical-products` + relink.
 - [ ] Matcher must respect merges (a merged-away canonical isn't recreated — `MatchKey` reconciliation).
 - [ ] Tests + api.md.
+
+> **RESTful admin refactor (2026-06-27):** the admin surface was de-verbed and de-`/admin/`-prefixed. `*AdminController`
+> classes are gone; each mutation lives on the resource it changes, guarded by `[Authorize("Admin")]`:
+> `PATCH /match-candidates/{id}` (approve/reject via `status`), `PATCH /store-products/{id}` (link/unlink/relink),
+> `POST /canonical-products` (create). Breaking for Codex's review UI — coordinated.
 
 ## Phase 5 — Remove canonical name from the shopper API 🔴 (last)
 

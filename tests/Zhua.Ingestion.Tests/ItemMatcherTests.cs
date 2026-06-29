@@ -8,7 +8,7 @@ using Zhua.Infrastructure.Persistence;
 namespace Zhua.Ingestion.Tests;
 
 /// <summary>Proves the two-tier matcher (plan D9/D18): Foodstuffs auto-group, Woolworths auto-link vs review.</summary>
-public class CanonicalMatcherTests
+public class ItemMatcherTests
 {
     private readonly InMemoryDatabaseRoot _root = new();
     private readonly TestClock _clock = new(DateTimeOffset.Parse("2026-06-23T00:00:00Z"));
@@ -19,7 +19,7 @@ public class CanonicalMatcherTests
 
     private ZhuaDbContext NewContext() =>
         new(new DbContextOptionsBuilder<ZhuaDbContext>()
-            .UseInMemoryDatabase(nameof(CanonicalMatcherTests), _root).Options);
+            .UseInMemoryDatabase(nameof(ItemMatcherTests), _root).Options);
 
     private async Task SeedAsync()
     {
@@ -29,8 +29,8 @@ public class CanonicalMatcherTests
             new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
             new Store { Id = PaknSave, Chain = Chain.PaknSave, Name = "PAK", Suburb = "x", IsActive = true });
 
-        db.StoreProducts.AddRange(
-            // Foodstuffs share productId "C1" → one canonical, both linked (Tier 1).
+        db.Products.AddRange(
+            // Foodstuffs share productId "C1" → one item, both linked (Tier 1).
             Sp(NewWorld, "C1", "Smooth & Creamy Colby Cheese", "Mainland", "500g", 10.49m),
             Sp(PaknSave, "C1", "Smooth & Creamy Colby Cheese", "Mainland", "500g", 8.99m),
             // Two Anchor cottage-cheese variants — the Woolworths name can't disambiguate them.
@@ -44,7 +44,7 @@ public class CanonicalMatcherTests
         await db.SaveChangesAsync();
     }
 
-    private StoreProduct Sp(Guid store, string sku, string name, string brand, string size, decimal price) => new()
+    private Product Sp(Guid store, string sku, string name, string brand, string size, decimal price) => new()
     {
         StoreId = store,
         SourceSku = sku,
@@ -62,65 +62,65 @@ public class CanonicalMatcherTests
         await SeedAsync();
 
         await using (var db = NewContext())
-            await new CanonicalMatcher(db, _clock).RunAsync();
+            await new ItemMatcher(db, _clock).RunAsync();
 
         await using var check = NewContext();
 
-        // Tier 1: 3 canonicals (Colby, Chives Cottage, Original Cottage).
-        Assert.Equal(3, await check.CanonicalProducts.CountAsync());
+        // Tier 1: 3 items (Colby, Chives Cottage, Original Cottage).
+        Assert.Equal(3, await check.Items.CountAsync());
 
-        // The Mainland Colby canonical links all three store-products (NW + PAK + auto-linked Woolworths).
-        var colby = await check.CanonicalProducts.SingleAsync(c => c.MatchKey == "foodstuffs:C1");
-        var linked = await check.StoreProducts.CountAsync(p => p.CanonicalProductId == colby.Id);
+        // The Mainland Colby item links all three store-products (NW + PAK + auto-linked Woolworths).
+        var colby = await check.Items.SingleAsync(c => c.MatchKey == "foodstuffs:C1");
+        var linked = await check.Products.CountAsync(p => p.ItemId == colby.Id);
         Assert.Equal(3, linked);
 
         // Ambiguous Woolworths product is NOT linked and produced pending candidates instead.
-        var w2 = await check.StoreProducts.SingleAsync(p => p.SourceSku == "W2");
-        Assert.Null(w2.CanonicalProductId);
-        Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.StoreProductId == w2.Id && m.Status == MatchStatus.Pending));
+        var w2 = await check.Products.SingleAsync(p => p.SourceSku == "W2");
+        Assert.Null(w2.ItemId);
+        Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.ProductId == w2.Id && m.Status == MatchStatus.Pending));
     }
 
     [Fact]
     public async Task Description_is_seeded_once_and_never_re_minted_from_store_data()
     {
         await SeedAsync();
-        await using (var db = NewContext()) await new CanonicalMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
 
         Guid colbyId;
         await using (var check = NewContext())
         {
-            var colby = await check.CanonicalProducts.SingleAsync(c => c.MatchKey == "foodstuffs:C1");
+            var colby = await check.Items.SingleAsync(c => c.MatchKey == "foodstuffs:C1");
             colbyId = colby.Id;
             Assert.Equal("Smooth & Creamy Colby Cheese", colby.Description); // seeded from the representative listing
         }
 
-        // The store renames its listing; re-running the matcher must NOT overwrite the owned canonical text (D25).
+        // The store renames its listing; re-running the matcher must NOT overwrite the owned item text (D25).
         await using (var edit = NewContext())
         {
-            foreach (var sp in await edit.StoreProducts.Where(p => p.SourceSku == "C1").ToListAsync())
+            foreach (var sp in await edit.Products.Where(p => p.SourceSku == "C1").ToListAsync())
                 sp.RawName = "TOTALLY DIFFERENT NAME";
             await edit.SaveChangesAsync();
         }
-        await using (var db = NewContext()) await new CanonicalMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
 
         await using var after = NewContext();
-        var unchanged = await after.CanonicalProducts.SingleAsync(c => c.Id == colbyId);
+        var unchanged = await after.Items.SingleAsync(c => c.Id == colbyId);
         Assert.Equal("Smooth & Creamy Colby Cheese", unchanged.Description); // owned phrase held
         Assert.Equal("Smooth & Creamy Colby Cheese", unchanged.Name);        // name also no longer re-minted
     }
 
     [Fact]
-    public async Task Rerun_is_idempotent_and_keeps_one_canonical_per_sku()
+    public async Task Rerun_is_idempotent_and_keeps_one_item_per_sku()
     {
         await SeedAsync();
 
-        await using (var db = NewContext()) await new CanonicalMatcher(db, _clock).RunAsync();
-        await using (var db = NewContext()) await new CanonicalMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
 
         await using var check = NewContext();
-        Assert.Equal(3, await check.CanonicalProducts.CountAsync()); // not doubled
+        Assert.Equal(3, await check.Items.CountAsync()); // not doubled
         // W2 still has exactly its 2 pending candidates (not duplicated on re-run).
-        var w2 = await check.StoreProducts.SingleAsync(p => p.SourceSku == "W2");
-        Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.StoreProductId == w2.Id));
+        var w2 = await check.Products.SingleAsync(p => p.SourceSku == "W2");
+        Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.ProductId == w2.Id));
     }
 }

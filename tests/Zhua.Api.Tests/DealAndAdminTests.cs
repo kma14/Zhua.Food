@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using Zhua.Api.Contracts;
 
 namespace Zhua.Api.Tests;
@@ -44,101 +43,128 @@ public class DealAndAdminTests(ApiFactory factory)
     [Fact]
     public async Task Match_candidates_lists_pending_queue()
     {
-        var items = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        var items = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/match-candidates");
 
         Assert.NotNull(items);
         Assert.Contains(items!, m => m.Id == TestData.CandidateForList);
         var c = items!.Single(m => m.Id == TestData.CandidateForList);
-        Assert.Equal("Beef Mince Premium 1kg", c.StoreProductName);
+        Assert.Equal("Beef Mince Premium 1kg", c.ProductName);
         Assert.Equal("Woolworths", c.Supermarket);
-        Assert.NotEqual(Guid.Empty, c.StoreProductId);        // exposed for the link/create-canonical actions
-        Assert.Equal(TestData.MatchTarget, c.CandidateCanonicalId);
+        Assert.NotEqual(Guid.Empty, c.ProductId);        // exposed so the UI can PATCH /products/{id}
+        Assert.Equal(TestData.MatchTarget, c.CandidateItemId);
     }
 
     [Fact]
-    public async Task Link_canonical_links_the_listing_and_clears_its_candidates()
+    public async Task Patch_store_product_links_an_existing_item_and_clears_its_candidates()
     {
-        var res = await _client.PostAsJsonAsync(
-            $"/admin/store-products/{TestData.LinkTargetSp}/link-canonical",
-            new LinkCanonicalRequest(TestData.MatchTarget));
+        var res = await _client.PatchAsJsonAsync(
+            $"/products/{TestData.LinkTargetSp}",
+            new UpdateProductLinkRequest(TestData.MatchTarget));
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
-        var queue = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        var link = await res.Content.ReadFromJsonAsync<ProductLinkView>();
+        Assert.Equal(TestData.MatchTarget, link!.ItemId);
+
+        var queue = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/match-candidates");
         Assert.DoesNotContain(queue!, m => m.Id == TestData.CandidateOnLinkTarget);
     }
 
     [Fact]
-    public async Task Link_canonical_unknown_store_product_is_404()
+    public async Task Patch_store_product_unknown_listing_is_404()
     {
-        var res = await _client.PostAsJsonAsync(
-            $"/admin/store-products/{Guid.NewGuid()}/link-canonical",
-            new LinkCanonicalRequest(TestData.MatchTarget));
+        var res = await _client.PatchAsJsonAsync(
+            $"/products/{Guid.NewGuid()}",
+            new UpdateProductLinkRequest(TestData.MatchTarget));
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 
     [Fact]
-    public async Task Link_canonical_unknown_canonical_is_404()
+    public async Task Patch_store_product_unknown_item_is_404()
     {
-        var res = await _client.PostAsJsonAsync(
-            $"/admin/store-products/{TestData.LinkTargetSp}/link-canonical",
-            new LinkCanonicalRequest(Guid.NewGuid()));
+        var res = await _client.PatchAsJsonAsync(
+            $"/products/{TestData.LinkTargetSp}",
+            new UpdateProductLinkRequest(Guid.NewGuid()));
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 
     [Fact]
-    public async Task Create_canonical_mints_a_new_canonical_links_it_and_clears_candidates()
+    public async Task Create_item_then_link_makes_a_new_findable_linked_product()
     {
-        var res = await _client.PostAsJsonAsync(
-            $"/admin/store-products/{TestData.CreateTargetSp}/create-canonical",
-            new CreateCanonicalRequest(null, null, null, null));
-        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        // 1. Create the item from fields (the review UI pre-fills these from the listing it's on).
+        var create = await _client.PostAsJsonAsync("/items",
+            new CreateItemRequest("Create Me 500g", null, "Acme", "500g", null));
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var item = await create.Content.ReadFromJsonAsync<ItemView>();
+        Assert.NotEqual(Guid.Empty, item!.Id);
+        Assert.Equal("Create Me 500g", item.Description);   // owned label defaults to the name
 
-        var newId = (await res.Content.ReadFromJsonAsync<JsonElement>())
-            .GetProperty("canonicalProductId").GetGuid();
-        Assert.NotEqual(Guid.Empty, newId);
+        // 2. Link the listing to it via the same PATCH everything else uses.
+        var link = await _client.PatchAsJsonAsync(
+            $"/products/{TestData.CreateTargetSp}",
+            new UpdateProductLinkRequest(item.Id));
+        Assert.Equal(HttpStatusCode.OK, link.StatusCode);
 
-        // The new canonical defaults its name from the listing, so it's now findable + linked.
-        var hits = await _client.GetFromJsonAsync<List<ProductSummary>>("/products/search?q=create me");
-        var created = hits!.Single(p => p.Id == newId);
-        Assert.Equal(6.00m, created.CheapestPrice);
+        // It's now findable (store-first search on the listing's real name) + priced, and its candidate is gone.
+        var hits = await _client.GetFromJsonAsync<List<ProductGroup>>("/products?q=create me");
+        var created = hits!.Single(g => g.ItemId == item.Id);
+        Assert.Equal(TestData.CreateTargetSp, created.Products.Single().Id);  // the linked listing
+        Assert.Equal(6.00m, created.Products.Single().Price);
 
-        var queue = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        var queue = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/match-candidates");
         Assert.DoesNotContain(queue!, m => m.Id == TestData.CandidateOnCreateTarget);
     }
 
     [Fact]
-    public async Task Create_canonical_unknown_store_product_is_404()
+    public async Task Create_item_blank_name_is_400()
     {
-        var res = await _client.PostAsJsonAsync(
-            $"/admin/store-products/{Guid.NewGuid()}/create-canonical",
-            new CreateCanonicalRequest(null, null, null, null));
-        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+        var res = await _client.PostAsJsonAsync("/items",
+            new CreateItemRequest("   ", null, null, null, null));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
 
     [Fact]
-    public async Task Approve_links_the_match_and_removes_it_from_the_queue()
+    public async Task Patch_candidate_approved_links_the_match_and_removes_it_from_the_queue()
     {
-        var res = await _client.PostAsync($"/admin/match-candidates/{TestData.CandidateToApprove}/approve", null);
+        var res = await _client.PatchAsJsonAsync(
+            $"/match-candidates/{TestData.CandidateToApprove}",
+            new UpdateMatchCandidateRequest("approved"));
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
-        var items = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        var decision = await res.Content.ReadFromJsonAsync<MatchCandidateDecision>();
+        Assert.Equal("Approved", decision!.Status);
+        Assert.Equal(TestData.MatchTarget, decision.ItemId);
+
+        var items = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/match-candidates");
         Assert.DoesNotContain(items!, m => m.Id == TestData.CandidateToApprove);
     }
 
     [Fact]
-    public async Task Approve_unknown_is_404()
+    public async Task Patch_candidate_unknown_is_404()
     {
-        var res = await _client.PostAsync($"/admin/match-candidates/{Guid.NewGuid()}/approve", null);
+        var res = await _client.PatchAsJsonAsync(
+            $"/match-candidates/{Guid.NewGuid()}",
+            new UpdateMatchCandidateRequest("approved"));
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 
     [Fact]
-    public async Task Reject_marks_the_candidate_rejected()
+    public async Task Patch_candidate_bad_status_is_400()
     {
-        var res = await _client.PostAsync($"/admin/match-candidates/{TestData.CandidateToReject}/reject", null);
+        var res = await _client.PatchAsJsonAsync(
+            $"/match-candidates/{TestData.CandidateForList}",
+            new UpdateMatchCandidateRequest("maybe"));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Patch_candidate_rejected_marks_the_candidate_rejected()
+    {
+        var res = await _client.PatchAsJsonAsync(
+            $"/match-candidates/{TestData.CandidateToReject}",
+            new UpdateMatchCandidateRequest("rejected"));
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
-        var items = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/admin/match-candidates");
+        var items = await _client.GetFromJsonAsync<List<MatchCandidateView>>("/match-candidates");
         Assert.DoesNotContain(items!, m => m.Id == TestData.CandidateToReject);
     }
 }

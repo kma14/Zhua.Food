@@ -17,30 +17,29 @@ ingested data. It never crawls or migrates (those are the Worker/Migrator's job)
 Three layers. **Prices live only at the bottom layer**; the upper two are navigation.
 
 ```
-CanonicalCategory   e.g. "Chicken Breast, Thighs & Tenders"   ← shared taxonomy tag (no price)   [D22]
-   └─ CanonicalProduct   e.g. "Boneless Skinless Chicken Breast"  ← same item across stores (no price)  [D9/D18]
-         ├─ StoreProduct @ PAK'nSAVE Albany   $8.99   ← a real listing at one store, with its own price
-         ├─ StoreProduct @ New World Metro     $9.99
-         └─ … (one StoreProduct per store that sells it)
+Category   e.g. "Chicken Breast, Thighs & Tenders"   ← shared taxonomy tag (no price)   [D22]
+   └─ Item   e.g. "Boneless Skinless Chicken Breast"  ← same item across stores (no price)  [D9/D18]
+         ├─ Product @ PAK'nSAVE Albany   $8.99   ← a real listing at one store, with its own price
+         ├─ Product @ New World Metro     $9.99
+         └─ … (one Product per store that sells it)
 ```
 
-- **StoreProduct** — the real, per-store listing. Has the actual price, unit price, on-special flag, raw name.
-- **CanonicalProduct** — "these store listings are the same product." Holds **no price**; cheapest/compare is
-  computed live as `MIN()` over its StoreProducts. This is what merges the same item across stores.
-- **CanonicalCategory** — a single shared taxonomy (Department → Aisle → Shelf). A **classification tag**, not a
-  price holder. Every canonical product has one; the UI groups/summarises these however it likes.
+- **Product** — the real, per-store listing. Has the actual price, unit price, on-special flag, raw name.
+- **Item** — "these store listings are the same product." Holds **no price**; cheapest/compare is
+  computed live as `MIN()` over its Products. This is what merges the same item across stores.
+- **Category** — a single shared taxonomy (Department → Aisle → Shelf). A **classification tag**, not a
+  price holder. Every item has one; the UI groups/summarises these however it likes.
 
 **Typical UI flow:** `GET /categories` (build nav) → list products in a category → `GET /products/{id}` (the
 cross-store price compare). See [Front-end flow](#front-end-flow) below.
 
 ### `description` — the grouping label (D25)
 
-Priced product responses (`search`, `compare`, `category products`) carry a **`description`** on the canonical
-product. It's our **owned grouping label** — the honest "we think these N store listings are the same: *X*" phrase —
-**not** a store's product title. Today it's seeded equal to the canonical `name`; over time it becomes a curated/clean
-phrase and `name` is retired (see [internals/canonical-model.md](internals/canonical-model.md)). **Front-end
-guidance:** a product's **title should be a real store name** (`originalName` / per-store `storeName`); show
-`description` as the *grouping caption*, never as the title. May be `null`.
+Each `ProductGroup` carries a **`description`** at its root — our **owned grouping label**, the honest "we think
+these N store listings are the same: *X*" phrase, **not** a store's title. It's the internal item's caption; today
+seeded from the item, over time curated (see [internals/item-model.md](internals/item-model.md)). **Front-end
+guidance:** each listing's **`name` is already a real store name** — use it as the title; render `description` as
+the *grouping caption*, never the title. `null` for an unmatched listing (a group of one).
 
 ### Price dates (every priced response carries these)
 
@@ -49,9 +48,8 @@ guidance:** a product's **title should be a real store name** (`originalName` / 
 | `priceAsOf` | when we **last confirmed** this price (refreshed every crawl) | "price as of 24 Jun 6am" — freshness |
 | `priceUpdatedAt` | when the price **last changed** (D3); `null` if never moved | "price changed 22 Jun" |
 
-On list/merged views (`/categories/{id}/products`, `/products?category=`) these are the **cheapest store's**
-dates. `ProductSummary` (search) carries only `priceAsOf`. Prices update on the **twice-daily** crawl (6am/6pm
-NZ), so `priceAsOf` is at most ~12h old.
+Every listing inside `products[]` carries its own pair. Prices update on the **twice-daily** crawl (6am/6pm NZ), so
+`priceAsOf` is at most ~12h old.
 
 ### Filtering by store (`?storeId=`)
 
@@ -59,10 +57,10 @@ Product-discovery endpoints take an optional **`storeId`** filter so the UI can 
 shopper actually uses (e.g. their nearby branches). The ids come from [`GET /stores`](#get-stores--the-physical-stores-we-track).
 
 - **Repeatable** → a list: `?storeId=<a>&storeId=<b>` means "available at store **a or b**".
-- Applies to **`GET /categories`**, **`GET /categories/{id}/products`** ≡ **`GET /products?category=`**, and **`GET /products/search`**.
-- When set, a product is included only if it's sold at one of those stores, and **`cheapestPrice` / `storeCount` /
-  `onSpecial` / counts are recomputed over just the selected stores** — not globally. This matters because
-  Foodstuffs branches are **independently priced** (D16), so "cheapest at *my* PAK'nSAVE" ≠ "cheapest anywhere".
+- Applies to **`GET /categories`** and **`GET /products`** (incl. its `?category=` / `/categories/{id}/products` browse alias).
+- When set, a group's **`products[]` is restricted to just those stores** (and groups with none drop out), so any
+  cheapest/count the client derives is over the selected stores — not globally. This matters because Foodstuffs
+  branches are **independently priced** (D16), so "cheapest at *my* PAK'nSAVE" ≠ "cheapest anywhere".
 - Omit it for the all-stores view. An unknown id simply matches nothing; a malformed id → `400`.
 
 ---
@@ -96,7 +94,7 @@ The active stores (M1 = 7). For store pickers, a map, and to qualify the store n
 > Woolworths runs **1 active store** (Takapuna) — it's nationally priced so branches are identical (D16). The
 > `store`/`supermarket`/`suburb` fields on product responses line up with these.
 
-### `GET /categories` — the canonical category tree (D22)
+### `GET /categories` — the category tree (D22)
 
 The shared taxonomy as a nested tree, with product counts. The front-end builds its category navigation from this.
 
@@ -111,7 +109,7 @@ Optional **`?storeId=`** (repeatable) — counts then reflect only products sold
   "name": "Meat, Poultry & Seafood",
   "slug": "meat-poultry-seafood",
   "path": "meat-poultry-seafood",        // full slug path; unique
-  "productCount": 0,                     // canonical products directly on THIS node (usually 0 above Shelf)
+  "productCount": 0,                     // items directly on THIS node (usually 0 above Shelf)
   "totalProductCount": 885,              // including all descendants — use this for dept/aisle
   "children": [
     { "kind": "Aisle", "name": "Beef", "path": "meat-poultry-seafood/beef", "totalProductCount": 90, "children": [ … ] },
@@ -123,52 +121,51 @@ Optional **`?storeId=`** (repeatable) — counts then reflect only products sold
 > the API — they map to nodes in this tree (e.g. chicken = the `meat-poultry-seafood/chicken-poultry` aisle). The
 > UI decides how to group/summarise nodes.
 
-### `GET /products/search?q=` — search canonical products by name/brand
+### `GET /products` — the product collection (search + browse)
 
-**Query:** `q` (required), `page`, `size`, optional **`?storeId=`** (repeatable — restrict to those stores; see [Filtering by store](#filtering-by-store-storeid)).
+Searches/filters the **real store listings** and **groups them by item** so the same product across stores comes
+back as **one group with all its listings**. The API computes **no** cheapest/saving/count — the `products[]` list
+is the payload and **the client ranks it** (cheapest, nearest, on-special). Unmatched listings are a group of one.
 
-**Response:** `ProductSummary[]`:
+**Query (all optional):** `q` (search the real store name/brand) · `category={id}` (a category node — its whole
+subtree) · `storeId=` (repeatable) · `page` · `size`. No filter ⇒ the whole catalogue, paged. `category` returns
+only matched listings (the item carries the category); an unknown/archived `category` → `404`.
+
+**Response:** `ProductGroup[]`:
 ```json
 [{
-  "id": "019ef1a2-8825-700e-bc5a-7927f3bd7e6d",
-  "name": "100% Pure Goat's Milk Powder", "brand": "Healtheries", "size": "450g",
-  "description": "100% Pure Goat's Milk Powder",  // owned grouping label (D25) — see note below
-  "category": "UHT Milk & Milk Powder",     // canonical category leaf name (denormalized)
-  "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5005182.png",  // cheapest store's image
-  "cheapestPrice": 37.19,                    // MIN across its stores
-  "storeCount": 2,
-  "onSpecialSomewhere": false,
-  "priceAsOf": "2026-06-24T06:02:46+00:00"   // cheapest store's freshness
+  "itemId": "019ef1a2-880e-737b-a6e8-bc376177a9d3", // internal grouping id; null = an unmatched listing
+  "description": "Beef Mince 1kg",                  // item caption (D25); client decides usage — see note
+  "category": "Beef Mince",                         // item category leaf (denormalized); null if unmatched
+  "products": [                                     // THE payload — every store's listing; the client ranks them
+    { "id": "dddd…00a3", "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
+      "name": "Pams Beef Mince 1kg", "brand": "Pams", "size": "1kg",
+      "imageUrl": "https://a.fsimg.co.nz/…/5125914.png",
+      "price": 11.00, "isOnSpecial": false, "wasPrice": null,
+      "unitPrice": 11.00, "unit": "1kg",            // normalised COMPARABLE unit price (server-side); null if N/A
+      "priceUpdatedAt": "2026-06-22T08:08:59+00:00", "priceAsOf": "2026-06-24T06:01:44+00:00" },
+    { "id": "dddd…00a1", "store": "Woolworths Takapuna", "supermarket": "Woolworths", "suburb": "Takapuna",
+      "name": "Woolworths Beef Mince", "price": 12.00, "isOnSpecial": true, "wasPrice": 15.00,
+      "unitPrice": 12.00, "unit": "1kg", … },
+    { "id": "dddd…00a2", "store": "New World Metro", "supermarket": "NewWorld", "price": 13.50, "isOnSpecial": false, … }
+  ]
 }]
 ```
+> Root holds only **item metadata** (`itemId` + `description` + `category`); everything else is per-listing inside
+> `products[]`. The listing **`name` is a real store name** — use it as the title; render `description` as a
+> *grouping caption*, never the title. `products[]` comes back cheapest-first as a neutral default — **re-sort it
+> however you like** (the group is ≤7 stores). Drill into one listing via its `id` → `GET /products/{id}`.
 
-### `GET /products/{id}` — same-product cross-store compare (the core view)
+### `GET /products/{id}` — the group for one product (cross-store view)
 
-The "where's it cheapest" view: one canonical product, every store's real listing, cheapest first.
+**`{id}` is a product id**; returns the **`ProductGroup` it belongs to** — that listing plus every store listing
+sharing its item, so you have the full cross-store picture. An unmatched listing returns a group of one. `404` if
+the product id is unknown.
 
-**Response:** `ProductComparison`:
-```json
-{
-  "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
-  "name": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
-  "description": "Boneless Skinless Chicken Breast",  // owned grouping label (D25)
-  "category": "Chicken Breast, Thighs & Tenders",
-  "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // representative (cheapest store's)
-  "cheapestPrice": 8.99,
-  "saving": 1.00,                            // dearest − cheapest across stores
-  "prices": [
-    { "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
-      "storeName": "Boneless Skinless Chicken Breast",   // the store's OWN name for this item
-      "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // this store's image
-      "price": 8.99, "isOnSpecial": false, "nonSpecialPrice": null,
-      "unitPrice": 22.48, "unitOfMeasure": "1kg",
-      "priceUpdatedAt": "2026-06-22T08:08:59+00:00", "priceAsOf": "2026-06-24T06:01:44+00:00" },
-    { "store": "New World Metro Auckland", "supermarket": "NewWorld", "price": 9.99, "unitPrice": 24.98, "unitOfMeasure": "1kg", … }
-  ]
-}
-```
+**Response:** a single `ProductGroup` — same shape as an element of `GET /products` above.
 
-> **`supermarket`** = the store group (`Woolworths` | `NewWorld` | `PaknSave`). (Was `chain`.)
+> **`supermarket`** = the store group (`Woolworths` | `NewWorld` | `PaknSave`). (Was `chain`.) `wasPrice` is the
+> regular price when on special (Woolworths published / Foodstuffs reconstructed, D23).
 
 ### `GET /products/{id}/price-history` — price over time, per store
 
@@ -195,37 +192,19 @@ One **step series per store** from the change-only snapshots (D3). Optional `?da
 
 ### `GET /categories/{id}/products` — products inside a category (D22)
 
-The products under a category node (its **whole subtree**), each **merged across stores** and shown at its
-cheapest store. This is "show me the products in this category." `id` comes from `GET /categories`.
+The products under a category node (its **whole subtree**), grouped by item — the **browse alias** of
+`GET /products?category={id}`. `id` comes from `GET /categories`.
 
-> **Two equivalent URLs (same data):** `GET /categories/{id}/products` (sub-resource) and
-> `GET /products?category={id}` (filter on the products resource). Use whichever fits the call site.
+> **Two equivalent URLs (same `ProductGroup[]`):** `GET /categories/{id}/products` (sub-resource) and
+> `GET /products?category={id}` (filter on the products collection). Use whichever fits the call site.
 
-**Query:** `sort=unitPrice` (default — comparable per kg/L/ea, nulls last) `| price` (raw cheapest); `page`, `size`;
-optional **`?storeId=`** (repeatable — restrict to those stores, priced within them; see [Filtering by store](#filtering-by-store-storeid)).
+**Query:** `page`, `size`; optional **`?storeId=`** (repeatable — restrict to those stores; see [Filtering by store](#filtering-by-store-storeid)).
 
-**Response:** `CategoryProduct[]`:
-```json
-[{
-  "id": "019ef1a2-880e-737b-a6e8-bc376177a9d3",
-  "product": "Boneless Skinless Chicken Breast", "brand": "Pams Free Range", "size": null,
-  "description": "Boneless Skinless Chicken Breast",  // owned grouping label (D25)
-  "imageUrl": "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png",  // cheapest store's image
-  "originalName": "Boneless Skinless Chicken Breast",   // the cheapest store's own name
-  "cheapestPrice": 8.99,
-  "unitPrice": 22.48, "unit": "1kg",      // normalised comparable unit price; null if not comparable
-  "storeCount": 6,
-  "cheapestStore": "PAK'nSAVE Albany", "supermarket": "PaknSave",
-  "onSpecialSomewhere": false,
-  "priceUpdatedAt": "2026-06-22T08:08:59+00:00",   // cheapest store's: when its price last changed
-  "priceAsOf": "2026-06-24T06:01:44+00:00"         // cheapest store's: when last confirmed in a crawl
-}]
-```
-Click a row → `GET /products/{id}` for the per-store breakdown.
+**Response:** `ProductGroup[]` — identical shape to [`GET /products`](#get-products--the-product-collection-search--browse).
 
-> **Mixed units caveat:** at a broad node (e.g. the *Beef* aisle mixes per-kg steaks with per-pack sausages),
-> `unitPrice` spans `1kg` and `1ea`, so a single sorted list interleaves them — use the `unit` field to group,
-> or query a **shelf** (homogeneous units) for a clean cheapest list.
+> **Mixed units caveat:** a broad node (e.g. the *Beef* aisle) mixes per-kg steaks with per-pack sausages, so each
+> listing's comparable `unitPrice` spans `1kg` and `1ea` — group by the `unit` field, or query a **shelf**
+> (homogeneous units) when you want a clean unit-price comparison.
 
 ### `GET /deals?supermarket=` — current specials
 
@@ -250,34 +229,36 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
 
 ### Admin — match review (D18)
 
-Writes that touch already-ingested data (no crawl/migrate). The fully-admin endpoints below live under `/admin/*` and
-are guarded by the **`Admin`** role policy (enforcement pending the auth task; open for now).
+Writes that touch already-ingested data (no crawl/migrate). RESTful — **no verb paths**: a decision is a `PATCH` that
+moves a resource's state; a new item is a `POST` to its collection. The route names the resource (no `/admin/`
+prefix); access is the **`Admin`** role policy's job (enforcement pending the auth task; open for now).
 
-A reviewer looks at an unmatched/ambiguous listing (`StoreProduct`) and resolves it one of three ways:
+A reviewer looks at an unmatched/ambiguous listing (`Product`) and resolves it one of three ways:
 
 | Situation | Action |
 |---|---|
-| A proposed candidate is correct | **approve** it |
-| No candidate fits, but the listing **is** another existing canonical | **link** it to that canonical |
-| No candidate fits, and it's genuinely a **new** product | **create** a canonical from it |
+| A proposed candidate is correct | **approve** it → `PATCH /match-candidates/{id}` `{ "status": "approved" }` |
+| No candidate fits, but the listing **is** another existing item | **link** it → `PATCH /products/{id}` `{ "itemId": … }` |
+| No candidate fits, and it's genuinely a **new** product | **create** a item (`POST /items`), then **link** it (`PATCH /products/{id}`) |
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/admin/match-candidates` | pending queue, highest-confidence first (`page`,`size`). `MatchCandidateView[]` |
-| POST | `/admin/match-candidates/{id}/approve` | link the listing to the candidate's canonical; clears its sibling candidates |
-| POST | `/admin/match-candidates/{id}/reject` | matcher won't propose this pair again |
-| POST | `/admin/store-products/{id}/link-canonical` | body `{ "canonicalProductId": "…" }` — link the listing to an **existing** canonical; clears its pending candidates. `404` if the listing or canonical is unknown |
-| POST | `/admin/store-products/{id}/create-canonical` | body (all optional) `{ "name?", "brand?", "size?", "category?" }` — create a **new** canonical from the listing (defaults from its raw fields + finest store category) and link it; clears its pending candidates. Returns `{ canonicalProductId }`. `404` if the listing is unknown |
+| GET | `/match-candidates` | pending queue, highest-confidence first (`page`,`size`). `MatchCandidateView[]` |
+| PATCH | `/match-candidates/{id}` | body `{ "status": "approved" \| "rejected" }`. **approved** links the listing to the candidate's item + clears its sibling candidates; **rejected** stops the matcher proposing this pair again. Returns `MatchCandidateDecision`. `400` bad status, `404` unknown, `409` already decided |
+| PATCH | `/products/{id}` | body `{ "itemId": "…" \| null }` — set the listing's item link: an id links it to an **existing** item (clears its pending candidates); `null` **unlinks**. Returns `ProductLinkView`. `404` if the listing or the given item is unknown |
+| POST | `/items` | body `{ "name", "description?", "brand?", "size?", "category?" }` — create a **new** item (internal join key; `description` defaults to `name`, `category` to `"Uncategorised"`). Returns **`201 Created`** + `ItemView`. `400` if `name` is blank. **Then link the listing** with `PATCH /products/{id}` using the returned `id` |
 
-`MatchCandidateView`: `{ id, storeProductId, storeProductName, brand, size, supermarket, price, candidateCanonicalId, candidateCanonical, score, reason }`.
+`MatchCandidateView`: `{ id, productId, productName, brand, size, supermarket, price, candidateItemId, candidateItem, score, reason }`.
+`MatchCandidateDecision`: `{ id, status, itemId }` · `ProductLinkView`: `{ id, itemId }` · `ItemView`: `{ id, name, description, brand, size, category }`.
 
-> Use `storeProductId` (and `candidateCanonicalId`) from the queue to drive the link/create actions. To find a
-> canonical to **link** to, search the catalogue with [`GET /products/search?q=`](#get-productssearchq--search-canonical-products-by-namebrand) and use the result's `id`.
+> The review UI pre-fills the `POST /items` body from the listing it's looking at (its `productName`/
+> `brand`/`size` from the queue), then links that listing with the returned `id` — two clean calls instead of one
+> magic one. To **link** to a pre-existing item, search the catalogue with `GET /products?q=` and use the result's `id`.
 
 ### Category curation (D25) — writes on the `/categories` resource
 
-The canonical **category** tree is the one curated, owned vocabulary, so it has create/rename/delete (the category is
-user-facing; canonical *products* are an internal join and aren't curated). These are **writes on the same
+The item **category** tree is the one curated, owned vocabulary, so it has create/rename/delete (the category is
+user-facing; item *products* are an internal join and aren't curated). These are **writes on the same
 `/categories` resource** as the public reads — guarded by the **`Admin`** role policy (enforcement pending the auth
 task; open for now).
 
@@ -304,7 +285,7 @@ task; open for now).
 | 2 | Products inside a chosen category | `GET /categories/{id}/products` (or `GET /products?category={id}`) |
 | 3 | Click a product → per-store prices | `GET /products/{id}` |
 | — | Price chart for a product | `GET /products/{id}/price-history` |
-| — | A search box | `GET /products/search?q=` |
+| — | A search box | `GET /products?q=` |
 | — | A deals page | `GET /deals` |
 
 The whole flow is now backed end-to-end.
@@ -313,18 +294,14 @@ The whole flow is now backed end-to-end.
 
 ## Notes / gotchas for the front-end
 
-- **`category` string vs `categoryId`:** `ProductSummary.category` / `ProductComparison.category` are the
-  denormalized leaf **name** (e.g. "Chicken Breast, Thighs & Tenders"). The structured tree + ids come from
-  `GET /categories`.
-- **Two flavours of unit price.** On `/products/{id}` and `/deals`, `unitPrice` + `unitOfMeasure` are **as the
-  store published them** (`1kg`, `100g`, `100ml`, `1L`, `1ea`…). On **`/categories/{id}/products`**, `unitPrice`
-  is **normalised** to one comparable base (`unit` = `1kg`/`1L`/`1ea`) so products can be ranked by value
-  (`null` when the store's unit can't be parsed).
-- **Not every StoreProduct is matched to a CanonicalProduct.** Unmatched listings still exist (with prices) but
-  won't appear in same-product compare until the matcher links them.
-- **Product images (`imageUrl`).** Present on search, category, compare (top-level + per-store), and deals. On the
-  canonical/merged views it's the **cheapest store's** image; `/products/{id}` also gives each store's own under
-  `prices[].imageUrl`. Can be `null` if no store has one. Sources differ: **Woolworths** = its own CDN
+- **`category` string vs `categoryId`:** a `ProductGroup`'s `category` is the denormalized leaf **name** (e.g.
+  "Chicken Breast, Thighs & Tenders"). The structured tree + ids come from `GET /categories`.
+- **Unit price is normalised.** Each listing's `unitPrice` + `unit` (`1kg`/`1L`/`1ea`) is **server-normalised** to
+  one comparable base so you can rank by value without re-deriving it (`null` when the store's unit can't be
+  parsed). `/deals` still carries the store's raw `unitPrice` + `unitOfMeasure`.
+- **Not every Product is matched to an Item.** Unmatched listings still appear — as a group of one (`itemId: null`).
+- **Product images (`imageUrl`).** Per-listing, inside `products[]` (and on deals). Can be `null` if a store has
+  none. Sources differ: **Woolworths** = its own CDN
   (`assets.woolworths.com.au`, already sized ~200×200); **Foodstuffs** = the `a.fsimg.co.nz` CDN at `400x400` — for
   Foodstuffs you can append **`?w=N`** for a smaller variant (e.g. `?w=200`), and imageless products resolve to a
   generic placeholder image (a real 200 response, just not a photo — same as on the supermarket's own site).

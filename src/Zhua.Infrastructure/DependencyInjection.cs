@@ -30,11 +30,11 @@ public static class DependencyInjection
         return services;
     }
 
-    /// <summary>Offline canonical matching (plan D9/D18) + canonical category mapping (D22).</summary>
+    /// <summary>Offline item matching (plan D9/D18) + category mapping (D22).</summary>
     public static IServiceCollection AddMatching(this IServiceCollection services)
     {
-        services.AddScoped<ICanonicalMatcher, CanonicalMatcher>();
-        services.AddScoped<ICanonicalCategoryMapper, CanonicalCategoryMapper>();
+        services.AddScoped<IItemMatcher, ItemMatcher>();
+        services.AddScoped<ICategoryMapper, CategoryMapper>();
         return services;
     }
 }

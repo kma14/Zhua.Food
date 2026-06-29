@@ -6,12 +6,12 @@ namespace Zhua.Infrastructure.Persistence;
 public class ZhuaDbContext(DbContextOptions<ZhuaDbContext> options) : DbContext(options)
 {
     public DbSet<Store> Stores => Set<Store>();
-    public DbSet<CanonicalProduct> CanonicalProducts => Set<CanonicalProduct>();
-    public DbSet<StoreProduct> StoreProducts => Set<StoreProduct>();
+    public DbSet<Item> Items => Set<Item>();
+    public DbSet<Product> Products => Set<Product>();
     public DbSet<PriceSnapshot> PriceSnapshots => Set<PriceSnapshot>();
     public DbSet<CrawlRun> CrawlRuns => Set<CrawlRun>();
     public DbSet<StoreCategory> StoreCategories => Set<StoreCategory>();
-    public DbSet<CanonicalCategory> CanonicalCategories => Set<CanonicalCategory>();
+    public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductTag> ProductTags => Set<ProductTag>();
     public DbSet<MatchCandidate> MatchCandidates => Set<MatchCandidate>();
 

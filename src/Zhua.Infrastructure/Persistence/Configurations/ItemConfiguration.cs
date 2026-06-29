@@ -4,13 +4,13 @@ using Zhua.Domain.Entities;
 
 namespace Zhua.Infrastructure.Persistence.Configurations;
 
-public class CanonicalProductConfiguration : IEntityTypeConfiguration<CanonicalProduct>
+public class ItemConfiguration : IEntityTypeConfiguration<Item>
 {
-    public void Configure(EntityTypeBuilder<CanonicalProduct> b)
+    public void Configure(EntityTypeBuilder<Item> b)
     {
         b.HasKey(x => x.Id);
         b.Property(x => x.MatchKey).HasMaxLength(100);
-        b.HasIndex(x => x.MatchKey).IsUnique().HasFilter("\"MatchKey\" IS NOT NULL"); // stable per-canonical key (D18)
+        b.HasIndex(x => x.MatchKey).IsUnique().HasFilter("\"MatchKey\" IS NOT NULL"); // stable per-item key (D18)
         b.Property(x => x.Name).HasMaxLength(300);
         b.Property(x => x.Description).HasMaxLength(300);
         b.Property(x => x.Brand).HasMaxLength(150);
@@ -21,6 +21,6 @@ public class CanonicalProductConfiguration : IEntityTypeConfiguration<CanonicalP
 
         b.HasIndex(x => x.Category);
         b.HasIndex(x => x.Gtin);
-        b.HasIndex(x => x.CanonicalCategoryId); // browse/filter by the shared taxonomy (D22)
+        b.HasIndex(x => x.CategoryId); // browse/filter by the shared taxonomy (D22)
     }
 }

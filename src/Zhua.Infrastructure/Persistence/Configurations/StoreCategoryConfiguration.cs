@@ -27,7 +27,7 @@ public class StoreCategoryConfiguration : IEntityTypeConfiguration<StoreCategory
 
         b.HasIndex(x => new { x.StoreId, x.Kind, x.ExternalId }).IsUnique();
         b.HasIndex(x => x.ParentId);
-        b.HasIndex(x => x.CanonicalCategoryId); // mapping to the shared taxonomy (D22)
+        b.HasIndex(x => x.CategoryId); // mapping to the shared taxonomy (D22)
 
         // Many-to-many: a product appears under several categories (plan D11). EF creates the join table.
         b.HasMany(x => x.Products).WithMany(p => p.Categories);

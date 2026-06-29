@@ -5,9 +5,9 @@ using Zhua.Domain.Entities;
 namespace Zhua.Infrastructure.Persistence.Configurations;
 
 /// <summary>Shared cross-store category tree (plan D22).</summary>
-public class CanonicalCategoryConfiguration : IEntityTypeConfiguration<CanonicalCategory>
+public class CategoryConfiguration : IEntityTypeConfiguration<Category>
 {
-    public void Configure(EntityTypeBuilder<CanonicalCategory> b)
+    public void Configure(EntityTypeBuilder<Category> b)
     {
         b.HasKey(x => x.Id);
         b.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
@@ -26,16 +26,16 @@ public class CanonicalCategoryConfiguration : IEntityTypeConfiguration<Canonical
 
         b.HasIndex(x => x.ParentId);
 
-        // Mapped store categories (D22): deleting a canonical node just unsets the link, never the store node.
+        // Mapped store categories (D22): deleting a item node just unsets the link, never the store node.
         b.HasMany(x => x.StoreCategories)
-            .WithOne(s => s.CanonicalCategory)
-            .HasForeignKey(s => s.CanonicalCategoryId)
+            .WithOne(s => s.Category)
+            .HasForeignKey(s => s.CategoryId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Products under this canonical node: same — unset the link, don't delete the product.
+        // Products under this item node: same — unset the link, don't delete the product.
         b.HasMany(x => x.Products)
-            .WithOne(p => p.CanonicalCategory)
-            .HasForeignKey(p => p.CanonicalCategoryId)
+            .WithOne(p => p.CategoryNode)
+            .HasForeignKey(p => p.CategoryId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

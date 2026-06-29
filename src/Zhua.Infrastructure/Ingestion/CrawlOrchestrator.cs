@@ -9,7 +9,7 @@ namespace Zhua.Infrastructure.Ingestion;
 
 /// <summary>
 /// Runs one crawl for a store: open <see cref="CrawlRun"/> → fetch → for each product apply the observation
-/// (the change-only price rule, D3, lives on <see cref="StoreProduct.ApplyObservation"/>) → link categories
+/// (the change-only price rule, D3, lives on <see cref="Product.ApplyObservation"/>) → link categories
 /// (D11) → sync promo tags (D13) → close the run. This type is the use-case orchestration; the per-product
 /// invariant is owned by the entity (D19).
 /// </summary>
@@ -34,7 +34,7 @@ public sealed class CrawlOrchestrator(
 
             var scraped = await crawler.FetchAsync(store, ct);
 
-            var existing = await db.StoreProducts
+            var existing = await db.Products
                 .Include(p => p.Categories)
                 .Include(p => p.Tags)
                 .AsSplitQuery() // two collection includes — split to avoid a cartesian-explosion warning
@@ -60,14 +60,14 @@ public sealed class CrawlOrchestrator(
             {
                 if (!existing.TryGetValue(s.SourceSku, out var sp))
                 {
-                    sp = new StoreProduct
+                    sp = new Product
                     {
                         StoreId = store.Id,
                         SourceSku = s.SourceSku,
                         RawName = s.Name,
                         FirstSeenAt = now,
                     };
-                    db.StoreProducts.Add(sp);
+                    db.Products.Add(sp);
                     existing[s.SourceSku] = sp;
                 }
 
@@ -111,13 +111,13 @@ public sealed class CrawlOrchestrator(
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
-    private static StoreProductObservation ToObservation(ScrapedProduct s) => new(
+    private static ProductObservation ToObservation(ScrapedProduct s) => new(
         s.Name, s.Brand, s.Size, s.Gtin, s.Url, s.ImageUrl,
         s.Price, s.NonSpecialPrice, s.IsOnSpecial, s.UnitPrice, s.UnitOfMeasure);
 
     /// <summary>Upserts the product's Department→Aisle→Shelf nodes and links them many-to-many (plan D11).</summary>
     private void LinkCategories(
-        StoreProduct sp, IReadOnlyList<ScrapedCategoryNode> path, Guid storeId,
+        Product sp, IReadOnlyList<ScrapedCategoryNode> path, Guid storeId,
         Dictionary<(CategoryKind Kind, string ExternalId), StoreCategory> categories)
     {
         StoreCategory? parent = null;
@@ -152,7 +152,7 @@ public sealed class CrawlOrchestrator(
 
     /// <summary>Adds the crawl's promo tags, upserting the chain-scoped tag dimension (plan D13). Reset happens in the caller.</summary>
     private void SyncTags(
-        StoreProduct sp, IReadOnlyList<ScrapedTag> scrapedTags, Chain chain,
+        Product sp, IReadOnlyList<ScrapedTag> scrapedTags, Chain chain,
         Dictionary<(ProductTagSource Source, string Code), ProductTag> tags)
     {
         foreach (var t in scrapedTags)

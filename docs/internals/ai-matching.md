@@ -4,7 +4,7 @@
 > (`brand + size + name-overlap`, see [matching.md](matching.md)) auto-links the confident cases and drops the rest
 > into the **human review queue**, resolved via the admin endpoints (`approve` / `reject` / `link-canonical` /
 > `create-canonical`). This doc is the plan for when we *augment* that heuristic with an LLM. Surrounding model
-> (why canonical products exist, `description`-as-anchor): [canonical-model.md](canonical-model.md).
+> (why canonical products exist, `description`-as-anchor): [item-model.md](item-model.md).
 
 ## Why AI
 
@@ -15,7 +15,7 @@ the platform's core judgement: "are these the same item?"
 
 ## Where it slots in (the flow doesn't change)
 
-Per store product, every match run (from [canonical-model.md](canonical-model.md#matcher-direction-additive-ai-assisted)):
+Per store product, every match run (from [item-model.md](item-model.md#matcher-direction-additive-ai-assisted)):
 
 1. **Already linked?** → leave it.
 2. **Deterministic key?** (Foodstuffs branches share `productId`) → link, no AI.

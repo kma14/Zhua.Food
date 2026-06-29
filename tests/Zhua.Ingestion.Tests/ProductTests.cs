@@ -4,13 +4,13 @@ using Zhua.Domain.ValueObjects;
 namespace Zhua.Ingestion.Tests;
 
 /// <summary>Pure Domain tests for the change-only price rule (plan D3) now owned by the entity (D19) — no EF.</summary>
-public class StoreProductTests
+public class ProductTests
 {
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-06-23T06:00:00Z");
 
-    private static StoreProduct NewProduct() => new() { SourceSku = "SKU", RawName = "x", FirstSeenAt = T0 };
+    private static Product NewProduct() => new() { SourceSku = "SKU", RawName = "x", FirstSeenAt = T0 };
 
-    private static StoreProductObservation Milk(decimal price, bool onSpecial = false, decimal? nonSpecial = null) =>
+    private static ProductObservation Milk(decimal price, bool onSpecial = false, decimal? nonSpecial = null) =>
         new("Anchor Blue Milk 2L", "Anchor", "2L", "9400000000001", null, null,
             price, nonSpecial, onSpecial, price / 2, "1L");
 
