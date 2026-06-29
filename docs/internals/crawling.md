@@ -6,7 +6,7 @@ special, empty category) **without** throwing. This file is the contract we depe
 start here, then compare against the raw archive (see [§ When a site changes](#when-a-site-changes)).
 
 Code: [`src/Zhua.Crawling/`](../../src/Zhua.Crawling/). The change-only price rule + was-price reconstruction live on
-the entity, not the crawler: [`StoreProduct.ApplyObservation`](../../src/Zhua.Domain/Entities/StoreProduct.cs) (D3/D19/D23).
+the entity, not the crawler: [`Product.ApplyObservation`](../../src/Zhua.Domain/Entities/Product.cs) (D3/D19/D23).
 
 ---
 
@@ -22,7 +22,7 @@ the entity, not the crawler: [`StoreProduct.ApplyObservation`](../../src/Zhua.Do
 | Politeness | sequential stores, per-request delays (D6) | low ToS risk + avoids tripping rate limits |
 | Categories | crawl the store's own tree → many-to-many `StoreCategory` links (D11) | products sit under several shelves; never a denormalized category string |
 
-**The observation each product becomes** (`ScrapedProduct` → `StoreProductObservation`): `Name, Brand, Size,
+**The observation each product becomes** (`ScrapedProduct` → `ProductObservation`): `Name, Brand, Size,
 Gtin, Url, ImageUrl, Price, NonSpecialPrice, IsOnSpecial, UnitPrice, UnitOfMeasure` + `CategoryPath` + `Tags`.
 The price tuple `{Price, IsOnSpecial, NonSpecialPrice, UnitPrice}` is what D3 snapshots on change.
 
@@ -86,7 +86,7 @@ the session. Without this, crawls die partway through a department.
 | `Name` | `name` | |
 | `Brand` | `brand` | |
 | `Size` | `size.volumeSize` ?? `size.packageType` | |
-| `Gtin` | `barcode` | Woolworths **has** a barcode (helps canonical match, D9) |
+| `Gtin` | `barcode` | Woolworths **has** a barcode (helps item match, D9) |
 | `ImageUrl` | `images.big` ?? `images.small` | |
 | `Price` (current) | `price.salePrice` ?? `price.originalPrice` | special price if on special, else shelf |
 | `IsOnSpecial` | `price.isSpecial` | explicit boolean |
@@ -140,7 +140,7 @@ read each product's path(s). A product is emitted **once per category tree** who
 | `Name` | `name` | |
 | `Brand` | `brand` | |
 | `Size` | `displayName` | |
-| `Gtin` | — | **none** — search API exposes no barcode → canonical match falls back to brand+name (D9) |
+| `Gtin` | — | **none** — search API exposes no barcode → item match falls back to brand+name (D9) |
 | `ImageUrl` | **derived** from `productId` | not in the API; built as `https://a.fsimg.co.nz/product/retail/fan/image/400x400/{prefix}.png` where `prefix` = the digits before the first `-`. ⚠️ **prefix, not the full SKU** — `5039995-KGM-000` → `5039995.png`. Same URL the storefront uses; deterministic & free. No-photo products resolve to the CDN placeholder. |
 | `Price` (current) | `singlePrice.price / 100` | **⚠️ cents** — divide by 100. This is the **promo** price while on special |
 | `IsOnSpecial` | `promotions` is a non-empty array | **⚠️ implicit** — no boolean |

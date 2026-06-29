@@ -1,4 +1,4 @@
-# zhua.food — canonical-layer rework: implementation plan
+# zhua.food — item-layer rework: implementation plan
 
 Executes the target design in [item-model.md](item-model.md) (D25), **one phase at a time**. Each phase is
 independently shippable and tested. **Ordering rule:** additive/internal first, **breaking-for-Codex last and
@@ -11,17 +11,17 @@ Legend: 🟢 additive/non-breaking · 🟡 coordinate with Codex · 🔴 breakin
 
 ## Phase 1 — `description` field 🟢 ✅ DONE (2026-06-27)
 
-Give the canonical one owned, stable `description` (grouping label + match anchor), expose it, and **stop the matcher
+Give the item one owned, stable `description` (grouping label + match anchor), expose it, and **stop the matcher
 overwriting it**. Fully additive — nothing removed.
 
-- [x] Domain: add `CanonicalProduct.Description` (`string?`).
-- [x] Infra: EF config + migration (`20260627024936_CanonicalProductDescription`); one-time backfill `Description = Name` (3920 rows).
-- [x] Matcher: `Name`/`Description` set **only on creation**, never re-minted; new canonical seeds `Description` from the representative listing. `create-canonical` also sets it.
+- [x] Domain: add `Item.Description` (`string?`).
+- [x] Infra: EF config + migration (`20260627024936_ItemDescription`); one-time backfill `Description = Name` (3920 rows).
+- [x] Matcher: `Name`/`Description` set **only on creation**, never re-minted; new item seeds `Description` from the representative listing. `create-item` also sets it.
 - [x] API: `description` added to `ProductSummary` / `ProductComparison` / `CategoryProduct`.
 - [x] Tests: matcher no-overwrite (rename listing → re-run → text held); API returns `description` (search/compare/category). 87 green.
 - [x] Docs: api.md (new field + grouping-label note), matching.md (no-overwrite note).
 
-**Done:** API returns canonical `id` + `description`; re-running the matcher never changes an existing canonical's
+**Done:** API returns item `id` + `description`; re-running the matcher never changes an existing item's
 text. Codex can adopt the grouping label now.
 
 ## Phase 2 — Search: store-first, grouped by item 🟡 ✅ DONE (2026-06-29)
@@ -39,7 +39,7 @@ small set (≤7 stores/group).
 - [x] **One `/products` collection:** `GET /products?q=&category=&storeId=&page=&size=` (dropped `?sort=` — the UI
       sorts the small list); **dropped `/products/search`** and the bare-`/products`-400 wart. `GET /products/{id}`
       (a product id) returns the **`ProductGroup` it belongs to**. `/categories/{id}/products` = the browse alias.
-- [x] **Controller merge:** `StoreProductsController` deleted — admin link is now `PATCH /products/{id}`. 3
+- [x] **Controller merge:** `ProductsController` deleted — admin link is now `PATCH /products/{id}`. 3
       product-ish controllers → 2 (`ProductsController` + `ItemsController`).
 - [x] Tests + api.md rewritten. 96 green.
 - [ ] **Deferred (evolve as required):** `Cache-Control`/`ETag` on these reads (read-mostly, twice-daily updates →
@@ -50,9 +50,9 @@ wave (2026-06-29).
 
 ## Phase 3 — Category CRUD (the curation surface) 🟢 ✅ DONE (2026-06-27)
 
-Make the canonical **category** an owned, editable vocabulary — the *only* curation surface.
+Make the item **category** an owned, editable vocabulary — the *only* curation surface.
 
-- [x] `CanonicalCategory.IsArchived` + migration (`CanonicalCategoryArchive`). **Delete = soft-archive** (chosen: the
+- [x] `Category.IsArchived` + migration (`CategoryArchive`). **Delete = soft-archive** (chosen: the
       mapper regenerates Foodstuffs nodes, so a hard delete is futile).
 - [x] Curation writes on the **`/categories`** resource (one controller, reads public + writes `[Authorize("Admin")]`):
       `POST /categories` (create, derived slug/path, 400/404/409), `PATCH /{id}` (rename display name only — path/slug
@@ -70,31 +70,31 @@ Independent of Phases 1–2.
 
 The pointer-move operations a "we *think*" overlay needs (non-destructive; never touch store listings).
 
-- [x] **Unlink** — folded into `PATCH /store-products/{id}` `{ "canonicalProductId": null }` (shipped with the RESTful
+- [x] **Unlink** — folded into `PATCH /products/{id}` `{ "itemId": null }` (shipped with the RESTful
       admin refactor, see note below).
-- [ ] `POST /canonicals/{id}/merge { intoId }` — *or* a RESTful equivalent (repoint members + candidates, then remove
+- [ ] `POST /items/{id}/merge { intoId }` — *or* a RESTful equivalent (repoint members + candidates, then remove
       the empty one; decide price-history handling). The one genuinely-verb-shaped action left; model as a `merge`
       sub-resource or a `PATCH` that repoints, TBD when built.
-- [x] **Split** — already covered: move a member out via `PATCH /store-products/{id}` (relink) or `POST
-      /canonical-products` + relink.
-- [ ] Matcher must respect merges (a merged-away canonical isn't recreated — `MatchKey` reconciliation).
+- [x] **Split** — already covered: move a member out via `PATCH /products/{id}` (relink) or `POST
+      /item-products` + relink.
+- [ ] Matcher must respect merges (a merged-away item isn't recreated — `MatchKey` reconciliation).
 - [ ] Tests + api.md.
 
 > **RESTful admin refactor (2026-06-27):** the admin surface was de-verbed and de-`/admin/`-prefixed. `*AdminController`
 > classes are gone; each mutation lives on the resource it changes, guarded by `[Authorize("Admin")]`:
-> `PATCH /match-candidates/{id}` (approve/reject via `status`), `PATCH /store-products/{id}` (link/unlink/relink),
-> `POST /canonical-products` (create). Breaking for Codex's review UI — coordinated.
+> `PATCH /match-candidates/{id}` (approve/reject via `status`), `PATCH /products/{id}` (link/unlink/relink),
+> `POST /item-products` (create). Breaking for Codex's review UI — coordinated.
 
-## Phase 5 — Remove canonical name from the shopper API 🔴 (last)
+## Phase 5 — Remove item name from the shopper API 🔴 (last)
 
-After Codex has migrated to *real store name + `description`*, drop the synthetic canonical name from shopper
+After Codex has migrated to *real store name + `description`*, drop the synthetic item name from shopper
 responses.
 
-- [ ] Remove/repurpose canonical-name fields in `ProductSummary` / `ProductComparison` / `CategoryProduct`.
-- [ ] Optionally drop the now-unused `CanonicalProduct.Name` column (or leave internal).
+- [ ] Remove/repurpose item-name fields in `ProductSummary` / `ProductComparison` / `CategoryProduct`.
+- [ ] Optionally drop the now-unused `Item.Name` column (or leave internal).
 - [ ] Tests + api.md.
 
-**Breaking — do only once the front-end no longer reads canonical name.**
+**Breaking — do only once the front-end no longer reads item name.**
 
 ---
 

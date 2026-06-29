@@ -44,7 +44,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # Ingestion Worker (plan D7) — Quartz cron (twice-daily) driving HEADED Playwright Chromium under xvfb.
+  # Crawling Worker (plan D7) — Quartz cron (twice-daily) driving HEADED Playwright Chromium under xvfb.
   # Headless is WAF-blocked (D2/D17), so even on a headless host (NAS/EC2) we run headed via a virtual display.
   worker:
     build:

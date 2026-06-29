@@ -2,9 +2,9 @@
 
 > **Status: NOT implemented — deferred.** **For now, matching is manual:** today's heuristic matcher
 > (`brand + size + name-overlap`, see [matching.md](matching.md)) auto-links the confident cases and drops the rest
-> into the **human review queue**, resolved via the admin endpoints (`approve` / `reject` / `link-canonical` /
-> `create-canonical`). This doc is the plan for when we *augment* that heuristic with an LLM. Surrounding model
-> (why canonical products exist, `description`-as-anchor): [item-model.md](item-model.md).
+> into the **human review queue**, resolved via the admin endpoints (`approve` / `reject` / `link-item` /
+> `create-item`). This doc is the plan for when we *augment* that heuristic with an LLM. Surrounding model
+> (why items exist, `description`-as-anchor): [item-model.md](item-model.md).
 
 ## Why AI
 
@@ -26,7 +26,7 @@ better candidate into it. Confident picks link; uncertain ones still go to a hum
 
 ## The call: shortlist, then pick
 
-1. **Retrieve candidates — cheap, no LLM.** Pre-filter canonicals by `brand + size + category` → a handful of
+1. **Retrieve candidates — cheap, no LLM.** Pre-filter items by `brand + size + category` → a handful of
    plausible matches. (At larger catalogue scale, swap this step for embedding similarity over `description`.)
 2. **Ask the LLM to choose.** Prompt = the store listing + each shortlisted candidate's `description`; the model
    returns a structured choice — including an explicit "none of these → it's new" escape so it's never forced into a
@@ -34,7 +34,7 @@ better candidate into it. Confident picks link; uncertain ones still go to a hum
 
 **Output schema:**
 ```json
-{ "canonicalId": "…" | null, "confidence": 0.0, "reason": "…" }
+{ "itemId": "…" | null, "confidence": 0.0, "reason": "…" }
 ```
 
 **Decision thresholds** (tunable; start conservative, bias to the queue, loosen as we earn trust):
@@ -43,7 +43,7 @@ better candidate into it. Confident picks link; uncertain ones still go to a hum
 |---|---|
 | high (≥ auto-link bar) | link automatically |
 | medium | → review queue (existing `MatchCandidate`), with the AI's pick + `reason` pre-filled |
-| low / `null` | propose a **new canonical** (its `description` seeded from the listing), pending review |
+| low / `null` | propose a **new item** (its `description` seeded from the listing), pending review |
 
 ## Cost — affordable, because we shortlist
 
@@ -52,7 +52,7 @@ The driver is **candidates-per-prompt, not the model**:
 - AI runs **only on unlinked listings** — steps 1–2 absorb the bulk for free (Foodstuffs is deterministic).
 - **One-time backfill** (the cross-store ambiguous set, ~Woolworths) ≈ **single-digit dollars**.
 - **Steady state** = only *new* listings per crawl (tens–hundreds) ≈ **pennies per crawl**.
-- **Anti-pattern:** all canonicals in every prompt (~50–60k tokens/product) — 100× worse. **Cache the system
+- **Anti-pattern:** all items in every prompt (~50–60k tokens/product) — 100× worse. **Cache the system
   prompt**; if the catalogue ever explodes, move the shortlist step to embeddings retrieval.
 
 ## Model & prompt notes
@@ -65,14 +65,14 @@ The driver is **candidates-per-prompt, not the model**:
 ## Guardrails
 
 - **AI proposes, humans confirm** the uncertain ones — never auto-link below the high-confidence bar.
-- **Non-destructive:** AI only *adds* links/candidates; it never unlinks or rewrites a canonical's `description`.
+- **Non-destructive:** AI only *adds* links/candidates; it never unlinks or rewrites a item's `description`.
 - **Respect prior human decisions** — a rejected pair is never re-proposed (same as today's matcher).
 - **Auditability:** persist the AI's `reason` on the `MatchCandidate`.
 
 ## Open decisions
 
 - Model choice + structured-output mechanism (tool use vs. JSON mode).
-- Auto-link confidence bar; whether to ever auto-create new canonicals or always queue them.
+- Auto-link confidence bar; whether to ever auto-create new items or always queue them.
 - Embeddings (which) for retrieval at scale; batch backfill vs. per-crawl incremental.
 - An **eval set** — a hand-labelled sample to measure precision/recall before we trust auto-linking.
 

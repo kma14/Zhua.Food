@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Expose internal parser (ParseProductsInto, Slugify) to the ingestion test project for golden-file tests. -->
+    <!-- Expose internal parser (ParseProductsInto, Slugify) to the Zhua.Crawling.Tests project for golden-file tests. -->
     <InternalsVisibleTo Include="Zhua.Crawling.Tests" />
   </ItemGroup>
 

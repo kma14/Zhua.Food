@@ -1,4 +1,4 @@
-# Ingestion Worker image (plan D7) — Quartz-scheduled crawl+match driving a HEADED Playwright Chromium.
+# Crawling Worker image (plan D7) — Quartz-scheduled crawl+match driving a HEADED Playwright Chromium.
 # Headless Chromium is WAF-blocked (D2/D17), so even on a headless server we must run a real headed browser;
 # xvfb gives it an in-memory display nobody looks at. Build context = repo root.
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build

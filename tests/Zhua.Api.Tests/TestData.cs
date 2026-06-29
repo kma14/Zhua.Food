@@ -165,10 +165,10 @@ internal static class TestData
     private static PriceSnapshot Snap(Guid spId, Guid runId, decimal price, DateTimeOffset at) =>
         new() { ProductId = spId, CrawlRunId = runId, Price = price, UnitPrice = price, CapturedAt = at };
 
-    private static MatchCandidate Candidate(Guid id, Guid storeProductId, double score) =>
+    private static MatchCandidate Candidate(Guid id, Guid productId, double score) =>
         new()
         {
-            Id = id, ProductId = storeProductId, ItemId = MatchTarget, Score = score,
+            Id = id, ProductId = productId, ItemId = MatchTarget, Score = score,
             Status = MatchStatus.Pending, CreatedAt = Now, Reason = "brand+size match, name overlap 0.50; ambiguous",
         };
 }
