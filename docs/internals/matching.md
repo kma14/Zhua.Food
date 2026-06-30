@@ -4,8 +4,9 @@ How a per-store listing becomes a **item** so we can compare the *same item* acr
 D9/D18). This is the platform's differentiator — and the trickiest judgement call in the system, because it scores
 fuzzy text. When "same-product compare" looks wrong (two stores not merged, or two different items merged), start here.
 
-Code: [`ItemMatcher`](../../src/Zhua.Infrastructure/Matching/ItemMatcher.cs) +
-[`ProductNormalizer`](../../src/Zhua.Application/Matching/ProductNormalizer.cs) (the pure text helpers).
+Code: [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs) (Application use case, over `IMatchingRepository`) +
+[`HeuristicItemMatchingPolicy`](../../src/Zhua.Domain/Services/HeuristicItemMatchingPolicy.cs) (the domain scoring rule) +
+[`ProductNormalizer`](../../src/Zhua.Domain/Matching/ProductNormalizer.cs) (the pure text helpers).
 Sibling docs: crawling/crawling → [crawling.md](crawling.md); the target redesign of the whole item layer →
 [item-model.md](item-model.md); the deferred LLM matcher → [ai-matching.md](ai-matching.md).
 
@@ -23,7 +24,7 @@ Category   "Chicken Breast, Thighs & Tenders"   ← shared taxonomy tag        [
 The matcher's whole job is the **middle arrow**: deciding which `Product`s are the same real-world item and
 linking them to one `Item`. `Product.ItemId` is **nullable** — matching is offline and
 **never blocks crawling** (R3). Categorisation (the top arrow) is a separate step that runs right after — see
-[CategoryMapper](../../src/Zhua.Infrastructure/Matching/CategoryMapper.cs) (D22).
+[CategoryMapper](../../src/Zhua.Application/Matching/CategoryMapper.cs) (D22).
 
 ## Where & when it runs
 
@@ -57,7 +58,7 @@ matched to a **Foodstuffs-derived item** in two stages:
 2. **Score the survivors by name-token overlap** — `TokenOverlap(|A∩B| / min(|A|,|B|))` on significant name tokens
    (brand, stop-words, embedded sizes and bare numbers stripped out).
 
-Then, per Woolworths listing ([ItemMatcher.cs](../../src/Zhua.Infrastructure/Matching/ItemMatcher.cs#L88)):
+Then, per Woolworths listing (the decision is [`HeuristicItemMatchingPolicy.Evaluate`](../../src/Zhua.Domain/Services/HeuristicItemMatchingPolicy.cs)):
 
 | Outcome | Condition |
 |---|---|
@@ -65,13 +66,13 @@ Then, per Woolworths listing ([ItemMatcher.cs](../../src/Zhua.Infrastructure/Mat
 | **Queue for review** | otherwise → the top ~3 candidates become `MatchCandidate` rows (Pending) |
 | **Ignore** | best score **< 0.3** (`CandidateThreshold`) — too weak to even propose |
 
-The knobs (`ItemMatcher`): `AutoLinkThreshold = 0.8`, `CandidateThreshold = 0.3`, clear-winner margin `0.001`.
+The knobs (`HeuristicItemMatchingPolicy`): `AutoLinkThreshold = 0.8`, `CandidateThreshold = 0.3`, clear-winner margin `0.001`.
 The text rules (`ProductNormalizer`): brand/size normalisation, the stop-word list, the size-token regex. **Those are
 the fragile bits** — tightening a threshold trades false-merges against more review-queue volume.
 
 ## Idempotency — why re-running is safe
 
-Three mechanisms ([lines 36–86](../../src/Zhua.Infrastructure/Matching/ItemMatcher.cs#L36)):
+Three mechanisms (in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs)):
 
 1. **Upsert items by `MatchKey`** — it loads every item, keys the ones with a `MatchKey` into a dictionary, and
    reuses them, so re-runs don't duplicate. Merge tombstones are resolved to their survivor here (see Merge below),

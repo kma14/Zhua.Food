@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
+using Zhua.Application.Matching;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
-using Zhua.Infrastructure.Matching;
 using Zhua.Infrastructure.Persistence;
+using Zhua.Infrastructure.Repositories;
 
 namespace Zhua.Crawling.Tests;
 
@@ -20,6 +21,9 @@ public class CategoryMapperTests
 
     private ZhuaDbContext NewContext() => new(Options());
 
+    // The mapper is now an Application use case over the matching repository port.
+    private static CategoryMapper Mapper(ZhuaDbContext db) => new(new MatchingRepository(db), new UnitOfWork(db));
+
     [Fact]
     public async Task Builds_tree_from_foodstuffs_maps_woolworths_by_name_and_categorises_products()
     {
@@ -27,7 +31,7 @@ public class CategoryMapperTests
 
         await using (var db = NewContext())
         {
-            var result = await new CategoryMapper(db).MapAsync();
+            var result = await Mapper(db).MapAsync();
             Assert.Equal(2, result.Categories);   // Department + Shelf
             Assert.Equal(3, result.MappedStoreCategories);  // NW dept + NW shelf (identity) + WW shelf (by name)
             Assert.Equal(1, result.CategorizedProducts);
@@ -71,7 +75,7 @@ public class CategoryMapperTests
             await db.SaveChangesAsync();
         }
 
-        await using (var db = NewContext()) await new CategoryMapper(db).MapAsync();
+        await using (var db = NewContext()) await Mapper(db).MapAsync();
 
         Guid shelfId;
         await using (var db = NewContext())
@@ -88,7 +92,7 @@ public class CategoryMapperTests
             shelf.IsArchived = true;
             await db.SaveChangesAsync();
         }
-        await using (var db = NewContext()) await new CategoryMapper(db).MapAsync();
+        await using (var db = NewContext()) await Mapper(db).MapAsync();
 
         await using (var check = NewContext())
         {

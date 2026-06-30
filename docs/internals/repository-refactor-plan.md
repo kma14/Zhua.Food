@@ -80,9 +80,15 @@ Cross-aggregate orchestration (repoint an item's products, cascade archive a sub
    Archive/Slugify` (the matcher now reuses `Category.Slugify`).
 4. ✅ **Arch test** `Domain_repository_ports_stay_EF_free` — the ports can't grow an `IQueryable`/`DbContext`
    dependency. (The existing 3 boundary tests already confine EF to Infrastructure.)
-5. 🔲 *(optional)* matcher + `CategoryMapper` → Application + `IItemMatchingPolicy`.
+5. ✅ **matcher + `CategoryMapper` → Application** over a new `IMatchingRepository` (Domain port) + `IUnitOfWork`;
+   the same-item scoring extracted to a Domain service `IItemMatchingPolicy` (`HeuristicItemMatchingPolicy`), and
+   `ProductNormalizer` moved to `Domain/Matching`. **`Infrastructure/Matching/` deleted — Infrastructure now has zero
+   business logic** (only `Repositories/` EF adapters + `Persistence/` + `Crawling/` Playwright drivers). Matcher tests
+   repointed to construct over the repo/policy. (One fix: the matcher now resolves items by id, so a newly-created
+   Tier-1 item gets its `Id` assigned on creation — the old code held entity references.)
 
-**Done 2026-06-30. 106 tests green; API contract unchanged.**
+**Done 2026-06-30. 106 tests green; API contract unchanged.** (`CrawlOrchestrator` stays in Infrastructure by
+design — it drives Playwright + the raw archive, a genuine infrastructure concern, not request/read logic.)
 
 ### Pragmatic deviations (flagged, not silent)
 - **`Product.Saving` not added as an entity property** — a computed get-only property needs an EF `Ignore`; the saving

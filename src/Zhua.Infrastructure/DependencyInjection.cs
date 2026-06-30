@@ -4,8 +4,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
 using Zhua.Domain.Repositories;
+using Zhua.Domain.Services;
 using Zhua.Infrastructure.Crawling;
-using Zhua.Infrastructure.Matching;
 using Zhua.Infrastructure.Persistence;
 using Zhua.Infrastructure.Repositories;
 
@@ -52,9 +52,12 @@ public static class DependencyInjection
         return services;
     }
 
-    /// <summary>Offline item matching (plan D9/D18) + category mapping (D22).</summary>
+    /// <summary>Offline item matching (plan D9/D18) + category mapping (D22) — Application use cases over the
+    /// matching repository port + the domain matching policy.</summary>
     public static IServiceCollection AddMatching(this IServiceCollection services)
     {
+        services.AddScoped<IMatchingRepository, MatchingRepository>();
+        services.AddSingleton<IItemMatchingPolicy, HeuristicItemMatchingPolicy>();
         services.AddScoped<IItemMatcher, ItemMatcher>();
         services.AddScoped<ICategoryMapper, CategoryMapper>();
         return services;

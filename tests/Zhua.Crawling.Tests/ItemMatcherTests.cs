@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Zhua.Application.Common;
+using Zhua.Application.Matching;
+using Zhua.Application.Review;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
-using Zhua.Application.Review;
-using Zhua.Infrastructure.Matching;
+using Zhua.Domain.Services;
 using Zhua.Infrastructure.Persistence;
 using Zhua.Infrastructure.Repositories;
 
@@ -19,6 +20,10 @@ public class ItemMatcherTests
     private static readonly Guid Woolworths = Guid.Parse("11111111-0000-0000-0000-000000000001");
     private static readonly Guid NewWorld = Guid.Parse("22222222-0000-0000-0000-000000000002");
     private static readonly Guid PaknSave = Guid.Parse("33333333-0000-0000-0000-000000000003");
+
+    // The matcher is now an Application use case over the matching repository port + the domain policy.
+    private ItemMatcher Matcher(ZhuaDbContext db) =>
+        new(new MatchingRepository(db), new HeuristicItemMatchingPolicy(), new UnitOfWork(db), _clock);
 
     private ZhuaDbContext NewContext() =>
         new(new DbContextOptionsBuilder<ZhuaDbContext>()
@@ -65,7 +70,7 @@ public class ItemMatcherTests
         await SeedAsync();
 
         await using (var db = NewContext())
-            await new ItemMatcher(db, _clock).RunAsync();
+            await Matcher(db).RunAsync();
 
         await using var check = NewContext();
 
@@ -87,7 +92,7 @@ public class ItemMatcherTests
     public async Task Description_is_seeded_once_and_never_re_minted_from_store_data()
     {
         await SeedAsync();
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         Guid colbyId;
         await using (var check = NewContext())
@@ -104,7 +109,7 @@ public class ItemMatcherTests
                 sp.RawName = "TOTALLY DIFFERENT NAME";
             await edit.SaveChangesAsync();
         }
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         await using var after = NewContext();
         var unchanged = await after.Items.SingleAsync(c => c.Id == colbyId);
@@ -117,8 +122,8 @@ public class ItemMatcherTests
     {
         await SeedAsync();
 
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         await using var check = NewContext();
         Assert.Equal(3, await check.Items.CountAsync()); // not doubled
@@ -131,7 +136,7 @@ public class ItemMatcherTests
     public async Task Matcher_respects_a_merge_and_does_not_resurrect_the_merged_item()
     {
         await SeedAsync();
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         Guid survivorId, mergedId;
         await using (var check = NewContext())
@@ -149,7 +154,7 @@ public class ItemMatcherTests
         }
 
         // Re-run: Tier 1 regroups Foodstuffs by SKU, but the merged-away C3 key must resolve to the survivor.
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         await using var after = NewContext();
         var c3 = await after.Products.SingleAsync(p => p.SourceSku == "C3");
@@ -177,7 +182,7 @@ public class ItemMatcherTests
             await db.SaveChangesAsync();
         }
 
-        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         await using var check = NewContext();
         var manual = await check.Items.SingleAsync(c => c.MatchKey == "manual:abc");

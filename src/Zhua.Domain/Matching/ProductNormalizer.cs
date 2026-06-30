@@ -1,9 +1,10 @@
 using System.Text.RegularExpressions;
 
-namespace Zhua.Application.Matching;
+namespace Zhua.Domain.Matching;
 
 /// <summary>
-/// Normalisation + similarity helpers for cross-store product matching (plan D18). Pure/testable — no I/O.
+/// Normalisation + similarity helpers for cross-store product matching (plan D18). Pure/testable — no I/O. Lives in
+/// Domain because it encodes the matching rules the <see cref="Zhua.Domain.Services.IItemMatchingPolicy"/> scores by.
 /// Cross-chain names differ wildly (Woolworths "mainland cheese colby" vs Foodstuffs "Smooth &amp; Creamy Colby
 /// Cheese"), so we match on <c>brand + size</c> (hard filter) then score by name-token overlap.
 /// </summary>

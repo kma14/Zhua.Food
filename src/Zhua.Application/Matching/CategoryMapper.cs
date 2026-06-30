@@ -1,28 +1,27 @@
-using Microsoft.EntityFrameworkCore;
-using Zhua.Application.Matching;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
-using Zhua.Infrastructure.Persistence;
+using Zhua.Domain.Repositories;
 
-namespace Zhua.Infrastructure.Matching;
+namespace Zhua.Application.Matching;
 
 /// <summary>
-/// Builds the shared category tree and maps products onto it (plan D22). Runs after the matcher.
+/// Builds the shared category tree and maps products onto it (plan D22). Runs after the matcher. Orchestration only —
+/// data access via <see cref="IMatchingRepository"/>, slug/path identity is <see cref="Category.Slugify"/>/
+/// <see cref="Category.Create"/> on the aggregate, commits via <see cref="IUnitOfWork"/>.
 /// <list type="number">
 /// <item>Seed the tree from the <b>Foodstuffs</b> taxonomy (New World + PAK'nSAVE share it), deduping by path.</item>
 /// <item>Map other banners' store categories in by exact (kind, slug) name match — best-effort, non-blocking.</item>
-/// <item>Give each item the finest mapped category of its store products, preferring a Foodstuffs
-/// member (the authoritative taxonomy). Every item has a Foodstuffs member today, so all get categorised.</item>
+/// <item>Give each item the finest mapped category of its store products, preferring a Foodstuffs member.</item>
 /// </list>
 /// Idempotent: item nodes are upserted by <see cref="Category.Path"/>.
 /// </summary>
-public sealed class CategoryMapper(ZhuaDbContext db) : ICategoryMapper
+public sealed class CategoryMapper(IMatchingRepository repo, IUnitOfWork uow) : ICategoryMapper
 {
     public async Task<CategoryMapResult> MapAsync(CancellationToken ct = default)
     {
-        var storeCats = await db.StoreCategories.Include(c => c.Store).ToListAsync(ct);
+        var storeCats = await repo.GetStoreCategoriesAsync(ct);
         var byId = storeCats.ToDictionary(c => c.Id);
-        var canonByPath = await db.Categories.ToDictionaryAsync(c => c.Path, ct);
+        var canonByPath = (await repo.GetAllCategoriesAsync(ct)).ToDictionary(c => c.Path);
 
         // --- 1) Build the item tree from the Foodstuffs taxonomy. Parents (Department) before children
         //        (Aisle, Shelf) so each node's parent item already exists. ---
@@ -32,13 +31,13 @@ public sealed class CategoryMapper(ZhuaDbContext db) : ICategoryMapper
             foreach (var sc in foodstuffs.Where(c => c.Kind == kind))
             {
                 var parent = sc.ParentId is { } pid && byId.TryGetValue(pid, out var psc) ? psc.Category : null;
-                var slug = Slugify(sc.Name);
+                var slug = Category.Slugify(sc.Name);
                 var path = parent is null ? slug : $"{parent.Path}/{slug}";
 
                 if (!canonByPath.TryGetValue(path, out var canon))
                 {
                     canon = new Category { Kind = sc.Kind, Name = sc.Name, Slug = slug, Path = path, Parent = parent };
-                    db.Categories.Add(canon);
+                    repo.AddCategory(canon);
                     canonByPath[path] = canon;
                 }
                 sc.Category = canon;
@@ -54,16 +53,12 @@ public sealed class CategoryMapper(ZhuaDbContext db) : ICategoryMapper
         foreach (var sc in storeCats.Where(c => c.Store.Chain is not (Chain.NewWorld or Chain.PaknSave)))
         {
             if (sc.Category is not null) continue;
-            if (canonBySlugKind.TryGetValue((sc.Kind, Slugify(sc.Name)), out var canon))
+            if (canonBySlugKind.TryGetValue((sc.Kind, Category.Slugify(sc.Name)), out var canon))
                 sc.Category = canon;
         }
 
         // --- 3) Assign each item its finest mapped category (Foodstuffs member preferred). ---
-        var products = await db.Items
-            .Include(c => c.Products).ThenInclude(sp => sp.Categories)
-            .Include(c => c.Products).ThenInclude(sp => sp.Store)
-            .AsSplitQuery()
-            .ToListAsync(ct);
+        var products = await repo.GetItemsForCategorisationAsync(ct);
 
         var categorized = 0;
         foreach (var cp in products)
@@ -75,7 +70,7 @@ public sealed class CategoryMapper(ZhuaDbContext db) : ICategoryMapper
             categorized++;
         }
 
-        await db.SaveChangesAsync(ct);
+        await uow.SaveChangesAsync(ct);
 
         return new CategoryMapResult(
             canonByPath.Count,
@@ -102,7 +97,4 @@ public sealed class CategoryMapper(ZhuaDbContext db) : ICategoryMapper
             return null;
         }
     }
-
-    // The slug rule now lives on the Category aggregate (rich-domain refactor) so curated nodes + mapped nodes agree.
-    private static string Slugify(string name) => Category.Slugify(name);
 }
