@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Zhua.Application.Common;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
 using Zhua.Infrastructure.Matching;
 using Zhua.Infrastructure.Persistence;
+using Zhua.Infrastructure.Services;
 
 namespace Zhua.Crawling.Tests;
 
@@ -122,5 +124,60 @@ public class ItemMatcherTests
         // W2 still has exactly its 2 pending candidates (not duplicated on re-run).
         var w2 = await check.Products.SingleAsync(p => p.SourceSku == "W2");
         Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.ProductId == w2.Id));
+    }
+
+    [Fact]
+    public async Task Matcher_respects_a_merge_and_does_not_resurrect_the_merged_item()
+    {
+        await SeedAsync();
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+
+        Guid survivorId, mergedId;
+        await using (var check = NewContext())
+        {
+            survivorId = (await check.Items.SingleAsync(c => c.MatchKey == "foodstuffs:C2")).Id;
+            mergedId = (await check.Items.SingleAsync(c => c.MatchKey == "foodstuffs:C3")).Id;
+        }
+
+        // Admin decides the two cottage-cheese SKUs are the same product → merge C3 into C2.
+        await using (var db = NewContext())
+            Assert.Equal(ResultStatus.Ok, (await new ItemService(db).MergeAsync(mergedId, survivorId)).Status);
+
+        // Re-run: Tier 1 regroups Foodstuffs by SKU, but the merged-away C3 key must resolve to the survivor.
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+
+        await using var after = NewContext();
+        var c3 = await after.Products.SingleAsync(p => p.SourceSku == "C3");
+        Assert.Equal(survivorId, c3.ItemId);                                  // linked to the survivor, not recreated
+        var tombstone = await after.Items.SingleAsync(c => c.MatchKey == "foodstuffs:C3");
+        Assert.Equal(survivorId, tombstone.MergedIntoId);                     // stays a redirect tombstone
+        Assert.Equal(0, await after.Products.CountAsync(p => p.ItemId == mergedId));
+        Assert.Equal(2, await after.Items.CountAsync(c => c.MergedIntoId == null)); // Colby + the C2 survivor
+    }
+
+    [Fact]
+    public async Task Manually_created_item_survives_a_run_and_receives_a_woolworths_autolink()
+    {
+        // A hand-made item (create-item stamps a "manual:" MatchKey) with no products yet, plus a matching
+        // Woolworths listing.
+        await using (var db = NewContext())
+        {
+            db.Stores.Add(new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true });
+            db.Items.Add(new Item
+            {
+                MatchKey = "manual:abc", Name = "Acme Special Widget 500g", Description = "Acme Special Widget 500g",
+                Brand = "Acme", Size = "500g", Category = "Widgets",
+            });
+            db.Products.Add(Sp(Woolworths, "WX", "acme special widget", "Acme", "500g", 5m));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();
+
+        await using var check = NewContext();
+        var manual = await check.Items.SingleAsync(c => c.MatchKey == "manual:abc");
+        var wx = await check.Products.SingleAsync(p => p.SourceSku == "WX");
+        Assert.Equal(manual.Id, wx.ItemId);              // auto-linked to the hand-made item via the (brand,size) index
+        Assert.Equal(1, await check.Items.CountAsync()); // not duplicated/overwritten by the run
     }
 }

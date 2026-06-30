@@ -107,7 +107,8 @@ public sealed class ProductService(ZhuaDbContext db) : IProductService
 
         if (itemId is { } id)
         {
-            if (!await db.Items.AnyAsync(i => i.Id == id))
+            // Reject a merged-away item (rework phase 4): linking to a redirect tombstone would be undone next run.
+            if (!await db.Items.AnyAsync(i => i.Id == id && i.MergedIntoId == null))
                 return Result<ProductLinkView>.NotFound("item not found");
 
             product.ItemId = id;

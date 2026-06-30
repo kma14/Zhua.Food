@@ -66,19 +66,24 @@ Make the item **category** an owned, editable vocabulary — the *only* curation
 
 Independent of Phases 1–2.
 
-## Phase 4 — Correction toolkit: merge (unlink/split already done) 🟢
+## Phase 4 — Correction toolkit: merge (unlink/split already done) 🟢 ✅ DONE (2026-06-29)
 
 The pointer-move operations a "we *think*" overlay needs (non-destructive; never touch store listings).
 
 - [x] **Unlink** — folded into `PATCH /products/{id}` `{ "itemId": null }` (shipped with the RESTful
       admin refactor, see note below).
-- [ ] `POST /items/{id}/merge { intoId }` — *or* a RESTful equivalent (repoint members + candidates, then remove
-      the empty one; decide price-history handling). The one genuinely-verb-shaped action left; model as a `merge`
-      sub-resource or a `PATCH` that repoints, TBD when built.
+- [x] `POST /items/{id}/merge { intoId }` — repoints products + candidates to the survivor, then leaves the source
+      as a **redirect tombstone** (`Item.MergedIntoId`) rather than deleting it, *because* a hard-deleted Foodstuffs
+      item would be recreated by Tier 1 next run. Idempotent; rejects self-merge / cycles. **Price history needs no
+      handling** — snapshots key on `ProductId`, so they follow the moved product.
 - [x] **Split** — already covered: move a member out via `PATCH /products/{id}` (relink) or `POST
-      /item-products` + relink.
-- [ ] Matcher must respect merges (a merged-away item isn't recreated — `MatchKey` reconciliation).
-- [ ] Tests + api.md.
+      /items` + relink.
+- [x] Matcher respects merges — it resolves a merged-away `MatchKey` through the `MergedIntoId` chain to the
+      survivor, so Tier 1 relinks instead of recreating; Tier 2 index + counts skip tombstones. Also: `create-item`
+      now stamps a `manual:{guid}` key (hand-made items survive a run + can receive auto-links); `PATCH /products/{id}`
+      refuses a merged-away target.
+- [x] Tests + api.md — 4 API merge tests + 2 matcher tests (respects-merge, manual-key auto-link). Migration
+      `20260629175355_ItemMergeRedirect` (additive column + self-FK).
 
 > **RESTful admin refactor (2026-06-27):** the admin surface was de-verbed and de-`/admin/`-prefixed. `*AdminController`
 > classes are gone; each mutation lives on the resource it changes, guarded by `[Authorize("Admin")]`:

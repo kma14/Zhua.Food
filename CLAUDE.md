@@ -26,7 +26,7 @@ Domain  ←  Application  ←  { Infrastructure, Crawling }  ←  { Api, Worker,
 
 | Project | Role |
 |---|---|
-| `Zhua.Domain` | Entities + enums. No external deps. |
+| `Zhua.Domain` | Entities + enums + **repository interfaces over its own aggregates** (`IItemRepository`/`ICategoryRepository`/`IProductRepository`, `IUnitOfWork`) + domain services. No external **package** deps (an interface that references only Domain types adds none). |
 | `Zhua.Application` | Use cases + their DTOs + service/repository/query interfaces. Depends on Domain only. |
 | `Zhua.Infrastructure` | EF Core `DbContext`, configs, migrations, store seed, **+ the implementations of Application's query/command interfaces**. |
 | `Zhua.Crawling` | Per-store crawlers. **Source-field → our-field mappings + the fragile special/was-price logic: [docs/internals/crawling.md](docs/internals/crawling.md).** |

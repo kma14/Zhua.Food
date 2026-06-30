@@ -73,9 +73,9 @@ the fragile bits** — tightening a threshold trades false-merges against more r
 
 Three mechanisms ([lines 36–86](../../src/Zhua.Infrastructure/Matching/ItemMatcher.cs#L36)):
 
-1. **Upsert items by `MatchKey`** — it loads `Items WHERE MatchKey != null` into a dictionary and
-   reuses them, so re-runs don't duplicate. *(Items with a null `MatchKey` are invisible to this — see the
-   limitation below.)*
+1. **Upsert items by `MatchKey`** — it loads every item, keys the ones with a `MatchKey` into a dictionary, and
+   reuses them, so re-runs don't duplicate. Merge tombstones are resolved to their survivor here (see Merge below),
+   so a merged-away key relinks to the survivor instead of recreating the item.
 2. **Honour human decisions** — every `Approved` candidate is re-applied (sets the link); every `Rejected` pair is
    never re-proposed; a Woolworths listing that's already linked is skipped.
 3. **Drop resolved candidates** — at the end, Pending candidates whose product has since been linked are deleted.
@@ -89,24 +89,40 @@ it makes) — full contract in [../api.md](../api.md#admin--match-review-d18). T
 |---|---|---|
 | A candidate is correct | `approve` | recorded as `Approved` → re-applied every run |
 | None fit, but it's another existing item | `link-item` | sets the link directly |
-| None fit, genuinely new | `create-item` | makes a new item + links it |
+| None fit, genuinely new | `create-item` | makes a new item (stamped `manual:` key) + links it |
+| Two items are the same product | `merge` | repoints to the survivor; the tombstone resolves on re-run |
 | Wrong pair | `reject` | recorded as `Rejected` → never re-proposed |
 
-## ⚠️ Known limitation — manual link/create vs. the matcher
+## Merge — correcting two items into one (rework phase 4)
 
-`create-item` makes a `Item` with **no `MatchKey`**, and `link-item` sets a link without an
-`Approved` record. Consequences on the next match run:
+When the matcher splits one real product into two items (e.g. two Foodstuffs SKUs that are the same thing, or a
+hand-made item that duplicates an existing one), an admin **merges** them: `POST /items/{id}/merge { intoId }`
+([ItemService.MergeAsync](../../src/Zhua.Infrastructure/Services/ItemService.cs)). It repoints the source's products +
+candidates to the survivor, then leaves the source as a **redirect tombstone** (`Item.MergedIntoId` set) — *not* a
+hard delete. The tombstone is deliberate: a deleted Foodstuffs item would be **recreated** by Tier 1 on the next run
+(it regroups by `SourceSku` unconditionally). Keeping the row lets the matcher resolve the merged-away `MatchKey` to
+the survivor instead:
+
+- The matcher loads every item and **resolves `MatchKey → survivor`** through the `MergedIntoId` chain, so Tier 1
+  links a tombstoned SKU's products to the survivor and never resurrects the tombstone.
+- Tier 2's `(brand,size)` index and the item counts skip tombstones.
+- `PATCH /products/{id}` refuses to link to a merged-away item (it would be undone next run).
+- **Price history needs no special handling** — snapshots key on `ProductId`, so they follow the moved product.
+
+Merge is idempotent (re-merging into the same survivor is a no-op) and rejects self-merge / redirect cycles.
+
+## Manual link/create vs. the matcher
+
+`create-item` now stamps a stable **`MatchKey = "manual:{guid}"`** (so the hand-made item is visible to the upsert
+**and** the `(brand,size)` index — later Woolworths products can auto-attach to it, and a re-run never orphans it).
+Remaining edge:
 
 - **Woolworths listings (what the queue actually contains): safe.** Tier 2 skips already-linked products and the
-  matcher never nulls a link, so a manual link/create **survives**. *(Caveat: a hand-made item isn't in the
-  `(brand,size)` index — `MatchKey != null` only — so the matcher won't auto-attach **other** products to it later.)*
-- **Foodstuffs listings: would be overwritten.** Tier 1 unconditionally regroups Foodstuffs by `SourceSku` and
-  overwrites the link, orphaning the hand-made item. In practice the UI only acts on the Woolworths queue, so
-  this is a narrow edge — but calling these endpoints on a Foodstuffs listing is unsafe today.
-
-**Cheap hardening when needed:** stamp created items with `MatchKey = "manual:{guid}"` (so they're visible to
-the upsert and the index), and record manual links the same way `approve` does (or skip linked products in Tier 1
-too). Low priority until the review UI is actually exercised.
+  matcher never nulls a link, so a manual link/create **survives**.
+- **Foodstuffs listings: a manual `link-item` would still be overwritten.** Tier 1 unconditionally regroups
+  Foodstuffs by `SourceSku`, so hand-linking a *Foodstuffs* listing to a different item doesn't stick. In practice
+  the UI only acts on the Woolworths queue, so this stays a narrow edge — to genuinely combine two Foodstuffs items,
+  use **merge** (above), not a manual link.
 
 ## Gotchas
 

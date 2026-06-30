@@ -22,4 +22,14 @@ public sealed class ItemsController(IItemService items) : ZhuaController
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateItemRequest body) =>
         Respond(await items.CreateAsync(body));
+
+    /// <summary>
+    /// Merge this item into another (rework phase 4) — the reviewer correction for "these two items are actually the
+    /// same product". Repoints this item's products + match candidates to <c>intoId</c>, then leaves it as a redirect
+    /// tombstone so the matcher won't recreate it. Non-destructive (store listings untouched). <c>400</c> self/cycle,
+    /// <c>404</c> unknown item, <c>409</c> already merged elsewhere.
+    /// </summary>
+    [HttpPost("{id:guid}/merge")]
+    public async Task<IActionResult> Merge(Guid id, [FromBody] MergeItemRequest body) =>
+        Respond(await items.MergeAsync(id, body.IntoId));
 }

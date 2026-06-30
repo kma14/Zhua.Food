@@ -240,6 +240,7 @@ A reviewer looks at an unmatched/ambiguous listing (`Product`) and resolves it o
 | A proposed candidate is correct | **approve** it → `PATCH /match-candidates/{id}` `{ "status": "approved" }` |
 | No candidate fits, but the listing **is** another existing item | **link** it → `PATCH /products/{id}` `{ "itemId": … }` |
 | No candidate fits, and it's genuinely a **new** product | **create** a item (`POST /items`), then **link** it (`PATCH /products/{id}`) |
+| Two items are actually the **same** product | **merge** one into the other → `POST /items/{id}/merge` `{ "intoId": … }` |
 
 | Method | Path | Notes |
 |---|---|---|
@@ -247,9 +248,11 @@ A reviewer looks at an unmatched/ambiguous listing (`Product`) and resolves it o
 | PATCH | `/match-candidates/{id}` | body `{ "status": "approved" \| "rejected" }`. **approved** links the listing to the candidate's item + clears its sibling candidates; **rejected** stops the matcher proposing this pair again. Returns `MatchCandidateDecision`. `400` bad status, `404` unknown, `409` already decided |
 | PATCH | `/products/{id}` | body `{ "itemId": "…" \| null }` — set the listing's item link: an id links it to an **existing** item (clears its pending candidates); `null` **unlinks**. Returns `ProductLinkView`. `404` if the listing or the given item is unknown |
 | POST | `/items` | body `{ "name", "description?", "brand?", "size?", "category?" }` — create a **new** item (internal join key; `description` defaults to `name`, `category` to `"Uncategorised"`). Returns **`201 Created`** + `ItemView`. `400` if `name` is blank. **Then link the listing** with `PATCH /products/{id}` using the returned `id` |
+| POST | `/items/{id}/merge` | body `{ "intoId": "…" }` — merge item `id` **into** `intoId`: repoints `id`'s products + candidates to the survivor; `id` becomes a redirect so the matcher won't recreate it (non-destructive — store listings untouched). Returns `ItemMergeView`. Idempotent (re-merge into the same survivor = `200`, nothing moved). `400` self-merge / would cycle, `404` unknown item, `409` already merged elsewhere |
 
 `MatchCandidateView`: `{ id, productId, productName, brand, size, supermarket, price, candidateItemId, candidateItem, score, reason }`.
 `MatchCandidateDecision`: `{ id, status, itemId }` · `ProductLinkView`: `{ id, itemId }` · `ItemView`: `{ id, name, description, brand, size, category }`.
+`ItemMergeView`: `{ sourceId, survivorId, productsMoved, candidatesMoved }`.
 
 > The review UI pre-fills the `POST /items` body from the listing it's looking at (its `productName`/
 > `brand`/`size` from the queue), then links that listing with the returned `id` — two clean calls instead of one

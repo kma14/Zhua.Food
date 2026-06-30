@@ -44,5 +44,15 @@ public class Item
     /// <summary>Barcode — primary cross-store matching key when present (plan D9).</summary>
     public string? Gtin { get; set; }
 
+    /// <summary>
+    /// Merge tombstone (rework phase 4). When an admin merges this item into another, its products + match
+    /// candidates are repointed to the survivor and this is set to the survivor's id. The row is kept (not deleted)
+    /// as a <b>redirect</b>: the matcher resolves a merged-away <see cref="MatchKey"/> to the survivor so Tier 1
+    /// can't recreate it on the next run. A merged item has no products and never appears in shopper reads.
+    /// </summary>
+    public Guid? MergedIntoId { get; set; }
+
+    public Item? MergedInto { get; set; }
+
     public ICollection<Product> Products { get; } = new List<Product>();
 }

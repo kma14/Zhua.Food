@@ -33,9 +33,13 @@ public sealed class ItemMatcher(ZhuaDbContext db, TimeProvider clock) : IItemMat
             .Where(p => p.Store.IsActive)
             .ToListAsync(ct);
 
-        var canonByKey = await db.Items
-            .Where(c => c.MatchKey != null)
-            .ToDictionaryAsync(c => c.MatchKey!, ct);
+        // Load every item so merge-redirect tombstones (rework phase 4) resolve to their live survivor: a merged-away
+        // MatchKey must link its products to the survivor, never recreate the tombstone.
+        var allItems = await db.Items.ToListAsync(ct);
+        var itemsById = allItems.ToDictionary(c => c.Id);
+        var canonByKey = allItems.Where(c => c.MatchKey != null).ToDictionary(c => c.MatchKey!);
+        foreach (var key in canonByKey.Keys.ToList())
+            canonByKey[key] = ResolveLive(canonByKey[key], itemsById);
 
         // --- Tier 1: Foodstuffs share productId → one item per SourceSku, link every branch's Product. ---
         var foodstuffs = products.Where(p => p.Store.Chain is Chain.NewWorld or Chain.PaknSave);
@@ -63,8 +67,11 @@ public sealed class ItemMatcher(ZhuaDbContext db, TimeProvider clock) : IItemMat
 
         // --- Tier 2: index Foodstuffs items by (brand, size) for Woolworths matching. ---
         var index = new Dictionary<(string, string), List<(Item canon, HashSet<string> tokens)>>();
+        var indexed = new HashSet<Guid>();
         foreach (var c in canonByKey.Values)
         {
+            if (c.MergedIntoId is not null) continue;   // defensive — values are resolved survivors
+            if (!indexed.Add(c.Id)) continue;           // a survivor can sit under several absorbed keys
             var nb = ProductNormalizer.NormalizeBrand(c.Brand);
             var ns = ProductNormalizer.NormalizeSize(c.Size);
             if (nb is null || ns is null) continue;
@@ -80,11 +87,11 @@ public sealed class ItemMatcher(ZhuaDbContext db, TimeProvider clock) : IItemMat
         var known = decisions.Select(m => (m.ProductId, m.ItemId)).ToHashSet();
         var alreadyDecided = decisions.Count(m => m.Status != MatchStatus.Pending);
 
-        // Apply approved decisions (set the link explicitly).
+        // Apply approved decisions (set the link explicitly), resolving through any merge redirect.
         var byId = products.ToDictionary(p => p.Id);
         foreach (var m in decisions.Where(m => m.Status == MatchStatus.Approved))
-            if (byId.TryGetValue(m.ProductId, out var sp))
-                sp.ItemId = m.ItemId;
+            if (byId.TryGetValue(m.ProductId, out var sp) && itemsById.TryGetValue(m.ItemId, out var it))
+                sp.ItemId = ResolveLive(it, itemsById).Id;
 
         var autoLinkedWoolworths = 0;
         foreach (var w in products.Where(p => p.Store.Chain == Chain.Woolworths))
@@ -144,10 +151,18 @@ public sealed class ItemMatcher(ZhuaDbContext db, TimeProvider clock) : IItemMat
             await db.SaveChangesAsync(ct);
         }
 
-        var totalCanon = await db.Items.CountAsync(ct);
+        var totalCanon = await db.Items.CountAsync(c => c.MergedIntoId == null, ct);  // exclude merge tombstones
         var linked = await db.Products.CountAsync(p => p.ItemId != null, ct);
         var pending = await db.MatchCandidates.CountAsync(m => m.Status == MatchStatus.Pending, ct);
         return new MatchRunResult(totalCanon, linked, pending, alreadyDecided);
+
+        // Follow a merge-redirect chain (rework phase 4) to the live survivor; bounded against cycles.
+        static Item ResolveLive(Item item, Dictionary<Guid, Item> byId)
+        {
+            for (var guard = 0; item.MergedIntoId is { } next && byId.TryGetValue(next, out var survivor) && guard < 32; guard++)
+                item = survivor;
+            return item;
+        }
 
         static string? FinestCategory(Product p)
         {

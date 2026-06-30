@@ -53,6 +53,13 @@ internal static class TestData
     // store-first /products cards + product-keyed detail/history drill in via this PRODUCT id (Phase 2).
     public static readonly Guid MincePak = new("dddd0000-0000-0000-0000-0000000000a3");
 
+    // Dedicated merge pair (rework phase 4) — two items each with one listing, isolated so merging one into the
+    // other doesn't disturb any other test.
+    public static readonly Guid MergeFromItem = new("bbbb0000-0000-0000-0000-000000000020");
+    public static readonly Guid MergeIntoItem = new("bbbb0000-0000-0000-0000-000000000021");
+    public static readonly Guid MergeFromSp = new("dddd0000-0000-0000-0000-000000000020");
+    public static readonly Guid MergeIntoSp = new("dddd0000-0000-0000-0000-000000000021");
+
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-06-24T06:00:00Z");
 
     public static async Task SeedAsync(ZhuaDbContext db)
@@ -73,6 +80,9 @@ internal static class TestData
             Canon(EyeFillet, "Beef Eye Fillet", null, "Pams", null, "Beef", AisleBeef),
             Canon(ChickenBreast, "Chicken Breast", null, "Tegel", "500g", "Chicken", AisleChicken),
             Canon(FrozenProduct, "Vanilla Ice Cream 2L", "vanilla ice cream", "Tip Top", "2L", "Archive Me", ArchiveMeShelf),
+            // Parked on the isolated Frozen branch so the merge listings don't disturb the Meat-tree count tests.
+            Canon(MergeFromItem, "Mergeable From 1kg", "mergeable from", "Acme", "1kg", "Ice Cream & Desserts", AisleIceCream),
+            Canon(MergeIntoItem, "Mergeable Into 1kg", "mergeable into", "Acme", "1kg", "Ice Cream & Desserts", AisleIceCream),
             new Item { Id = MatchTarget, Name = "Generic Match Target", Category = "Uncategorised" });
 
         // Beef Mince across three stores — PAK'nSAVE Albany cheapest; Woolworths on special.
@@ -91,7 +101,10 @@ internal static class TestData
                 img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png"),
             // Frozen product under ArchiveMeShelf (so archiving the shelf hides it from browse)
             Sp(StoreSeed.WoolworthsTakapuna, "frozen-1", "Tip Top Vanilla Ice Cream 2L", 7.50m, FrozenProduct,
-                img: "https://assets.woolworths.com.au/images/frozen.jpg"));
+                img: "https://assets.woolworths.com.au/images/frozen.jpg"),
+            // Merge pair — one listing per item, so a merge collapses them into one group.
+            Sp(StoreSeed.WoolworthsTakapuna, "merge-from", "Mergeable From 1kg", 8.00m, MergeFromItem, id: MergeFromSp),
+            Sp(StoreSeed.NewWorldMetro, "merge-into", "Mergeable Into 1kg", 7.00m, MergeIntoItem, id: MergeIntoSp));
 
         await db.SaveChangesAsync();
 

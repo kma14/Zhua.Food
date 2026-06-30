@@ -22,5 +22,10 @@ public class ItemConfiguration : IEntityTypeConfiguration<Item>
         b.HasIndex(x => x.Category);
         b.HasIndex(x => x.Gtin);
         b.HasIndex(x => x.CategoryId); // browse/filter by the shared taxonomy (D22)
+
+        // Merge tombstone redirect (rework phase 4): self-FK to the survivor; Restrict so a survivor can't be
+        // deleted out from under a redirect.
+        b.HasOne(x => x.MergedInto).WithMany().HasForeignKey(x => x.MergedIntoId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.MergedIntoId);
     }
 }
