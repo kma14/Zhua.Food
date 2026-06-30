@@ -5,9 +5,16 @@ artifacts/
 [Dd]ebug/
 [Rr]elease/
 
+## Frontend build output
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
 ## IDE / tooling
 .vs/
 .idea/
+.vscode/settings.json
 *.user
 *.suo
 
@@ -21,6 +28,7 @@ Thumbs.db
 appsettings.*.local.json
 
 ## Claude Code per-machine settings (permission allow-list etc.)
+.claude/settings.json
 .claude/settings.local.json
 
 ## Raw crawler response archive (plan D12) — local debugging data, self-pruning

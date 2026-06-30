@@ -1,0 +1,1183 @@
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  decideMatchCandidate,
+  getCategories,
+  getCategoryProducts,
+  getDeals,
+  getMatchCandidates,
+  getProductGroup,
+  getProductPriceHistory,
+  getStores,
+  searchProducts
+} from "./api";
+import type {
+  CategoryNode,
+  DealItem,
+  MatchCandidate,
+  ProductGroup,
+  ProductListing,
+  ProductPriceHistory,
+  StoreOption,
+  Supermarket
+} from "./types";
+
+type Language = "zh" | "en";
+
+const copy = {
+  zh: {
+    loading: "正在加载今日价格...",
+    loadingShort: "加载中...",
+    failed: "暂时连不上本地价格服务，请确认本地服务已启动后刷新页面。",
+    language: "语言",
+    heroEyebrow: "奥克兰超市价格雷达",
+    heroTitle: "今天去哪买，先看真实价格",
+    heroCopy: "按你常去的门店筛选，再看同一类商品里哪些真实门店商品最便宜。点开一行，就能看到同品在各店的实际报价。",
+    apiLive: "价格已更新",
+    searchPlaceholder: "搜 chicken wings / steak / milk...",
+    searchButton: "搜索",
+    searchTitle: "搜索结果",
+    searchEyebrow: "找商品",
+    departments: "当前覆盖",
+    departmentMetric: "大类",
+    aisleMetric: "小类",
+    categories: "商品分类",
+    cheapest: "当前分类低价前十",
+    compare: "同品各店报价",
+    grouping: "同品说明",
+    history: "价格历史",
+    historyHint: "每个点代表一次真实变价；价格会保持到下一次变价。",
+    noRecentChange: "暂无更多变价",
+    deals: "今日特价",
+    dealsEyebrow: "特价",
+    dealSource: "按当前门店筛选",
+    dealsDate: "数据日期",
+    storeFilter: "门店",
+    storeFilterHint: "不选时默认全部门店。分类、排行榜、搜索、详情和特价都会按所选门店展示。",
+    storeFilterPending: "当前页面已按所选门店刷新。",
+    storeApiMissing: "等待门店 API",
+    allStores: "全部门店",
+    selectedStores: "已选门店",
+    noDealsForStores: "当前门店暂时没有可展示的特价。",
+    noStoreData: "当前门店没有这个商品的报价。",
+    coverageEyebrow: "分类覆盖",
+    noHistory: "这个商品暂时还没有多次变价记录，之后每次抓取会慢慢积累。",
+    noResults: "没有找到结果。",
+    productCount: "个商品",
+    listedStores: "家店有售",
+    cheapestStore: "最低门店",
+    priceStatus: "价格情况",
+    singleStoreStatus: "目前只看到这家在卖",
+    samePriceStatus: "所有门店价格一样",
+    gapStatusPrefix: "最高和最低相差",
+    fresh: "更新于",
+    special: "特价",
+    unit: "单位价",
+    price: "价格",
+    brand: "品牌",
+    store: "门店",
+    productName: "门店商品名",
+    category: "分类",
+    was: "原价",
+    browseMode: "价格浏览",
+    reviewMode: "匹配审核",
+    reviewTitle: "人工确认同品匹配",
+    reviewIntro: "这里处理还没完全确定的门店商品。确认后，这个真实商品会连到同一个同品组；拒绝后，系统不再推荐这组。",
+    woolworthsOnly: "只看 Woolworths",
+    allCandidates: "全部候选",
+    refresh: "刷新",
+    approve: "确认匹配",
+    reject: "拒绝",
+    candidateItem: "候选同品",
+    storeProduct: "门店商品",
+    matchReason: "匹配原因",
+    matchScore: "分数",
+    noCandidates: "当前没有需要审核的候选。",
+    reviewLoading: "正在加载候选..."
+  },
+  en: {
+    loading: "Connecting to the local price API...",
+    loadingShort: "Loading...",
+    failed: "API is unavailable. Make sure http://localhost:8080 is running, then refresh.",
+    language: "Language",
+    heroEyebrow: "Auckland grocery price radar",
+    heroTitle: "Find where to shop today",
+    heroCopy: "Filter to the stores you actually use, then compare real store listings inside each category. Open a row to see same-item prices across stores.",
+    apiLive: "API live",
+    searchPlaceholder: "Search chicken wings / steak / milk...",
+    searchButton: "Search",
+    searchTitle: "Search results",
+    searchEyebrow: "Search",
+    departments: "Coverage",
+    departmentMetric: "Departments",
+    aisleMetric: "Aisles",
+    categories: "Categories",
+    cheapest: "Cheapest top 10 in category",
+    compare: "Same-item store prices",
+    grouping: "Grouping note",
+    history: "Price history",
+    historyHint: "Each point is a real price change; the price holds until the next point.",
+    noRecentChange: "No extra changes yet",
+    deals: "Today's specials",
+    dealsEyebrow: "Deals",
+    dealSource: "Filtered by selected stores",
+    dealsDate: "Data date",
+    storeFilter: "Stores",
+    storeFilterHint: "No selection means all stores. Categories, rankings, search, detail, and specials are shown for selected stores.",
+    storeFilterPending: "Data refreshed for selected stores.",
+    storeApiMissing: "Waiting for store API",
+    allStores: "All stores",
+    selectedStores: "Selected stores",
+    noDealsForStores: "No visible specials for the selected stores.",
+    noStoreData: "No price row for this item in the selected stores.",
+    coverageEyebrow: "Category coverage",
+    noHistory: "This item does not have many price-change points yet. History will deepen with twice-daily crawls.",
+    noResults: "No results found.",
+    productCount: "products",
+    listedStores: "stores listing it",
+    cheapestStore: "Cheapest store",
+    priceStatus: "Price status",
+    singleStoreStatus: "Only one store currently lists it",
+    samePriceStatus: "All stores have the same price",
+    gapStatusPrefix: "Highest and lowest differ by",
+    fresh: "updated",
+    special: "Special",
+    unit: "Unit",
+    price: "Price",
+    brand: "Brand",
+    store: "Store",
+    productName: "Store product name",
+    category: "Category",
+    was: "was",
+    browseMode: "Price view",
+    reviewMode: "Match review",
+    reviewTitle: "Manual same-item review",
+    reviewIntro: "Resolve uncertain store listings. Approve links the real listing into a same-item group; reject blocks that suggestion.",
+    woolworthsOnly: "Woolworths only",
+    allCandidates: "All candidates",
+    refresh: "Refresh",
+    approve: "Approve",
+    reject: "Reject",
+    candidateItem: "Candidate item",
+    storeProduct: "Store product",
+    matchReason: "Reason",
+    matchScore: "Score",
+    noCandidates: "No pending candidates.",
+    reviewLoading: "Loading candidates..."
+  }
+};
+
+const chainClass: Record<Supermarket, string> = {
+  Woolworths: "chain-woolworths",
+  NewWorld: "chain-newworld",
+  PaknSave: "chain-paknsave"
+};
+
+const categoryNameZh: Record<string, string> = {
+  "Fridge, Deli & Eggs": "冷藏、熟食和鸡蛋",
+  Frozen: "冷冻食品",
+  "Fruit & Vegetables": "水果和蔬菜",
+  "Meat, Poultry & Seafood": "肉类、禽类和海鲜",
+  "Butter & Margarine": "黄油和人造黄油",
+  Cheese: "奶酪",
+  "Chilled Pasta, Pizza & Garlic Bread": "冷藏意面、披萨和蒜蓉面包",
+  "Chilled Soups & Ready Meals": "冷藏汤和即食餐",
+  "Cream, Custard & Desserts": "奶油、蛋奶冻和甜点",
+  "Dairy Free & Meat Free": "无乳和素食替代品",
+  "Deli Meats & Smoked Fish": "熟食肉类和烟熏鱼",
+  "Dips, Hummus & Antipasti": "蘸酱、鹰嘴豆泥和开胃小食",
+  Eggs: "鸡蛋",
+  Milk: "牛奶",
+  Yoghurt: "酸奶",
+  "Frozen Chicken & Meat": "冷冻鸡肉和肉类",
+  "Frozen Chips & Hash Browns": "冷冻薯条和薯饼",
+  "Frozen Dumplings, Pies & Snacks": "冷冻饺子、派和小食",
+  "Frozen Fish & Seafood": "冷冻鱼类和海鲜",
+  "Frozen Fruit & Desserts": "冷冻水果和甜点",
+  "Frozen Pastry & Bread": "冷冻酥皮和面包",
+  "Frozen Pizza & Ready Meals": "冷冻披萨和即食餐",
+  "Frozen Vegetables": "冷冻蔬菜",
+  "Ice Cream & Sorbet": "冰淇淋和雪葩",
+  "Fresh Salad & Herbs": "沙拉菜和香草",
+  Fruit: "水果",
+  "Organic Fruit & Vegetables": "有机水果和蔬菜",
+  Vegetables: "蔬菜",
+  Beef: "牛肉",
+  "Chicken & Poultry": "鸡肉和禽类",
+  "Deli Meats": "熟食肉类",
+  Lamb: "羊肉",
+  "Mince, Sausages & Meatballs": "肉末、香肠和肉丸",
+  "Offal & Bones": "内脏和骨头",
+  "Plant Based Alternatives": "植物肉替代品",
+  "Pork & Ham": "猪肉和火腿",
+  Seafood: "海鲜",
+  "Venison & Game": "鹿肉和野味"
+};
+
+export function App() {
+  const [language, setLanguage] = useState<Language>("zh");
+  const [categories, setCategories] = useState<CategoryNode[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [groups, setGroups] = useState<ProductGroup[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [comparison, setComparison] = useState<ProductGroup | null>(null);
+  const [history, setHistory] = useState<ProductPriceHistory | null>(null);
+  const [deals, setDeals] = useState<DealItem[]>([]);
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [isReviewMode, setIsReviewMode] = useState(false);
+  const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
+  const [reviewWoolworthsOnly, setReviewWoolworthsOnly] = useState(true);
+  const [isReviewLoading, setIsReviewLoading] = useState(false);
+  const [reviewActionId, setReviewActionId] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<ProductGroup[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProductsLoading, setIsProductsLoading] = useState(false);
+  const [isProductLoading, setIsProductLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const t = copy[language];
+
+  const flattenedCategories = useMemo(() => flattenCategories(categories), [categories]);
+  const selectedCategory = flattenedCategories.find((category) => category.id === selectedCategoryId) ?? null;
+  const selectedDepartment =
+    categories.find((department) => department.id === selectedDepartmentId) ??
+    categories.find((department) => department.id === selectedCategoryId || department.children.some((child) => child.id === selectedCategoryId)) ??
+    categories[0] ??
+    null;
+  const storeOptions = useMemo(() => sortStores(stores), [stores]);
+  const selectedStores = useMemo(
+    () => storeOptions.filter((store) => selectedStoreIds.includes(store.id)),
+    [storeOptions, selectedStoreIds]
+  );
+  const isStoreFilterActive = selectedStoreIds.length > 0;
+  const rankedGroups = useMemo(() => rankProductGroups(groups, selectedStores), [groups, selectedStores]);
+  const detailProducts = useMemo(
+    () => filterListingsByStores(comparison?.products ?? [], selectedStores),
+    [comparison, selectedStores]
+  );
+  const selectedListing =
+    detailProducts.find((product) => product.id === selectedProductId) ??
+    detailProducts[0] ??
+    findListingById(rankedGroups, selectedProductId) ??
+    null;
+  const visibleDeals = useMemo(() => filterDealsByStores(deals, selectedStores), [deals, selectedStores]);
+  const dealsDataDate = useMemo(() => latestDate(visibleDeals.map((deal) => deal.priceAsOf)), [visibleDeals]);
+  const totalProducts = categories.reduce((sum, category) => sum + category.totalProductCount, 0);
+  const aisleCount = categories.reduce((sum, category) => sum + category.children.length, 0);
+  const visibleMatchCandidates = useMemo(
+    () =>
+      reviewWoolworthsOnly
+        ? matchCandidates.filter((candidate) => candidate.supermarket === "Woolworths")
+        : matchCandidates,
+    [matchCandidates, reviewWoolworthsOnly]
+  );
+
+  const loadMatchCandidates = useCallback(async () => {
+    setIsReviewLoading(true);
+    setReviewError(null);
+    try {
+      const rows = await getMatchCandidates(150);
+      setMatchCandidates(rows);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : t.failed);
+    } finally {
+      setIsReviewLoading(false);
+    }
+  }, [t.failed]);
+
+  function toggleStoreFilter(id: string) {
+    setSelectedStoreIds((current) => {
+      if (current.includes(id)) return current.filter((value) => value !== id);
+      const next = [...current, id];
+      return next.length === storeOptions.length ? [] : next;
+    });
+  }
+
+  async function handleCandidateAction(id: string, status: "approved" | "rejected") {
+    setReviewActionId(id);
+    setReviewError(null);
+    try {
+      await decideMatchCandidate(id, status);
+      await loadMatchCandidates();
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : t.failed);
+    } finally {
+      setReviewActionId(null);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInitialData() {
+      try {
+        const [categoryTree, dealRows, storeRows] = await Promise.all([
+          getCategories("aisle", selectedStoreIds),
+          getDeals(24),
+          getStores().catch(() => [] as StoreOption[])
+        ]);
+        if (cancelled) return;
+
+        setCategories(categoryTree);
+        setDeals(dealRows);
+        setStores(storeRows);
+
+        const flat = flattenCategories(categoryTree);
+        const defaultCategory =
+          flat.find((category) => category.path === "meat-poultry-seafood/chicken-poultry") ??
+          flat.find((category) => category.kind === "Aisle") ??
+          flat[0];
+        const defaultDepartment =
+          categoryTree.find((department) => department.id === defaultCategory?.id || department.children.some((child) => child.id === defaultCategory?.id)) ??
+          categoryTree[0];
+        setSelectedDepartmentId((current) =>
+          categoryTree.some((department) => department.id === current) ? current : defaultDepartment?.id || ""
+        );
+        setSelectedCategoryId((current) =>
+          flat.some((category) => category.id === current) ? current : defaultCategory?.id || ""
+        );
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : t.failed);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    loadInitialData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStoreIds, t.failed]);
+
+  useEffect(() => {
+    if (!selectedCategoryId) return;
+    let cancelled = false;
+
+    async function loadProducts() {
+      setIsProductsLoading(true);
+      try {
+        const rows = await getCategoryProducts(selectedCategoryId, 40, selectedStoreIds);
+        if (cancelled) return;
+        const ranked = rankProductGroups(rows, selectedStores);
+        setGroups(rows);
+        setSelectedProductId(bestListing(ranked[0], selectedStores)?.id ?? "");
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : t.failed);
+      } finally {
+        if (!cancelled) setIsProductsLoading(false);
+      }
+    }
+
+    loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
+
+  useEffect(() => {
+    setHasSearched(false);
+    setSearchResults([]);
+  }, [selectedStoreIds]);
+
+  useEffect(() => {
+    if (isReviewMode) void loadMatchCandidates();
+  }, [isReviewMode, loadMatchCandidates]);
+
+  useEffect(() => {
+    if (!selectedProductId) {
+      setComparison(null);
+      setHistory(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadProduct() {
+      setIsProductLoading(true);
+      try {
+        const [productGroup, productHistory] = await Promise.all([
+          getProductGroup(selectedProductId),
+          getProductPriceHistory(selectedProductId, 14)
+        ]);
+        if (cancelled) return;
+        setComparison(productGroup);
+        setHistory(productHistory);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : t.failed);
+      } finally {
+        if (!cancelled) setIsProductLoading(false);
+      }
+    }
+
+    loadProduct();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProductId, t.failed]);
+
+  async function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = searchTerm.trim();
+    if (!query) return;
+
+    setHasSearched(true);
+    const rows = await searchProducts(query, 12, selectedStoreIds);
+    setSearchResults(rows);
+  }
+
+  if (isLoading) {
+    return (
+      <main className="loading-shell">
+        <div className="loading-card">{t.loading}</div>
+      </main>
+    );
+  }
+
+  if (error && categories.length === 0) {
+    return (
+      <main className="loading-shell">
+        <div className="loading-card error-card">{t.failed}</div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="app-shell">
+      <div className="utility-bar">
+        <span className="api-pill">{t.apiLive}</span>
+        <div className="language-toggle" role="group" aria-label={t.reviewMode}>
+          <button className={!isReviewMode ? "active" : ""} onClick={() => setIsReviewMode(false)}>
+            {t.browseMode}
+          </button>
+          <button className={isReviewMode ? "active" : ""} onClick={() => setIsReviewMode(true)}>
+            {t.reviewMode}
+          </button>
+        </div>
+        <span>{t.language}</span>
+        <div className="language-toggle" role="group" aria-label={t.language}>
+          <button className={language === "zh" ? "active" : ""} onClick={() => setLanguage("zh")}>
+            中文
+          </button>
+          <button className={language === "en" ? "active" : ""} onClick={() => setLanguage("en")}>
+            EN
+          </button>
+        </div>
+      </div>
+
+      <section className="hero">
+        <div>
+          <p className="eyebrow">{t.heroEyebrow}</p>
+          <h1>{t.heroTitle}</h1>
+          <p className="hero-copy">{t.heroCopy}</p>
+        </div>
+        <form className="search-box" onSubmit={handleSearch}>
+          <input
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder={t.searchPlaceholder}
+            aria-label={t.searchPlaceholder}
+          />
+          <button>{t.searchButton}</button>
+        </form>
+      </section>
+
+      {isReviewMode ? (
+        <ReviewWorkspace
+          candidates={visibleMatchCandidates}
+          isLoading={isReviewLoading}
+          actionId={reviewActionId}
+          error={reviewError}
+          woolworthsOnly={reviewWoolworthsOnly}
+          totalCount={matchCandidates.length}
+          t={t}
+          onRefresh={loadMatchCandidates}
+          onToggleWoolworthsOnly={() => setReviewWoolworthsOnly((value) => !value)}
+          onAction={handleCandidateAction}
+        />
+      ) : (
+        <>
+          <section className="store-filter-panel" aria-label={t.storeFilter}>
+            <div>
+              <p className="eyebrow">{t.storeFilter}</p>
+              <strong>{isStoreFilterActive ? `${t.selectedStores} ${selectedStoreIds.length}` : t.allStores}</strong>
+              <small>{t.storeFilterHint}</small>
+              {isStoreFilterActive && <small>{t.storeFilterPending}</small>}
+            </div>
+            <div className="store-filter-actions">
+              <button className={!isStoreFilterActive ? "active" : ""} onClick={() => setSelectedStoreIds([])}>
+                {t.allStores}
+              </button>
+              {storeOptions.length === 0 && <span className="store-api-missing">{t.storeApiMissing}</span>}
+              {storeOptions.map((option) => (
+                <button
+                  key={option.id}
+                  className={selectedStoreIds.includes(option.id) ? "active" : ""}
+                  onClick={() => toggleStoreFilter(option.id)}
+                >
+                  <ChainBadge chain={option.supermarket} />
+                  <span className="store-filter-label">
+                    <strong>{formatStoreBranch(option.name, option.supermarket, language)}</strong>
+                    <small>
+                      {option.productCount.toLocaleString()} {t.productCount}
+                      {option.lastCrawledAt ? ` · ${formatShortDateTime(option.lastCrawledAt)}` : ""}
+                    </small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="stats-grid" aria-label={t.departments}>
+            <Metric label={t.productCount} value={totalProducts.toLocaleString()} />
+            <Metric label={t.departmentMetric} value={categories.length.toLocaleString()} />
+            <Metric label={t.aisleMetric} value={aisleCount.toLocaleString()} />
+            <Metric label={t.deals} value={visibleDeals.length.toLocaleString()} />
+          </section>
+
+          <section className="panel deals-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">{t.dealsEyebrow}</p>
+                <h2>
+                  {t.deals}
+                  {dealsDataDate && <span className="heading-date">{t.dealsDate} {formatDate(dealsDataDate)}</span>}
+                </h2>
+              </div>
+              <span className="data-pill">{t.dealSource}</span>
+            </div>
+            <div className="deals-grid">
+              {visibleDeals.length === 0 && <p className="empty-state">{t.noDealsForStores}</p>}
+              {visibleDeals.map((deal) => (
+                <article key={`${deal.store}-${deal.product}`} className="deal-card">
+                  <div className="deal-card-top">
+                    <ProductImage imageUrl={deal.imageUrl} name={deal.product} size="medium" />
+                    <div>
+                      <ChainBadge chain={deal.supermarket} />
+                      <h3>{deal.product}</h3>
+                      <p>{deal.brand || "-"}</p>
+                    </div>
+                  </div>
+                  <div className="deal-price">
+                    <strong>{formatMaybeCurrency(deal.price)}</strong>
+                    {formatDealSaving(deal, language) && <em className="deal-saving">{formatDealSaving(deal, language)}</em>}
+                    {deal.wasPrice !== null && (
+                      <span>
+                        {t.was} {formatCurrency(deal.wasPrice)}
+                      </span>
+                    )}
+                  </div>
+                  <footer>
+                    <span>{formatStoreBranch(deal.store, deal.supermarket, language)}</span>
+                    <span>{formatUnit(deal.unitPrice, deal.unitOfMeasure)}</span>
+                  </footer>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {hasSearched && (
+            <section className="panel search-panel">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">{t.searchEyebrow}</p>
+                  <h2>{t.searchTitle}</h2>
+                </div>
+              </div>
+              {searchResults.length === 0 ? (
+                <p className="empty-state">{t.noResults}</p>
+              ) : (
+                <div className="search-results">
+                  {rankProductGroups(searchResults, selectedStores).map((group) => {
+                    const listing = bestListing(group, selectedStores);
+                    if (!listing) return null;
+                    return (
+                      <button key={listing.id} className="search-result" onClick={() => setSelectedProductId(listing.id)}>
+                        <strong>{listing.name}</strong>
+                        <span>{formatGroupCaption(group, language)}</span>
+                        <small>
+                          {formatMaybeCurrency(listing.price)} · {filterListingsByStores(group.products, selectedStores).length} {t.listedStores}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          <section className="panel category-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">{t.categories}</p>
+                <h2>{selectedCategory ? translateCategoryName(selectedCategory.name, language) : t.cheapest}</h2>
+              </div>
+              <span className="data-pill">
+                {selectedCategory?.totalProductCount.toLocaleString()} {t.productCount}
+              </span>
+            </div>
+
+            <div className="department-tabs" aria-label={t.departmentMetric}>
+              {categories.map((department) => (
+                <button
+                  key={department.id}
+                  className={selectedDepartment?.id === department.id ? "active" : ""}
+                  onClick={() => {
+                    setSelectedDepartmentId(department.id);
+                    setSelectedCategoryId(department.children[0]?.id ?? department.id);
+                  }}
+                >
+                  <strong>{translateCategoryName(department.name, language)}</strong>
+                  <span>{department.totalProductCount}</span>
+                </button>
+              ))}
+            </div>
+
+            {selectedDepartment && (
+              <div className="category-tabs" aria-label={t.aisleMetric}>
+                {(selectedDepartment.children.length > 0 ? selectedDepartment.children : [selectedDepartment]).map((category) => (
+                  <button
+                    key={category.id}
+                    className={selectedCategoryId === category.id ? "active" : ""}
+                    onClick={() => setSelectedCategoryId(category.id)}
+                  >
+                    <strong>{translateCategoryName(category.name, language)}</strong>
+                    <span>{category.totalProductCount}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedCategory && <p className="hint">{formatCategoryTrail(selectedCategory, categories, language)}</p>}
+
+            <div className="main-grid">
+              <section className="table-card">
+                <div className="table-heading">
+                  <h3>{t.cheapest}</h3>
+                  {isProductsLoading && <span>{t.loadingShort}</span>}
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{t.productName}</th>
+                        <th>{t.brand}</th>
+                        <th>{t.cheapestStore}</th>
+                        <th>{t.price}</th>
+                        <th>{t.unit}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rankedGroups.slice(0, 10).map((group, index) => {
+                        const listing = bestListing(group, selectedStores);
+                        if (!listing) return null;
+                        return (
+                          <tr
+                            key={listing.id}
+                            className={selectedProductId === listing.id ? "selected-row" : ""}
+                            onClick={() => setSelectedProductId(listing.id)}
+                          >
+                            <td>
+                              <span className="rank">#{index + 1}</span>
+                            </td>
+                            <td>
+                              <div className="product-cell">
+                                <ProductImage imageUrl={listing.imageUrl} name={listing.name} size="small" />
+                                <div>
+                                  <strong>{listing.name}</strong>
+                                  <small>{formatGroupCaption(group, language)}</small>
+                                </div>
+                              </div>
+                            </td>
+                            <td>{listing.brand || "-"}</td>
+                            <td>
+                              <ChainBadge chain={listing.supermarket} />
+                              <span>{formatStoreBranch(listing.store, listing.supermarket, language)}</span>
+                            </td>
+                            <td>
+                              <strong>{formatMaybeCurrency(listing.price)}</strong>
+                            </td>
+                            <td>{formatUnit(listing.unitPrice, listing.unit)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <aside className="detail-card">
+                <div className="detail-heading">
+                  <ProductImage imageUrl={selectedListing?.imageUrl ?? firstImage(comparison)} name={selectedListing?.name ?? ""} size="large" />
+                  <div>
+                    <p className="eyebrow">{t.compare}</p>
+                    <h3>{selectedListing?.name ?? "..."}</h3>
+                    {comparison && <p>{formatGroupCaption(comparison, language)}</p>}
+                  </div>
+                </div>
+
+                {isProductLoading && <p className="empty-state">{t.loadingShort}</p>}
+
+                {comparison && !isProductLoading && (
+                  <>
+                    <div className={`compare-summary ${hasPriceGap(detailProducts) ? "" : "single"}`}>
+                      <div>
+                        <span>{t.cheapestStore}</span>
+                        <strong>
+                          {detailProducts[0]
+                            ? formatFullStoreName(detailProducts[0].store, detailProducts[0].supermarket, language)
+                            : "-"}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>{t.priceStatus}</span>
+                        <strong>{describePriceStatus(detailProducts, t)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="price-list">
+                      {detailProducts.length === 0 && <p className="empty-state">{t.noStoreData}</p>}
+                      {detailProducts.map((listing) => (
+                        <article key={listing.id} className="price-row">
+                          <div>
+                            <ChainBadge chain={listing.supermarket} />
+                            <strong>{formatStoreBranch(listing.store, listing.supermarket, language)}</strong>
+                          </div>
+                          <div>
+                            <strong>{formatMaybeCurrency(listing.price)}</strong>
+                            <span>{formatUnit(listing.unitPrice, listing.unit)}</span>
+                          </div>
+                          <small>
+                            <span>{listing.name}</span>
+                            <span>{formatPriceFreshness(listing, t)}</span>
+                          </small>
+                        </article>
+                      ))}
+                    </div>
+
+                    <div className="history-card">
+                      <h4>{t.history}</h4>
+                      <p>{t.historyHint}</p>
+                      {history && countHistoryPoints(history, selectedStores) > 0 ? (
+                        <div className="history-list">
+                          {filterHistoryStores(history.stores, selectedStores).map((store) => (
+                            <article key={store.store}>
+                              <div>
+                                <ChainBadge chain={store.supermarket as Supermarket} />
+                                <strong>{formatStoreBranch(store.store, store.supermarket as Supermarket, language)}</strong>
+                              </div>
+                              <div className="history-current">
+                                <strong>{formatMaybeCurrency(latestHistoryPoint(store)?.price ?? null)}</strong>
+                                <span>{describeHistory(store, t)}</span>
+                              </div>
+                              <div className="history-points" aria-label={t.history}>
+                                {store.points.slice(-3).map((point) => (
+                                  <span key={`${store.store}-${point.date}`} title={formatDateTime(point.date)}>
+                                    {formatMaybeCurrency(point.price)}
+                                  </span>
+                                ))}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <p>{t.noHistory}</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </aside>
+            </div>
+          </section>
+
+          <section className="panel coverage-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">{t.coverageEyebrow}</p>
+                <h2>{t.departments}</h2>
+              </div>
+            </div>
+            <div className="department-grid">
+              {categories.map((department) => (
+                <article key={department.id} className="department-card">
+                  <strong>{translateCategoryName(department.name, language)}</strong>
+                  <span>
+                    {department.totalProductCount.toLocaleString()} {t.productCount}
+                  </span>
+                  <small>{department.children.map((child) => translateCategoryName(child.name, language)).join(" · ")}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </main>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function ReviewWorkspace({
+  candidates,
+  isLoading,
+  actionId,
+  error,
+  woolworthsOnly,
+  totalCount,
+  t,
+  onRefresh,
+  onToggleWoolworthsOnly,
+  onAction
+}: {
+  candidates: MatchCandidate[];
+  isLoading: boolean;
+  actionId: string | null;
+  error: string | null;
+  woolworthsOnly: boolean;
+  totalCount: number;
+  t: (typeof copy)[Language];
+  onRefresh: () => void;
+  onToggleWoolworthsOnly: () => void;
+  onAction: (id: string, status: "approved" | "rejected") => void;
+}) {
+  return (
+    <section className="panel review-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">{t.reviewMode}</p>
+          <h2>{t.reviewTitle}</h2>
+          <p className="review-intro">{t.reviewIntro}</p>
+        </div>
+        <div className="review-actions">
+          <button className={woolworthsOnly ? "active" : ""} onClick={onToggleWoolworthsOnly}>
+            {woolworthsOnly ? t.woolworthsOnly : t.allCandidates}
+          </button>
+          <button onClick={onRefresh}>{t.refresh}</button>
+        </div>
+      </div>
+
+      <div className="review-summary">
+        <Metric label={t.allCandidates} value={totalCount.toLocaleString()} />
+        <Metric label={woolworthsOnly ? t.woolworthsOnly : t.reviewMode} value={candidates.length.toLocaleString()} />
+      </div>
+
+      {error && <p className="empty-state error-card">{error}</p>}
+      {isLoading && <p className="empty-state">{t.reviewLoading}</p>}
+      {!isLoading && candidates.length === 0 && <p className="empty-state">{t.noCandidates}</p>}
+
+      <div className="review-list">
+        {candidates.map((candidate) => (
+          <article key={candidate.id} className="review-card">
+            <div className="review-card-grid">
+              <div>
+                <p className="eyebrow">{t.storeProduct}</p>
+                <h3>{candidate.productName}</h3>
+                <p className="review-meta">
+                  <ChainBadge chain={candidate.supermarket} />
+                  <span>{candidate.brand || "-"}</span>
+                  {candidate.size && <span>{candidate.size}</span>}
+                  {candidate.price !== null && <span>{formatCurrency(candidate.price)}</span>}
+                </p>
+              </div>
+              <div>
+                <p className="eyebrow">{t.candidateItem}</p>
+                <h3>{candidate.candidateItem}</h3>
+                <p className="review-meta">
+                  <span>
+                    {t.matchScore} {formatScore(candidate.score)}
+                  </span>
+                </p>
+              </div>
+            </div>
+            {candidate.reason && (
+              <p className="review-reason">
+                <strong>{t.matchReason}</strong>
+                <span>{candidate.reason}</span>
+              </p>
+            )}
+            <footer className="review-card-actions">
+              <button
+                className="reject-button"
+                disabled={actionId === candidate.id}
+                onClick={() => onAction(candidate.id, "rejected")}
+              >
+                {t.reject}
+              </button>
+              <button
+                className="approve-button"
+                disabled={actionId === candidate.id}
+                onClick={() => onAction(candidate.id, "approved")}
+              >
+                {t.approve}
+              </button>
+            </footer>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductImage({
+  imageUrl,
+  name,
+  size
+}: {
+  imageUrl?: string | null;
+  name: string;
+  size: "small" | "medium" | "large";
+}) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [imageUrl]);
+
+  if (!imageUrl || failed) {
+    return (
+      <div className={`product-image product-image-${size} product-image-empty`} aria-label="No product image">
+        <span>{name ? name.slice(0, 1).toUpperCase() : "-"}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      className={`product-image product-image-${size}`}
+      src={imageUrl}
+      alt={name}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function ChainBadge({ chain }: { chain: Supermarket }) {
+  return <span className={`chain-badge ${chainClass[chain]}`}>{formatChain(chain)}</span>;
+}
+
+function rankProductGroups(groups: ProductGroup[], selectedStores: StoreOption[]) {
+  return [...groups]
+    .map((group) => ({ group, listing: bestListing(group, selectedStores) }))
+    .filter((entry): entry is { group: ProductGroup; listing: ProductListing } => entry.listing !== null)
+    .sort((a, b) => listingSortValue(a.listing) - listingSortValue(b.listing))
+    .map((entry) => ({
+      ...entry.group,
+      products: sortListings(filterListingsByStores(entry.group.products, selectedStores))
+    }));
+}
+
+function bestListing(group: ProductGroup | undefined, selectedStores: StoreOption[]) {
+  if (!group) return null;
+  return sortListings(filterListingsByStores(group.products, selectedStores))[0] ?? null;
+}
+
+function sortListings(listings: ProductListing[]) {
+  return [...listings].sort((a, b) => listingSortValue(a) - listingSortValue(b));
+}
+
+function listingSortValue(listing: ProductListing) {
+  return listing.unitPrice ?? listing.price ?? Number.POSITIVE_INFINITY;
+}
+
+function filterListingsByStores(listings: ProductListing[], selectedStores: StoreOption[]) {
+  if (selectedStores.length === 0) return sortListings(listings);
+  return sortListings(listings.filter((listing) => selectedStores.some((store) => sameStore(store, listing.store, listing.supermarket))));
+}
+
+function filterDealsByStores(deals: DealItem[], selectedStores: StoreOption[]) {
+  const visible = selectedStores.length === 0
+    ? deals
+    : deals.filter((deal) => selectedStores.some((store) => sameStore(store, deal.store, deal.supermarket)));
+  return visible
+    .filter((deal) => deal.price !== null)
+    .sort((a, b) => (b.saving ?? 0) - (a.saving ?? 0));
+}
+
+function filterHistoryStores(stores: ProductPriceHistory["stores"], selectedStores: StoreOption[]) {
+  if (selectedStores.length === 0) return stores;
+  return stores.filter((row) => selectedStores.some((store) => sameStore(store, row.store, row.supermarket as Supermarket)));
+}
+
+function sameStore(store: StoreOption, listingStore: string, listingSupermarket: string) {
+  return store.supermarket === listingSupermarket && normalizeStoreName(store.name) === normalizeStoreName(listingStore);
+}
+
+function normalizeStoreName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function findListingById(groups: ProductGroup[], productId: string) {
+  for (const group of groups) {
+    const listing = group.products.find((product) => product.id === productId);
+    if (listing) return listing;
+  }
+  return null;
+}
+
+function firstImage(group: ProductGroup | null) {
+  return group?.products.find((product) => product.imageUrl)?.imageUrl ?? null;
+}
+
+function flattenCategories(categories: CategoryNode[]): CategoryNode[] {
+  return categories.flatMap((category) => [category, ...flattenCategories(category.children)]);
+}
+
+function countHistoryPoints(history: ProductPriceHistory, selectedStores: StoreOption[]) {
+  return filterHistoryStores(history.stores, selectedStores).reduce((sum, store) => sum + store.points.length, 0);
+}
+
+function sortStores(stores: StoreOption[]) {
+  return [...stores].sort((a, b) => {
+    const chainOrder = chainSortOrder(a.supermarket) - chainSortOrder(b.supermarket);
+    if (chainOrder !== 0) return chainOrder;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function chainSortOrder(chain: Supermarket) {
+  if (chain === "PaknSave") return 1;
+  if (chain === "NewWorld") return 2;
+  return 3;
+}
+
+function formatCategoryTrail(category: CategoryNode, departments: CategoryNode[], language: Language) {
+  const parent = departments.find((department) => department.id === category.id || department.children.some((child) => child.id === category.id));
+  if (!parent || parent.id === category.id) return translateCategoryName(category.name, language);
+  return `${translateCategoryName(parent.name, language)} / ${translateCategoryName(category.name, language)}`;
+}
+
+function latestHistoryPoint(store: ProductPriceHistory["stores"][number]) {
+  return store.points[store.points.length - 1] ?? null;
+}
+
+function describeHistory(store: ProductPriceHistory["stores"][number], t: (typeof copy)[Language]) {
+  if (store.points.length <= 1) return t.noRecentChange;
+  const latest = latestHistoryPoint(store);
+  return latest ? `${t.fresh} ${formatShortDateTime(latest.date)}` : t.noRecentChange;
+}
+
+function hasPriceGap(listings: ProductListing[]) {
+  const prices = listings.map((listing) => listing.price).filter((price): price is number => price !== null);
+  if (prices.length <= 1) return false;
+  return Math.max(...prices) - Math.min(...prices) > 0.009;
+}
+
+function describePriceStatus(listings: ProductListing[], t: (typeof copy)[Language]) {
+  const prices = listings.map((listing) => listing.price).filter((price): price is number => price !== null);
+  if (listings.length === 0 || prices.length === 0) return t.noStoreData;
+  if (listings.length <= 1) return t.singleStoreStatus;
+  const saving = Math.max(...prices) - Math.min(...prices);
+  if (saving <= 0.009) return t.samePriceStatus;
+  return `${t.gapStatusPrefix} ${formatCurrency(saving)}`;
+}
+
+function formatGroupCaption(group: ProductGroup, language: Language) {
+  const parts = [group.description, group.category].filter(Boolean);
+  if (parts.length === 0) return language === "zh" ? "未归入同品组" : "Ungrouped listing";
+  return parts.join(" · ");
+}
+
+function formatPriceFreshness(listing: ProductListing, t: (typeof copy)[Language]) {
+  return `${t.fresh} ${formatShortDateTime(listing.priceAsOf)}`;
+}
+
+function translateCategoryName(name: string, language: Language) {
+  if (language !== "zh") return name;
+  return categoryNameZh[name] ?? name;
+}
+
+function formatChain(chain: Supermarket) {
+  if (chain === "PaknSave") return "PAK'nSAVE";
+  if (chain === "NewWorld") return "New World";
+  return chain;
+}
+
+function formatStoreBranch(store: string, chain: Supermarket, language: Language) {
+  if (chain === "Woolworths") return language === "zh" ? "所有门店" : "All stores";
+  const chainName = formatChain(chain);
+  return store.replace(new RegExp(`^${escapeRegExp(chainName)}\\s*`, "i"), "").trim() || store;
+}
+
+function formatFullStoreName(store: string, chain: Supermarket, language: Language) {
+  if (chain === "Woolworths") return `${formatChain(chain)} ${formatStoreBranch(store, chain, language)}`;
+  return store;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+    minimumFractionDigits: value % 1 === 0 ? 0 : 2
+  }).format(value);
+}
+
+function formatMaybeCurrency(value: number | null) {
+  return value === null ? "-" : formatCurrency(value);
+}
+
+function formatUnit(value: number | null, unit: string | null) {
+  if (value === null || !unit) return "-";
+  return `${formatCurrency(value)} / ${unit}`;
+}
+
+function formatDealSaving(deal: DealItem, language: Language) {
+  if (!deal.saving || !deal.wasPrice || deal.wasPrice <= 0) return null;
+  const percent = Math.round((deal.saving / deal.wasPrice) * 100);
+  if (language === "zh") return `省 ${formatCurrency(deal.saving)} · ${percent}%`;
+  return `Save ${formatCurrency(deal.saving)} · ${percent}% off`;
+}
+
+function formatScore(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
+function latestDate(values: string[]) {
+  const validDates = values
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime());
+  return validDates[0] ?? null;
+}
+
+function formatDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatShortDateTime(value: string) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
