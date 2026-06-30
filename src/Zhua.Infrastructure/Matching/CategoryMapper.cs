@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Zhua.Application.Matching;
 using Zhua.Domain.Entities;
@@ -104,15 +103,6 @@ public sealed class CategoryMapper(ZhuaDbContext db) : ICategoryMapper
         }
     }
 
-    private static string Slugify(string name)
-    {
-        var sb = new StringBuilder(name.Length);
-        var prevDash = false;
-        foreach (var ch in name.Trim().ToLowerInvariant())
-        {
-            if (char.IsLetterOrDigit(ch)) { sb.Append(ch); prevDash = false; }
-            else if (!prevDash && sb.Length > 0) { sb.Append('-'); prevDash = true; }
-        }
-        return sb.ToString().Trim('-');
-    }
+    // The slug rule now lives on the Category aggregate (rich-domain refactor) so curated nodes + mapped nodes agree.
+    private static string Slugify(string name) => Category.Slugify(name);
 }

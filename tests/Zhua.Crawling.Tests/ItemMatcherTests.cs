@@ -3,9 +3,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Zhua.Application.Common;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
+using Zhua.Application.Review;
 using Zhua.Infrastructure.Matching;
 using Zhua.Infrastructure.Persistence;
-using Zhua.Infrastructure.Services;
+using Zhua.Infrastructure.Repositories;
 
 namespace Zhua.Crawling.Tests;
 
@@ -141,7 +142,11 @@ public class ItemMatcherTests
 
         // Admin decides the two cottage-cheese SKUs are the same product → merge C3 into C2.
         await using (var db = NewContext())
-            Assert.Equal(ResultStatus.Ok, (await new ItemService(db).MergeAsync(mergedId, survivorId)).Status);
+        {
+            var itemService = new ItemService(
+                new ItemRepository(db), new ProductRepository(db), new MatchCandidateRepository(db), new UnitOfWork(db));
+            Assert.Equal(ResultStatus.Ok, (await itemService.MergeAsync(mergedId, survivorId)).Status);
+        }
 
         // Re-run: Tier 1 regroups Foodstuffs by SKU, but the merged-away C3 key must resolve to the survivor.
         await using (var db = NewContext()) await new ItemMatcher(db, _clock).RunAsync();

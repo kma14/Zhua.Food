@@ -1,30 +1,21 @@
-using System.Text;
-using Microsoft.EntityFrameworkCore;
 using Zhua.Application.Common;
 using Zhua.Domain.Entities;
 using Zhua.Domain.Enums;
-using Zhua.Infrastructure.Persistence;
+using Zhua.Domain.Repositories;
 
-namespace Zhua.Infrastructure.Services;
+namespace Zhua.Application.Categories;
 
-/// <summary>EF implementation of <see cref="ICategoryService"/> (D27) — the shared tree (read) + curation (D25 phase 3).</summary>
-public sealed class CategoryService(ZhuaDbContext db) : ICategoryService
+/// <summary>
+/// The shared category tree (read) + curation use cases (D22 / D25 phase 3). All logic — tree build, depth cap,
+/// subtree counts, CRUD validation, cascade archive — lives here; data access is the <see cref="ICategoryRepository"/>
+/// port, and the slug/path identity + archive flip are rich-domain methods on <see cref="Category"/>.
+/// </summary>
+public sealed class CategoryService(ICategoryRepository categories, IUnitOfWork uow) : ICategoryService
 {
     public async Task<IReadOnlyList<CategoryNode>> TreeAsync(string? kind, IReadOnlyList<Guid>? storeIds)
     {
-        var hasStoreFilter = storeIds is { Count: > 0 };
-
-        var cats = await db.Categories
-            .Where(c => !c.IsArchived) // soft-deleted nodes are hidden from browse (D25 phase 3)
-            .Select(c => new { c.Id, c.Kind, c.Name, c.Slug, c.Path, c.ParentId })
-            .ToListAsync();
-
-        var counts = await db.Items
-            .Where(p => p.CategoryId != null
-                && (!hasStoreFilter || p.Products.Any(sp => sp.CurrentPrice != null && storeIds!.Contains(sp.StoreId))))
-            .GroupBy(p => p.CategoryId!.Value)
-            .Select(g => new { Id = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count);
+        var cats = await categories.GetActiveAsync();
+        var counts = await categories.CountItemsByCategoryAsync(storeIds);
 
         var nodes = cats.ToDictionary(c => c.Id, c => new MutableNode(
             c.Id, c.Kind.ToString(), c.Name, c.Slug, c.Path, c.ParentId, counts.GetValueOrDefault(c.Id)));
@@ -53,19 +44,17 @@ public sealed class CategoryService(ZhuaDbContext db) : ICategoryService
         Category? parent = null;
         if (request.ParentId is { } pid)
         {
-            parent = await db.Categories.FirstOrDefaultAsync(c => c.Id == pid);
+            parent = await categories.GetAsync(pid);
             if (parent is null) return Result<CategorySummary>.NotFound("parent category not found");
             if (parent.IsArchived) return Result<CategorySummary>.BadRequest("parent category is archived");
         }
 
-        var slug = Slugify(name);
-        var path = parent is null ? slug : $"{parent.Path}/{slug}";
-        if (await db.Categories.AnyAsync(c => c.Path == path))
-            return Result<CategorySummary>.Conflict($"a category already exists at path '{path}'");
+        var cat = Category.Create(kind, name, parent);   // domain derives slug/path
+        if (await categories.PathExistsAsync(cat.Path))
+            return Result<CategorySummary>.Conflict($"a category already exists at path '{cat.Path}'");
 
-        var cat = new Category { Kind = kind, Name = name, Slug = slug, Path = path, ParentId = parent?.Id };
-        db.Categories.Add(cat);
-        await db.SaveChangesAsync();
+        categories.Add(cat);
+        await uow.SaveChangesAsync();
         return Result<CategorySummary>.Ok(Summary(cat)); // 200 (preserves existing behaviour + api.md)
     }
 
@@ -75,21 +64,21 @@ public sealed class CategoryService(ZhuaDbContext db) : ICategoryService
         if (string.IsNullOrWhiteSpace(name))
             return Result<CategorySummary>.BadRequest("name is required");
 
-        var cat = await db.Categories.FirstOrDefaultAsync(c => c.Id == id);
+        var cat = await categories.GetAsync(id);
         if (cat is null) return Result<CategorySummary>.NotFound("category not found");
 
-        cat.Name = name; // display only — path/slug are the stable identity the mapper upserts by
-        await db.SaveChangesAsync();
+        cat.Rename(name);
+        await uow.SaveChangesAsync();
         return Result<CategorySummary>.Ok(Summary(cat));
     }
 
     public async Task<Result<ArchiveCategoryResult>> ArchiveAsync(Guid id)
     {
-        var cats = await db.Categories.ToListAsync();
-        var root = cats.FirstOrDefault(c => c.Id == id);
+        var all = await categories.GetAllAsync();
+        var root = all.FirstOrDefault(c => c.Id == id);
         if (root is null) return Result<ArchiveCategoryResult>.NotFound("category not found");
 
-        var childrenByParent = cats.Where(c => c.ParentId != null)
+        var childrenByParent = all.Where(c => c.ParentId != null)
             .GroupBy(c => c.ParentId!.Value).ToDictionary(g => g.Key, g => g.ToList());
 
         var count = 0;
@@ -97,11 +86,11 @@ public sealed class CategoryService(ZhuaDbContext db) : ICategoryService
         while (stack.Count > 0)
         {
             var n = stack.Pop();
-            if (!n.IsArchived) { n.IsArchived = true; count++; }
+            if (n.Archive()) count++;
             if (childrenByParent.TryGetValue(n.Id, out var ch)) foreach (var c in ch) stack.Push(c);
         }
 
-        await db.SaveChangesAsync();
+        await uow.SaveChangesAsync();
         return Result<ArchiveCategoryResult>.Ok(new ArchiveCategoryResult(count));
     }
 
@@ -118,19 +107,6 @@ public sealed class CategoryService(ZhuaDbContext db) : ICategoryService
 
     private static CategorySummary Summary(Category c) =>
         new(c.Id, c.Kind.ToString(), c.Name, c.Slug, c.Path, c.ParentId);
-
-    /// <summary>Matches <c>CategoryMapper.Slugify</c> so a curated node lines up with the Foodstuffs taxonomy.</summary>
-    private static string Slugify(string name)
-    {
-        var sb = new StringBuilder(name.Length);
-        var prevDash = false;
-        foreach (var ch in name.Trim().ToLowerInvariant())
-        {
-            if (char.IsLetterOrDigit(ch)) { sb.Append(ch); prevDash = false; }
-            else if (!prevDash && sb.Length > 0) { sb.Append('-'); prevDash = true; }
-        }
-        return sb.ToString().Trim('-');
-    }
 
     private sealed record MutableNode(
         Guid Id, string Kind, string Name, string Slug, string Path, Guid? ParentId, int DirectCount)

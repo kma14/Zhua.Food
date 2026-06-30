@@ -39,6 +39,21 @@ public class ArchitectureTests
     }
 
     [Fact]
+    public void Domain_repository_ports_stay_EF_free()
+    {
+        // The repository interfaces live in Domain (rich-domain refactor); they must traffic in entities + primitives
+        // only — no IQueryable/DbContext — so the EF dependency stays confined to Infrastructure.
+        var result = Types.InAssembly(Domain)
+            .That().ResideInNamespace("Zhua.Domain.Repositories")
+            .ShouldNot().HaveDependencyOnAny(
+                "Microsoft.EntityFrameworkCore", "Zhua.Infrastructure", typeof(ZhuaDbContext).FullName)
+            .GetResult();
+
+        Assert.True(result.IsSuccessful,
+            "Domain repository ports must stay EF-free (entities + primitives only): " + Names(result));
+    }
+
+    [Fact]
     public void Domain_depends_on_nothing_outward()
     {
         var result = Types.InAssembly(Domain)

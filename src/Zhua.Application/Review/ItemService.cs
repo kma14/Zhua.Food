@@ -1,15 +1,19 @@
-using Microsoft.EntityFrameworkCore;
 using Zhua.Application.Common;
 using Zhua.Domain.Entities;
-using Zhua.Infrastructure.Persistence;
+using Zhua.Domain.Repositories;
 
-namespace Zhua.Infrastructure.Services;
+namespace Zhua.Application.Review;
 
 /// <summary>
-/// EF implementation of <see cref="IItemService"/> (D27). Items are the internal join key; admin creates one from
-/// supplied fields, then links a product to it via <see cref="IProductService.LinkAsync"/>.
+/// Item admin use cases (D27): create an item (internal join key) and merge one into another. Merge spans the Item +
+/// Product + MatchCandidate aggregates, so the orchestration lives here over the repository ports; it commits through
+/// <see cref="IUnitOfWork"/>.
 /// </summary>
-public sealed class ItemService(ZhuaDbContext db) : IItemService
+public sealed class ItemService(
+    IItemRepository items,
+    IProductRepository products,
+    IMatchCandidateRepository candidates,
+    IUnitOfWork uow) : IItemService
 {
     public async Task<Result<ItemView>> CreateAsync(CreateItemRequest request)
     {
@@ -27,8 +31,8 @@ public sealed class ItemService(ZhuaDbContext db) : IItemService
             Size = Clean(request.Size),
             Category = Clean(request.Category) ?? "Uncategorised",
         };
-        db.Items.Add(item);
-        await db.SaveChangesAsync();
+        items.Add(item);
+        await uow.SaveChangesAsync();
 
         return Result<ItemView>.Created(
             new ItemView(item.Id, item.Name, item.Description, item.Brand, item.Size, item.Category));
@@ -38,10 +42,10 @@ public sealed class ItemService(ZhuaDbContext db) : IItemService
     {
         if (id == intoId) return Result<ItemMergeView>.BadRequest("cannot merge an item into itself");
 
-        var source = await db.Items.FirstOrDefaultAsync(i => i.Id == id);
+        var source = await items.GetAsync(id);
         if (source is null) return Result<ItemMergeView>.NotFound("item not found");
 
-        var target = await db.Items.FirstOrDefaultAsync(i => i.Id == intoId);
+        var target = await items.GetAsync(intoId);
         if (target is null) return Result<ItemMergeView>.NotFound("target item not found");
 
         // Already merged? Idempotent if into the same survivor; otherwise a conflict.
@@ -56,36 +60,32 @@ public sealed class ItemService(ZhuaDbContext db) : IItemService
         {
             if (!seen.Add(target.Id) || next == id)
                 return Result<ItemMergeView>.BadRequest("merge would create a redirect cycle");
-            target = await db.Items.FirstOrDefaultAsync(i => i.Id == next);
+            target = await items.GetAsync(next);
             if (target is null) return Result<ItemMergeView>.NotFound("target item not found");
         }
         if (target.Id == id) return Result<ItemMergeView>.BadRequest("merge would create a redirect cycle");
 
         var survivorId = target.Id;
 
-        // Repoint products (their price-history snapshots key on ProductId, so history follows the product — no
-        // separate handling).
-        var products = await db.Products.Where(p => p.ItemId == id).ToListAsync();
-        foreach (var p in products) p.ItemId = survivorId;
+        // Repoint products (their price-history snapshots key on ProductId, so history follows the product).
+        var moveProducts = await products.GetByItemForUpdateAsync(id);
+        foreach (var p in moveProducts) p.ItemId = survivorId;
 
         // Repoint candidates, dropping any that would duplicate an existing (product, survivor) pair.
-        var existingPairs = await db.MatchCandidates
-            .Where(m => m.ItemId == survivorId)
-            .Select(m => m.ProductId).ToListAsync();
-        var survivorPairs = existingPairs.ToHashSet();
-        var candidates = await db.MatchCandidates.Where(m => m.ItemId == id).ToListAsync();
+        var survivorPairs = (await candidates.GetByItemAsync(survivorId)).Select(m => m.ProductId).ToHashSet();
+        var moveCandidates = await candidates.GetByItemAsync(id);
         var moved = 0;
-        foreach (var m in candidates)
+        foreach (var m in moveCandidates)
         {
-            if (!survivorPairs.Add(m.ProductId)) { db.MatchCandidates.Remove(m); continue; }
+            if (!survivorPairs.Add(m.ProductId)) { candidates.Remove(m); continue; }
             m.ItemId = survivorId;
             moved++;
         }
 
         source.MergedIntoId = survivorId;   // redirect tombstone — matcher resolves its key to the survivor
-        await db.SaveChangesAsync();
+        await uow.SaveChangesAsync();
 
-        return Result<ItemMergeView>.Ok(new ItemMergeView(id, survivorId, products.Count, moved));
+        return Result<ItemMergeView>.Ok(new ItemMergeView(id, survivorId, moveProducts.Count, moved));
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

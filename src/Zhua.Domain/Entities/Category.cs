@@ -39,4 +39,46 @@ public class Category
     public ICollection<StoreCategory> StoreCategories { get; } = new List<StoreCategory>();
 
     public ICollection<Item> Products { get; } = new List<Item>();
+
+    /// <summary>
+    /// Domain factory (D25 phase 3): a new category under <paramref name="parent"/> (null = a root). Derives the
+    /// stable <see cref="Slug"/> + <see cref="Path"/> — the identity the mapper upserts by — so a caller can't
+    /// create an inconsistent node.
+    /// </summary>
+    public static Category Create(CategoryKind kind, string name, Category? parent)
+    {
+        var slug = Slugify(name);
+        return new Category
+        {
+            Kind = kind,
+            Name = name,
+            Slug = slug,
+            Path = parent is null ? slug : $"{parent.Path}/{slug}",
+            ParentId = parent?.Id,
+        };
+    }
+
+    /// <summary>Rename the display name only — <see cref="Path"/>/<see cref="Slug"/> stay as the stable mapper key.</summary>
+    public void Rename(string name) => Name = name;
+
+    /// <summary>Soft-delete this node (D25 phase 3). Returns <c>true</c> only if it actually flipped (cascade counting).</summary>
+    public bool Archive()
+    {
+        if (IsArchived) return false;
+        IsArchived = true;
+        return true;
+    }
+
+    /// <summary>The slug rule — shared with <c>CategoryMapper</c> so a curated node lines up with the Foodstuffs taxonomy.</summary>
+    public static string Slugify(string name)
+    {
+        var sb = new System.Text.StringBuilder(name.Length);
+        var prevDash = false;
+        foreach (var ch in name.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch)) { sb.Append(ch); prevDash = false; }
+            else if (!prevDash && sb.Length > 0) { sb.Append('-'); prevDash = true; }
+        }
+        return sb.ToString().Trim('-');
+    }
 }

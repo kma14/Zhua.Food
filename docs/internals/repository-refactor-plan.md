@@ -73,13 +73,23 @@ Cross-aggregate orchestration (repoint an item's products, cascade archive a sub
 
 ## Execution order (each step: build clean + all tests green before the next)
 
-1. **DTO split** → `Dtos/`, one record per file. Pure move, no behaviour change.
-2. **Domain `Repositories/` interfaces + `IUnitOfWork`** + Infra `Repositories/` implementations; add rich-domain
-   methods as each entity is touched.
-3. **Move each service Infra → Application** onto its repo: Stores/Deals/Health → Products → Categories →
-   Items/MatchReview.
-4. **Arch test**: EF / `ZhuaDbContext` used **only** under `Zhua.Infrastructure`.
-5. *(optional)* matcher + `CategoryMapper` → Application + `IItemMatchingPolicy`.
+1. ✅ **DTO split** → `Dtos/`, one record per file. Pure move, no behaviour change.
+2. ✅ **Domain `Repositories/` ports + `IUnitOfWork`** + Infra `Repositories/` implementations.
+3. ✅ **Moved every service Infra → Application** onto its repo (Stores/Health → Categories → Products/Deals →
+   Items/MatchReview). `Infrastructure/Services/` deleted. Rich-domain methods folded in: `Category.Create/Rename/
+   Archive/Slugify` (the matcher now reuses `Category.Slugify`).
+4. ✅ **Arch test** `Domain_repository_ports_stay_EF_free` — the ports can't grow an `IQueryable`/`DbContext`
+   dependency. (The existing 3 boundary tests already confine EF to Infrastructure.)
+5. 🔲 *(optional)* matcher + `CategoryMapper` → Application + `IItemMatchingPolicy`.
 
-Keeps the existing 3 architecture tests green throughout (they already enforce Api↛Infra/EF, Application↛Infra/EF,
-Domain↛outward — the last one is what makes "repository interfaces in Domain" safe).
+**Done 2026-06-30. 106 tests green; API contract unchanged.**
+
+### Pragmatic deviations (flagged, not silent)
+- **`Product.Saving` not added as an entity property** — a computed get-only property needs an EF `Ignore`; the saving
+  is trivial arithmetic, so it stays inline in `DealQueries`. Revisit if more places need it.
+- **`UnitPriceNormalizer` left in `Application/Pricing`** (not moved to Domain) — it's a pure calc used only by
+  `ProductService`; moving it is cosmetic and would churn its test. Deferred.
+- **Merge stays orchestrated in `ItemService`** (not an `Item.MergeInto` throwing method) — merge spans Item +
+  Product + MatchCandidate, and a throwing invariant fights the `Result` 400/404/409 contract. Consistent with the
+  plan's own "cross-aggregate orchestration stays in the service" rule. The per-entity behaviour that *does* fit
+  (`MatchCandidate.Approve/Reject`) already lives on the entity.

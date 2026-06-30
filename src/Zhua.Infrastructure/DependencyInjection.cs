@@ -3,10 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
+using Zhua.Domain.Repositories;
 using Zhua.Infrastructure.Crawling;
 using Zhua.Infrastructure.Matching;
 using Zhua.Infrastructure.Persistence;
-using Zhua.Infrastructure.Services;
+using Zhua.Infrastructure.Repositories;
 
 namespace Zhua.Infrastructure;
 
@@ -26,13 +27,21 @@ public static class DependencyInjection
         services.AddDbContext<ZhuaDbContext>(o => o.UseNpgsql(connectionString));
         services.TryAddSingleton(TimeProvider.System);
 
-        services.AddScoped<IProductService, ProductService>();
-        services.AddScoped<ICategoryService, CategoryService>();
-        services.AddScoped<IStoreQueries, StoreQueries>();
-        services.AddScoped<IDealQueries, DealQueries>();
+        // Domain repository ports → EF adapters (Infrastructure/Repositories). Application use cases inject these.
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IStoreRepository, StoreRepository>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<IItemRepository, ItemRepository>();
+        services.AddScoped<IMatchCandidateRepository, MatchCandidateRepository>();
+
+        services.AddScoped<IProductService, ProductService>();     // Application use case (over IProductRepository)
+        services.AddScoped<ICategoryService, CategoryService>();   // Application use case (over ICategoryRepository)
+        services.AddScoped<IStoreQueries, StoreQueries>();          // Application use case (projects over IStoreRepository)
+        services.AddScoped<IDealQueries, DealQueries>();           // Application use case (over IProductRepository)
         services.AddScoped<IItemService, ItemService>();
         services.AddScoped<IMatchReview, MatchReview>();
-        services.AddScoped<IHealthQueries, HealthQueries>();
+        services.AddScoped<IHealthQueries, HealthQueries>();        // Infrastructure liveness probe (no domain repo)
         return services;
     }
 
