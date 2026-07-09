@@ -1,0 +1,24 @@
+# Self-hosted GitHub Actions runner — runs ON the NAS (one-time setup, keep it running).
+# It dials OUT to GitHub (no inbound port on the NAS) and drives the host Docker via the
+# mounted socket, so `docker compose` in the deploy job creates sibling containers on the NAS.
+#
+# Setup on the NAS (SSH):
+#   1. Get a registration token: GitHub repo -> Settings -> Actions -> Runners ->
+#      "New self-hosted runner" -> copy the value after `--token`. (It expires in ~1 hour;
+#       grab it right before you bring the runner up.)
+#   2. Put it in RUNNER_TOKEN below (or export it and use ${RUNNER_TOKEN}).
+#   3. docker compose -f runner-compose.yml up -d
+#   The runner then appears under Settings -> Actions -> Runners with the label `nas`.
+services:
+  gh-runner:
+    image: myoung34/github-runner:latest
+    restart: unless-stopped
+    environment:
+      REPO_URL: https://github.com/kma14/Zhua.Food
+      RUNNER_NAME: nas
+      RUNNER_TOKEN: PASTE_REGISTRATION_TOKEN_HERE   # from the "New self-hosted runner" page
+      LABELS: nas
+      RUNNER_SCOPE: repo
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock    # drive the host Docker (sibling containers)
+      - /volume1/docker/Zhua/runner:/tmp/runner       # runner work dir on the NAS

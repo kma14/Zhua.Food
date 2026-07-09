@@ -1,0 +1,65 @@
+name: deploy
+
+# Push/merge to main -> build 3 images on a cloud runner -> push to GHCR ->
+# the self-hosted runner ON the NAS pulls + `docker compose up -d`.
+# Manual re-run / rollback: Actions -> deploy -> Run workflow -> enter a past sha.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Image sha to deploy (blank = latest built by this run)"
+        required: false
+
+permissions:
+  contents: read
+  packages: write          # push to GHCR with the built-in GITHUB_TOKEN (no PAT)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { image: zhua-migrator, dockerfile: src/Zhua.Migrator/Dockerfile }
+          - { image: zhua-api,      dockerfile: src/Zhua.Api/Dockerfile }
+          - { image: zhua-worker,   dockerfile: src/Zhua.Worker/Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .                     # Dockerfiles COPY Directory.Build.props from the repo root (D19)
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64         # DS220+ is x86-64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, nas]          # the runner container ON the NAS
+    steps:
+      - uses: actions/checkout@v4        # get docker-compose.nas.yml
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull + up
+        env:
+          IMAGE_OWNER: ${{ github.repository_owner }}
+          IMAGE_TAG: ${{ github.event.inputs.sha || github.sha }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          docker compose -f docker-compose.nas.yml pull
+          docker compose -f docker-compose.nas.yml up -d --remove-orphans

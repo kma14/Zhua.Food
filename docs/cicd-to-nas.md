@@ -35,8 +35,9 @@ to the exact `sha` that was built; `latest` is for humans). Postgres uses the of
 
 ### A. NAS prep
 1. **Container Manager** installed (DSM Package Center).
-2. **Shared folder** `/volume1/docker/zhua/` with `pgdata/` + `crawl-archive/` (bind-mount targets — DB + raw archive
-   stay visible/backup-able from DSM).
+2. **Shared folder** `/volume1/docker/Zhua/` with `pgdata/` + `crawl-archive/` + `runner/` (bind-mount targets — DB +
+   raw archive stay visible/backup-able from DSM). **Path is case-sensitive** — the folder is `Zhua` (capital Z), so
+   the compose bind-mounts use `/volume1/docker/Zhua/...`.
 3. The host Docker socket is at `/var/run/docker.sock` (Container Manager provides it).
 
 ### B. GitHub repo
@@ -63,7 +64,7 @@ services:
       RUNNER_SCOPE: repo
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock   # drive the host Docker (sibling containers)
-      - /volume1/docker/zhua/runner:/tmp/runner      # work dir on the NAS
+      - /volume1/docker/Zhua/runner:/tmp/runner      # work dir on the NAS
 ```
 
 > The runner runs `docker compose` against the **host** daemon via the mounted socket, so the compose file's
@@ -138,9 +139,10 @@ jobs:
           docker compose -f docker-compose.nas.yml up -d --remove-orphans
 ```
 
-### `docker-compose.nas.yml` (referenced above — produced next, Phase B)
+### `docker-compose.nas.yml` (written — Phase B done)
 
-Same four services as `docker-compose.yml`, but **`image:` (pulled) not `build:`**, env-interpolated:
+Same four services as `docker-compose.yml`, but **`image:` (pulled) not `build:`**, env-interpolated. The real file is
+at the repo root; the shape:
 
 ```yaml
 # sketch — the deploy job sets IMAGE_OWNER / IMAGE_TAG / POSTGRES_PASSWORD

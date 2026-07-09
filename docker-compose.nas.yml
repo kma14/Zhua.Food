@@ -1,0 +1,61 @@
+# Production compose for the Synology DS220+ (plan D21 deploy target).
+# Differs from the dev docker-compose.yml in two ways:
+#   1. image: (pulled from GHCR) instead of build: (built locally)
+#   2. bind-mounts to /volume1/docker/Zhua/... (DSM-visible, backup-able) instead of named volumes
+# The deploy job (.github/workflows/deploy.yml) sets IMAGE_OWNER / IMAGE_TAG / POSTGRES_PASSWORD.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: zhua
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: zhua
+    # No host port published: only api/worker/migrator reach it over the bridge network.
+    volumes:
+      - /volume1/docker/Zhua/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zhua -d zhua"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: applies migrations then exits (D5). `up -d` re-runs it whenever its image sha changes.
+  migrator:
+    image: ghcr.io/${IMAGE_OWNER}/zhua-migrator:${IMAGE_TAG:-latest}
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=zhua;Username=zhua;Password=${POSTGRES_PASSWORD}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ghcr.io/${IMAGE_OWNER}/zhua-api:${IMAGE_TAG:-latest}
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=zhua;Username=zhua;Password=${POSTGRES_PASSWORD}"
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      - "8080:8080"        # LAN-only until admin auth lands (keep off the public internet)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/${IMAGE_OWNER}/zhua-worker:${IMAGE_TAG:-latest}
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=zhua;Username=zhua;Password=${POSTGRES_PASSWORD}"
+      Crawl__Cron: "0 0 6,18 * * ?"
+      TZ: "Pacific/Auckland"   # cron uses InTimeZone(Local); make Local = Auckland so 06:00/18:00 are real
+    shm_size: "1gb"            # Chromium needs >Docker's default 64MB /dev/shm or it crashes mid-crawl
+    volumes:
+      - /volume1/docker/Zhua/crawl-archive:/app/crawl-archive   # raw response archive (D12)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
