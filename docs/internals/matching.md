@@ -35,8 +35,8 @@ linking them to one `Item`. `Product.ItemId` is **nullable** — matching is off
 
 ## Tier 1 — Foodstuffs (New World + PAK'nSAVE): free & exact
 
-NW and PAK'nSAVE share one platform, so the *same* product has the *same* `productId` (= our `SourceSku`) at both
-banners and across branches. So we just **group every Foodstuffs `Product` by `SourceSku`** → **one
+NW and PAK'nSAVE share one platform, so the *same* product has the *same* `productId` (= our `Sku`) at both
+banners and across branches. So we just **group every Foodstuffs `Product` by `Sku`** → **one
 `Item` per SKU**, and link every branch's listing to it. 100% reliable, fully automatic.
 
 - The item's stable key: **`MatchKey = "foodstuffs:{sku}"`** (this is what makes re-runs idempotent).
@@ -101,7 +101,7 @@ hand-made item that duplicates an existing one), an admin **merges** them: `POST
 ([ItemService.MergeAsync](../../src/Zhua.Infrastructure/Services/ItemService.cs)). It repoints the source's products +
 candidates to the survivor, then leaves the source as a **redirect tombstone** (`Item.MergedIntoId` set) — *not* a
 hard delete. The tombstone is deliberate: a deleted Foodstuffs item would be **recreated** by Tier 1 on the next run
-(it regroups by `SourceSku` unconditionally). Keeping the row lets the matcher resolve the merged-away `MatchKey` to
+(it regroups by `Sku` unconditionally). Keeping the row lets the matcher resolve the merged-away `MatchKey` to
 the survivor instead:
 
 - The matcher loads every item and **resolves `MatchKey → survivor`** through the `MergedIntoId` chain, so Tier 1
@@ -121,7 +121,7 @@ Remaining edge:
 - **Woolworths listings (what the queue actually contains): safe.** Tier 2 skips already-linked products and the
   matcher never nulls a link, so a manual link/create **survives**.
 - **Foodstuffs listings: a manual `link-item` would still be overwritten.** Tier 1 unconditionally regroups
-  Foodstuffs by `SourceSku`, so hand-linking a *Foodstuffs* listing to a different item doesn't stick. In practice
+  Foodstuffs by `Sku`, so hand-linking a *Foodstuffs* listing to a different item doesn't stick. In practice
   the UI only acts on the Woolworths queue, so this stays a narrow edge — to genuinely combine two Foodstuffs items,
   use **merge** (above), not a manual link.
 

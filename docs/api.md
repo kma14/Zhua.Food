@@ -138,7 +138,7 @@ only matched listings (the item carries the category); an unknown/archived `cate
   "description": "Beef Mince 1kg",                  // item caption (D25); client decides usage — see note
   "category": "Beef Mince",                         // item category leaf (denormalized); null if unmatched
   "products": [                                     // THE payload — every store's listing; the client ranks them
-    { "id": "dddd…00a3", "sourceSku": "5125914-KGM-000",
+    { "id": "dddd…00a3", "sku": "5125914-KGM-000",
       "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
       "name": "Pams Beef Mince 1kg", "brand": "Pams", "size": "1kg",
       "imageUrl": "https://a.fsimg.co.nz/…/5125914.png",
@@ -153,7 +153,7 @@ only matched listings (the item carries the category); an unknown/archived `cate
 }]
 ```
 > Root holds only **item metadata** (`itemId` + `description` + `category`); everything else is per-listing inside
-> `products[]`. `sourceSku` is the supermarket/source product id from the crawler source (not our internal GUID).
+> `products[]`. `sku` is the supermarket/source product id from the crawler source (not our internal GUID).
 > The listing **`name` is a real store name** — use it as the title; render `description` as a
 > *grouping caption*, never the title. `products[]` comes back cheapest-first as a neutral default — **re-sort it
 > however you like** (the group is ≤7 stores). Drill into one listing via its `id` → `GET /products/{id}`.
@@ -215,7 +215,7 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
 **Response:** `DealItem[]`:
 ```json
 [{
-  "id": "dddd…00a3", "sourceSku": "5125914-KGM-000",
+  "id": "dddd…00a3", "sku": "5125914-KGM-000",
   "product": "woolworths nz beef eye fillet grass fed", "brand": "woolworths nz",
   "imageUrl": "https://assets.woolworths.com.au/images/2010/67807.jpg?...&w=200&h=200",
   "store": "Woolworths Takapuna", "supermarket": "Woolworths",
@@ -230,7 +230,7 @@ Products on special now, **biggest dollar saving first**. Optional `?supermarket
 > the product has no recoverable was-price and stays out of `/deals` until it re-prices. Woolworths publishes its
 > own was-price, so it's never affected. (Early on, expect mostly Woolworths until NW/PAK specials turn over.)
 >
-> Each deal also carries its listing `id` (drill in via `GET /products/{id}`) and `sourceSku` (the supermarket/source
+> Each deal also carries its listing `id` (drill in via `GET /products/{id}`) and `sku` (the supermarket/source
 > product id — tells apart look-alike specials that share brand/name/size).
 
 ### Admin — match review (D18)
@@ -256,7 +256,7 @@ A reviewer looks at an unmatched/ambiguous listing (`Product`) and resolves it o
 | POST | `/items` | body `{ "name", "description?", "brand?", "size?", "category?" }` — create a **new** item (internal join key; `description` defaults to `name`, `category` to `"Uncategorised"`). Returns **`201 Created`** + `ItemView`. `400` if `name` is blank. **Then link the listing** with `PATCH /products/{id}` using the returned `id` |
 | POST | `/items/{id}/merge` | body `{ "intoId": "…" }` — merge item `id` **into** `intoId`: repoints `id`'s products + candidates to the survivor; `id` becomes a redirect so the matcher won't recreate it (non-destructive — store listings untouched). Returns `ItemMergeView`. Idempotent (re-merge into the same survivor = `200`, nothing moved). `400` self-merge / would cycle, `404` unknown item, `409` already merged elsewhere |
 
-`MatchCandidateView`: `{ id, productId, sourceSku, productName, brand, size, supermarket, price, candidateItemId, candidateItem, score, reason }`.
+`MatchCandidateView`: `{ id, productId, sku, productName, brand, size, supermarket, price, candidateItemId, candidateItem, score, reason }`.
 `MatchCandidateDecision`: `{ id, status, itemId }` · `ProductLinkView`: `{ id, itemId }` · `ItemView`: `{ id, name, description, brand, size, category }`.
 `ItemMergeView`: `{ sourceId, survivorId, productsMoved, candidatesMoved }`.
 
@@ -320,5 +320,6 @@ The whole flow is now backed end-to-end.
 
 ## Decision log
 
-- 2026-07-10 22:39 🧑‍⚖️ Expose `sourceSku` on product listing and match-candidate responses so the review UI can show the supermarket/source SKU instead of our internal GUID.
-- 2026-07-11 01:30 🧑‍⚖️ Add `id` + `sourceSku` to `/deals` (`DealItem`) too — deals had neither, so look-alike specials (same brand/name/size) couldn't be told apart or drilled into.
+- 2026-07-10 22:39 🧑‍⚖️ Expose `sku` on product listing and match-candidate responses so the review UI can show the supermarket/source SKU instead of our internal GUID.
+- 2026-07-11 01:30 🧑‍⚖️ Add `id` + `sku` to `/deals` (`DealItem`) too — deals had neither, so look-alike specials (same brand/name/size) couldn't be told apart or drilled into.
+- 2026-07-11 02:00 🧑‍⚖️ Rename `SourceSku` → `Sku` everywhere (domain `Product.Sku`, DB column via `RenameSourceSkuToSku` migration, crawlers, matcher, all DTOs/JSON `sku`, tests, docs). Kevin: the `source` prefix is unwanted; "SKU" already means the store's own id. Full rename, not just the API field.

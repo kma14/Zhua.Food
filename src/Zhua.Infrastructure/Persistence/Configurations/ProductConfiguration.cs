@@ -9,7 +9,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
     public void Configure(EntityTypeBuilder<Product> b)
     {
         b.HasKey(x => x.Id);
-        b.Property(x => x.SourceSku).HasMaxLength(100);
+        b.Property(x => x.Sku).HasMaxLength(100);
         b.Property(x => x.RawName).HasMaxLength(300);
         b.Property(x => x.RawBrand).HasMaxLength(150);
         b.Property(x => x.RawSize).HasMaxLength(50);
@@ -32,7 +32,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .OnDelete(DeleteBehavior.SetNull);
 
         // A store's own SKU is unique within that store.
-        b.HasIndex(x => new { x.StoreId, x.SourceSku }).IsUnique();
+        b.HasIndex(x => new { x.StoreId, x.Sku }).IsUnique();
         b.HasIndex(x => x.ItemId);
         b.HasIndex(x => x.Gtin);
     }

@@ -109,7 +109,7 @@ internal static class TestData
         await db.SaveChangesAsync();
 
         // Price history for the PAK'nSAVE Albany mince: 11.50 → 11.00.
-        var pnsMince = db.Products.Single(sp => sp.SourceSku == "pns-mince");
+        var pnsMince = db.Products.Single(sp => sp.Sku == "pns-mince");
         var run = new CrawlRun
         {
             StoreId = StoreSeed.PaknSaveAlbany, StartedAt = Now.AddDays(-1), FinishedAt = Now.AddDays(-1),
@@ -134,19 +134,19 @@ internal static class TestData
         db.Products.AddRange(
             new Product
             {
-                Id = LinkTargetSp, StoreId = StoreSeed.WoolworthsTakapuna, SourceSku = "link-target",
+                Id = LinkTargetSp, StoreId = StoreSeed.WoolworthsTakapuna, Sku = "link-target",
                 RawName = "Link Me 1kg", CurrentPrice = 5.00m, UnitPrice = 5.00m, UnitOfMeasure = "1kg",
                 FirstSeenAt = Now, LastSeenAt = Now,
             },
             new Product
             {
-                Id = CreateTargetSp, StoreId = StoreSeed.NewWorldMetro, SourceSku = "create-target",
+                Id = CreateTargetSp, StoreId = StoreSeed.NewWorldMetro, Sku = "create-target",
                 RawName = "Create Me 500g", RawBrand = "Acme", RawSize = "500g",
                 CurrentPrice = 6.00m, UnitPrice = 12.00m, UnitOfMeasure = "1kg", FirstSeenAt = Now, LastSeenAt = Now,
             });
         await db.SaveChangesAsync();
 
-        Guid SpId(string sku) => db.Products.Single(sp => sp.SourceSku == sku).Id;
+        Guid SpId(string sku) => db.Products.Single(sp => sp.Sku == sku).Id;
         db.MatchCandidates.AddRange(
             Candidate(CandidateForList, SpId("unmatched-1"), 0.60),
             Candidate(CandidateToApprove, SpId("unmatched-2"), 0.55),
@@ -168,7 +168,7 @@ internal static class TestData
         new()
         {
             Id = id ?? Guid.NewGuid(),
-            StoreId = storeId, SourceSku = sku, RawName = name, RawBrand = null, RawSize = null,
+            StoreId = storeId, Sku = sku, RawName = name, RawBrand = null, RawSize = null,
             ItemId = itemId, ImageUrl = img,
             CurrentPrice = price, IsOnSpecial = onSpecial, CurrentNonSpecialPrice = wasPrice,
             UnitPrice = price, UnitOfMeasure = "1kg",

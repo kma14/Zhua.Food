@@ -82,7 +82,7 @@ the session. Without this, crawls die partway through a department.
 
 | Our field | Source | Notes |
 |---|---|---|
-| `SourceSku` | `sku` | |
+| `Sku` | `sku` | |
 | `Name` | `name` | |
 | `Brand` | `brand` | |
 | `Size` | `size.volumeSize` ?? `size.packageType` | |
@@ -136,7 +136,7 @@ read each product's path(s). A product is emitted **once per category tree** who
 
 | Our field | Source | Notes |
 |---|---|---|
-| `SourceSku` | `productId` | |
+| `Sku` | `productId` | |
 | `Name` | `name` | |
 | `Brand` | `brand` | |
 | `Size` | `displayName` | |

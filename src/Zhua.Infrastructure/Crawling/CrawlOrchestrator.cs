@@ -39,7 +39,7 @@ public sealed class CrawlOrchestrator(
                 .Include(p => p.Tags)
                 .AsSplitQuery() // two collection includes — split to avoid a cartesian-explosion warning
                 .Where(p => p.StoreId == store.Id)
-                .ToDictionaryAsync(p => p.SourceSku, ct);
+                .ToDictionaryAsync(p => p.Sku, ct);
 
             var categories = await db.StoreCategories
                 .Where(c => c.StoreId == store.Id)
@@ -58,17 +58,17 @@ public sealed class CrawlOrchestrator(
 
             foreach (var s in scraped)
             {
-                if (!existing.TryGetValue(s.SourceSku, out var sp))
+                if (!existing.TryGetValue(s.Sku, out var sp))
                 {
                     sp = new Product
                     {
                         StoreId = store.Id,
-                        SourceSku = s.SourceSku,
+                        Sku = s.Sku,
                         RawName = s.Name,
                         FirstSeenAt = now,
                     };
                     db.Products.Add(sp);
-                    existing[s.SourceSku] = sp;
+                    existing[s.Sku] = sp;
                 }
 
                 // D3/R4 price rule is owned by the entity; we just link the snapshot to this run.
@@ -81,7 +81,7 @@ public sealed class CrawlOrchestrator(
 
                 LinkCategories(sp, s.CategoryPath, store.Id, categories);
 
-                if (tagsResetForSku.Add(s.SourceSku))
+                if (tagsResetForSku.Add(s.Sku))
                     sp.Tags.Clear();
                 SyncTags(sp, s.Tags, store.Chain, tags);
             }

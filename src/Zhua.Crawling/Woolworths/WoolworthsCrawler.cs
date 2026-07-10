@@ -242,7 +242,7 @@ public sealed class WoolworthsCrawler : IStoreCrawler
 
             into.Add(new ScrapedProduct
             {
-                SourceSku = sku,
+                Sku = sku,
                 Name = Str(item, "name") ?? sku,
                 Brand = Str(item, "brand"),
                 Size = Str(size, "volumeSize") ?? Str(size, "packageType"),

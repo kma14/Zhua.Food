@@ -8,7 +8,7 @@ namespace Zhua.Application.Crawling;
 public sealed record ScrapedProduct
 {
     /// <summary>The store's own product id/SKU at the source.</summary>
-    public required string SourceSku { get; init; }
+    public required string Sku { get; init; }
 
     public required string Name { get; init; }
 

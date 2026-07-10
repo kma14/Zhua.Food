@@ -8,7 +8,7 @@ public class ProductTests
 {
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-06-23T06:00:00Z");
 
-    private static Product NewProduct() => new() { SourceSku = "SKU", RawName = "x", FirstSeenAt = T0 };
+    private static Product NewProduct() => new() { Sku = "SKU", RawName = "x", FirstSeenAt = T0 };
 
     private static ProductObservation Milk(decimal price, bool onSpecial = false, decimal? nonSpecial = null) =>
         new("Anchor Blue Milk 2L", "Anchor", "2L", "9400000000001", null, null,

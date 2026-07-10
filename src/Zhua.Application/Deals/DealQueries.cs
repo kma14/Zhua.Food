@@ -16,7 +16,7 @@ public sealed class DealQueries(IProductRepository products) : IDealQueries
 
         var specials = await products.FindSpecialsAsync(supermarket, page, size);
         return specials.Select(p => new DealItem(
-                p.Id, p.SourceSku,
+                p.Id, p.Sku,
                 p.RawName, p.RawBrand, p.ImageUrl, p.Store.Name, p.Store.Chain.ToString(),
                 p.CurrentPrice, p.CurrentNonSpecialPrice, p.CurrentNonSpecialPrice - p.CurrentPrice,
                 p.UnitPrice, p.UnitOfMeasure, p.PriceUpdatedAt, p.LastSeenAt))

@@ -29,7 +29,7 @@ public class WoolworthsParserTests
     [Fact]
     public void Maps_core_and_price_fields_for_a_special()
     {
-        var p = ParseFixture().Single(x => x.SourceSku == "265262");
+        var p = ParseFixture().Single(x => x.Sku == "265262");
 
         Assert.Equal("Woolworths Fresh NZ Fish Fillets Snapper Tamure 1-3 Pce Tray", p.Name);
         Assert.Equal("Woolworths", p.Brand);
@@ -47,14 +47,14 @@ public class WoolworthsParserTests
     [Fact]
     public void Captures_primary_promo_tag()
     {
-        var special = ParseFixture().Single(x => x.SourceSku == "265262");
+        var special = ParseFixture().Single(x => x.Sku == "265262");
         Assert.Contains(special.Tags, t => t.Source == ProductTagSource.Primary && t.Code == "IsSpecial");
     }
 
     [Fact]
     public void Captures_low_price_tag_even_without_a_discount()
     {
-        var lowPrice = ParseFixture().Single(x => x.SourceSku == "123456");
+        var lowPrice = ParseFixture().Single(x => x.Sku == "123456");
 
         Assert.False(lowPrice.IsOnSpecial);      // no discount: salePrice == originalPrice
         Assert.Null(lowPrice.NonSpecialPrice);
@@ -65,7 +65,7 @@ public class WoolworthsParserTests
     [Fact]
     public void Drops_the_meaningless_other_tag()
     {
-        var regular = ParseFixture().Single(x => x.SourceSku == "999999");
+        var regular = ParseFixture().Single(x => x.Sku == "999999");
         Assert.Empty(regular.Tags); // tagType "Other" = no real promo → no tag
     }
 }
