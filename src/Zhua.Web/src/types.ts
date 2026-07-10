@@ -27,6 +27,8 @@ export type ProductListing = {
   store: string;
   supermarket: Supermarket;
   suburb: string;
+  sku?: string | null;
+  sourceSku?: string | null;
   name: string;
   brand: string | null;
   size: string | null;
@@ -71,6 +73,8 @@ export type ProductPriceHistory = {
 };
 
 export type DealItem = {
+  id: string;
+  sku?: string | null;
   product: string;
   brand: string | null;
   imageUrl: string | null;
@@ -88,6 +92,8 @@ export type DealItem = {
 export type MatchCandidate = {
   id: string;
   productId: string;
+  sku?: string | null;
+  sourceSku?: string | null;
   productName: string;
   brand: string | null;
   size: string | null;

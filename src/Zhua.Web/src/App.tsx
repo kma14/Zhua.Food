@@ -1,5 +1,6 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createItem,
   decideMatchCandidate,
   getCategories,
   getCategoryProducts,
@@ -8,6 +9,7 @@ import {
   getProductGroup,
   getProductPriceHistory,
   getStores,
+  linkProductToItem,
   searchProducts
 } from "./api";
 import type {
@@ -22,6 +24,9 @@ import type {
 } from "./types";
 
 type Language = "zh" | "en";
+type ApiSource = "local" | "nas";
+
+const nasApiBaseUrl = "http://192.168.1.5:8080";
 
 const copy = {
   zh: {
@@ -33,6 +38,11 @@ const copy = {
     heroTitle: "今天去哪买，先看真实价格",
     heroCopy: "按你常去的门店筛选，再看同一类商品里哪些真实门店商品最便宜。点开一行，就能看到同品在各店的实际报价。",
     apiLive: "价格已更新",
+    apiSource: "数据源",
+    localApi: "本地 API",
+    nasApi: "NAS API",
+    apiEndpoint: "当前地址",
+    apiSourceHint: "本地用于开发调试；NAS 使用家里服务器上的完整后端。",
     searchPlaceholder: "搜 chicken wings / steak / milk...",
     searchButton: "搜索",
     searchTitle: "搜索结果",
@@ -70,6 +80,18 @@ const copy = {
     samePriceStatus: "所有门店价格一样",
     gapStatusPrefix: "最高和最低相差",
     fresh: "更新于",
+    sku: "SKU",
+    skuMissing: "SKU 未返回",
+    createItemTitle: "创建新 Item",
+    createItemHint: "如果右侧不是同一个商品，就新建一个同品组，并把左侧门店商品连进去。",
+    createItemName: "Item 名称",
+    createItemDescription: "描述",
+    createItemBrand: "品牌",
+    createItemSize: "规格",
+    createItemCategory: "分类",
+    createAndLink: "创建并链接",
+    categoryRequired: "请选择分类",
+    itemNameRequired: "请填写 Item 名称",
     special: "特价",
     unit: "单位价",
     price: "价格",
@@ -92,7 +114,23 @@ const copy = {
     matchReason: "匹配原因",
     matchScore: "分数",
     noCandidates: "当前没有需要审核的候选。",
-    reviewLoading: "正在加载候选..."
+    reviewLoading: "正在加载候选...",
+    reviewRulesTitle: "匹配审核规则",
+    reviewRuleBrandSize: "先看品牌和规格：brand + size 必须一致或等价。",
+    reviewRuleVariant: "低脂、无乳糖、有机、口味、包装数量不同，都不能只因为名字像就合并。",
+    reviewRuleDestination: "右侧 Destination Item 里会显示它已经包含的真实门店商品；确认后左侧商品会加入这个组。",
+    reviewRuleReject: "拒绝后，这一对 Product 和 Item 不会再被系统推荐。",
+    candidateQueue: "候选队列",
+    selectedCandidate: "当前候选",
+    sourceProduct: "Source Product",
+    destinationItem: "Destination Item",
+    currentItemProducts: "当前 Item 里的商品",
+    destinationMissing: "暂时没有从现有搜索接口找到这个 Item 里的商品。后端最好补一个 GET /items/{id}/products。",
+    detailLoading: "正在加载商品图片和目标 Item...",
+    expand: "展开",
+    collapse: "收起",
+    bestStore: "最低价",
+    storeOffers: "门店报价"
   },
   en: {
     loading: "Connecting to the local price API...",
@@ -103,6 +141,11 @@ const copy = {
     heroTitle: "Find where to shop today",
     heroCopy: "Filter to the stores you actually use, then compare real store listings inside each category. Open a row to see same-item prices across stores.",
     apiLive: "API live",
+    apiSource: "Data source",
+    localApi: "Local API",
+    nasApi: "NAS API",
+    apiEndpoint: "Endpoint",
+    apiSourceHint: "Local is for development. NAS uses the full backend running on the home server.",
     searchPlaceholder: "Search chicken wings / steak / milk...",
     searchButton: "Search",
     searchTitle: "Search results",
@@ -140,6 +183,18 @@ const copy = {
     samePriceStatus: "All stores have the same price",
     gapStatusPrefix: "Highest and lowest differ by",
     fresh: "updated",
+    sku: "SKU",
+    skuMissing: "SKU not returned",
+    createItemTitle: "Create new Item",
+    createItemHint: "If the destination is not the same product, create a new same-item group and link the source listing into it.",
+    createItemName: "Item name",
+    createItemDescription: "Description",
+    createItemBrand: "Brand",
+    createItemSize: "Size",
+    createItemCategory: "Category",
+    createAndLink: "Create and link",
+    categoryRequired: "Choose a category",
+    itemNameRequired: "Enter an Item name",
     special: "Special",
     unit: "Unit",
     price: "Price",
@@ -162,7 +217,23 @@ const copy = {
     matchReason: "Reason",
     matchScore: "Score",
     noCandidates: "No pending candidates.",
-    reviewLoading: "Loading candidates..."
+    reviewLoading: "Loading candidates...",
+    reviewRulesTitle: "Match review rules",
+    reviewRuleBrandSize: "Start with brand and size: brand + size must match or be equivalent.",
+    reviewRuleVariant: "Low-fat, lactose-free, organic, flavour, and pack-count variants are not the same item just because names overlap.",
+    reviewRuleDestination: "Destination Item shows the real store products already inside it; approving adds the source product to that group.",
+    reviewRuleReject: "Rejecting blocks this Product and Item pair from being suggested again.",
+    candidateQueue: "Candidate queue",
+    selectedCandidate: "Selected candidate",
+    sourceProduct: "Source Product",
+    destinationItem: "Destination Item",
+    currentItemProducts: "Products already in this Item",
+    destinationMissing: "Could not find this Item's products through the current search endpoint. A GET /items/{id}/products API would be cleaner.",
+    detailLoading: "Loading product images and destination Item...",
+    expand: "Expand",
+    collapse: "Collapse",
+    bestStore: "Best price",
+    storeOffers: "Store offers"
   }
 };
 
@@ -215,6 +286,7 @@ const categoryNameZh: Record<string, string> = {
 
 export function App() {
   const [language, setLanguage] = useState<Language>("zh");
+  const [apiSource, setApiSource] = useState<ApiSource>("local");
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
@@ -233,12 +305,20 @@ export function App() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<ProductGroup[]>([]);
+  const [collapsedSections, setCollapsedSections] = useState({
+    deals: true,
+    search: false,
+    category: false,
+    coverage: true
+  });
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isProductsLoading, setIsProductsLoading] = useState(false);
   const [isProductLoading, setIsProductLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = copy[language];
+  const apiBaseUrl = apiSource === "nas" ? nasApiBaseUrl : "";
+  const displayedApiUrl = apiSource === "nas" ? nasApiBaseUrl : `${window.location.origin} → localhost:8080`;
 
   const flattenedCategories = useMemo(() => flattenCategories(categories), [categories]);
   const selectedCategory = flattenedCategories.find((category) => category.id === selectedCategoryId) ?? null;
@@ -279,14 +359,14 @@ export function App() {
     setIsReviewLoading(true);
     setReviewError(null);
     try {
-      const rows = await getMatchCandidates(150);
+      const rows = await getMatchCandidates(150, apiBaseUrl);
       setMatchCandidates(rows);
     } catch (err) {
       setReviewError(err instanceof Error ? err.message : t.failed);
     } finally {
       setIsReviewLoading(false);
     }
-  }, [t.failed]);
+  }, [apiBaseUrl, t.failed]);
 
   function toggleStoreFilter(id: string) {
     setSelectedStoreIds((current) => {
@@ -296,11 +376,28 @@ export function App() {
     });
   }
 
+  function toggleSection(section: keyof typeof collapsedSections) {
+    setCollapsedSections((current) => ({ ...current, [section]: !current[section] }));
+  }
+
+  function changeApiSource(nextSource: ApiSource) {
+    if (nextSource === apiSource) return;
+    setApiSource(nextSource);
+    setSelectedStoreIds([]);
+    setSelectedProductId("");
+    setSearchResults([]);
+    setHasSearched(false);
+    setComparison(null);
+    setHistory(null);
+    setError(null);
+    setIsLoading(true);
+  }
+
   async function handleCandidateAction(id: string, status: "approved" | "rejected") {
     setReviewActionId(id);
     setReviewError(null);
     try {
-      await decideMatchCandidate(id, status);
+      await decideMatchCandidate(id, status, apiBaseUrl);
       await loadMatchCandidates();
     } catch (err) {
       setReviewError(err instanceof Error ? err.message : t.failed);
@@ -315,9 +412,9 @@ export function App() {
     async function loadInitialData() {
       try {
         const [categoryTree, dealRows, storeRows] = await Promise.all([
-          getCategories("aisle", selectedStoreIds),
-          getDeals(24),
-          getStores().catch(() => [] as StoreOption[])
+          getCategories(undefined, selectedStoreIds, apiBaseUrl),
+          getDeals(24, apiBaseUrl),
+          getStores(apiBaseUrl).catch(() => [] as StoreOption[])
         ]);
         if (cancelled) return;
 
@@ -351,7 +448,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedStoreIds, t.failed]);
+  }, [apiBaseUrl, selectedStoreIds, t.failed]);
 
   useEffect(() => {
     if (!selectedCategoryId) return;
@@ -360,7 +457,7 @@ export function App() {
     async function loadProducts() {
       setIsProductsLoading(true);
       try {
-        const rows = await getCategoryProducts(selectedCategoryId, 40, selectedStoreIds);
+        const rows = await getCategoryProducts(selectedCategoryId, 40, selectedStoreIds, apiBaseUrl);
         if (cancelled) return;
         const ranked = rankProductGroups(rows, selectedStores);
         setGroups(rows);
@@ -377,7 +474,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
+  }, [apiBaseUrl, selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
 
   useEffect(() => {
     setHasSearched(false);
@@ -401,8 +498,8 @@ export function App() {
       setIsProductLoading(true);
       try {
         const [productGroup, productHistory] = await Promise.all([
-          getProductGroup(selectedProductId),
-          getProductPriceHistory(selectedProductId, 14)
+          getProductGroup(selectedProductId, apiBaseUrl),
+          getProductPriceHistory(selectedProductId, 14, apiBaseUrl)
         ]);
         if (cancelled) return;
         setComparison(productGroup);
@@ -419,7 +516,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedProductId, t.failed]);
+  }, [apiBaseUrl, selectedProductId, t.failed]);
 
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -427,8 +524,9 @@ export function App() {
     if (!query) return;
 
     setHasSearched(true);
-    const rows = await searchProducts(query, 12, selectedStoreIds);
+    const rows = await searchProducts(query, 24, selectedStoreIds, apiBaseUrl);
     setSearchResults(rows);
+    setCollapsedSections((current) => ({ ...current, search: false }));
   }
 
   if (isLoading) {
@@ -490,11 +588,14 @@ export function App() {
       {isReviewMode ? (
         <ReviewWorkspace
           candidates={visibleMatchCandidates}
+          categories={flattenedCategories}
           isLoading={isReviewLoading}
           actionId={reviewActionId}
           error={reviewError}
           woolworthsOnly={reviewWoolworthsOnly}
           totalCount={matchCandidates.length}
+          language={language}
+          apiBaseUrl={apiBaseUrl}
           t={t}
           onRefresh={loadMatchCandidates}
           onToggleWoolworthsOnly={() => setReviewWoolworthsOnly((value) => !value)}
@@ -502,35 +603,57 @@ export function App() {
         />
       ) : (
         <>
-          <section className="store-filter-panel" aria-label={t.storeFilter}>
-            <div>
-              <p className="eyebrow">{t.storeFilter}</p>
-              <strong>{isStoreFilterActive ? `${t.selectedStores} ${selectedStoreIds.length}` : t.allStores}</strong>
-              <small>{t.storeFilterHint}</small>
-              {isStoreFilterActive && <small>{t.storeFilterPending}</small>}
-            </div>
-            <div className="store-filter-actions">
-              <button className={!isStoreFilterActive ? "active" : ""} onClick={() => setSelectedStoreIds([])}>
-                {t.allStores}
-              </button>
-              {storeOptions.length === 0 && <span className="store-api-missing">{t.storeApiMissing}</span>}
-              {storeOptions.map((option) => (
-                <button
-                  key={option.id}
-                  className={selectedStoreIds.includes(option.id) ? "active" : ""}
-                  onClick={() => toggleStoreFilter(option.id)}
-                >
-                  <ChainBadge chain={option.supermarket} />
-                  <span className="store-filter-label">
-                    <strong>{formatStoreBranch(option.name, option.supermarket, language)}</strong>
-                    <small>
-                      {option.productCount.toLocaleString()} {t.productCount}
-                      {option.lastCrawledAt ? ` · ${formatShortDateTime(option.lastCrawledAt)}` : ""}
-                    </small>
-                  </span>
+          <section className="control-panel" aria-label={t.storeFilter}>
+            <article className="api-source-card">
+              <div>
+                <p className="eyebrow">{t.apiSource}</p>
+                <strong>{apiSource === "nas" ? t.nasApi : t.localApi}</strong>
+                <small>{t.apiSourceHint}</small>
+              </div>
+              <div className="source-toggle" role="group" aria-label={t.apiSource}>
+                <button className={apiSource === "local" ? "active" : ""} onClick={() => changeApiSource("local")}>
+                  {t.localApi}
                 </button>
-              ))}
-            </div>
+                <button className={apiSource === "nas" ? "active" : ""} onClick={() => changeApiSource("nas")}>
+                  {t.nasApi}
+                </button>
+              </div>
+              <small className="api-endpoint">
+                {t.apiEndpoint}: {displayedApiUrl}
+              </small>
+            </article>
+
+            <article className="store-filter-card">
+              <div className="store-filter-heading">
+                <div>
+                  <p className="eyebrow">{t.storeFilter}</p>
+                  <strong>{isStoreFilterActive ? `${t.selectedStores} ${selectedStoreIds.length}` : t.allStores}</strong>
+                  <small>{isStoreFilterActive ? t.storeFilterPending : t.storeFilterHint}</small>
+                </div>
+                <button className={!isStoreFilterActive ? "active" : ""} onClick={() => setSelectedStoreIds([])}>
+                  {t.allStores}
+                </button>
+              </div>
+              <div className="store-filter-actions">
+                {storeOptions.length === 0 && <span className="store-api-missing">{t.storeApiMissing}</span>}
+                {storeOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    className={selectedStoreIds.includes(option.id) ? "active" : ""}
+                    onClick={() => toggleStoreFilter(option.id)}
+                  >
+                    <ChainBadge chain={option.supermarket} />
+                    <span className="store-filter-label">
+                      <strong>{formatStoreBranch(option.name, option.supermarket, language)}</strong>
+                      <small>
+                        {option.productCount.toLocaleString()} {t.productCount}
+                        {option.lastCrawledAt ? ` · ${formatShortDateTime(option.lastCrawledAt)}` : ""}
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </article>
           </section>
 
           <section className="stats-grid" aria-label={t.departments}>
@@ -540,21 +663,28 @@ export function App() {
             <Metric label={t.deals} value={visibleDeals.length.toLocaleString()} />
           </section>
 
-          <section className="panel deals-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">{t.dealsEyebrow}</p>
-                <h2>
-                  {t.deals}
-                  {dealsDataDate && <span className="heading-date">{t.dealsDate} {formatDate(dealsDataDate)}</span>}
-                </h2>
-              </div>
-              <span className="data-pill">{t.dealSource}</span>
-            </div>
+          <CollapsibleSection
+            className="deals-panel"
+            eyebrow={t.dealsEyebrow}
+            title={t.deals}
+            meta={dealsDataDate ? `${t.dealsDate} ${formatDate(dealsDataDate)}` : undefined}
+            pill={`${visibleDeals.length} · ${t.dealSource}`}
+            collapsed={collapsedSections.deals}
+            expandLabel={t.expand}
+            collapseLabel={t.collapse}
+            onToggle={() => toggleSection("deals")}
+          >
             <div className="deals-grid">
               {visibleDeals.length === 0 && <p className="empty-state">{t.noDealsForStores}</p>}
               {visibleDeals.map((deal) => (
-                <article key={`${deal.store}-${deal.product}`} className="deal-card">
+                <button
+                  key={deal.id}
+                  className="deal-card"
+                  onClick={() => {
+                    setSelectedProductId(deal.id);
+                    setCollapsedSections((current) => ({ ...current, category: false }));
+                  }}
+                >
                   <div className="deal-card-top">
                     <ProductImage imageUrl={deal.imageUrl} name={deal.product} size="medium" />
                     <div>
@@ -576,19 +706,22 @@ export function App() {
                     <span>{formatStoreBranch(deal.store, deal.supermarket, language)}</span>
                     <span>{formatUnit(deal.unitPrice, deal.unitOfMeasure)}</span>
                   </footer>
-                </article>
+                </button>
               ))}
             </div>
-          </section>
+          </CollapsibleSection>
 
           {hasSearched && (
-            <section className="panel search-panel">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">{t.searchEyebrow}</p>
-                  <h2>{t.searchTitle}</h2>
-                </div>
-              </div>
+            <CollapsibleSection
+              className="search-panel"
+              eyebrow={t.searchEyebrow}
+              title={t.searchTitle}
+              pill={`${searchResults.length} ${t.productCount}`}
+              collapsed={collapsedSections.search}
+              expandLabel={t.expand}
+              collapseLabel={t.collapse}
+              onToggle={() => toggleSection("search")}
+            >
               {searchResults.length === 0 ? (
                 <p className="empty-state">{t.noResults}</p>
               ) : (
@@ -597,30 +730,35 @@ export function App() {
                     const listing = bestListing(group, selectedStores);
                     if (!listing) return null;
                     return (
-                      <button key={listing.id} className="search-result" onClick={() => setSelectedProductId(listing.id)}>
-                        <strong>{listing.name}</strong>
-                        <span>{formatGroupCaption(group, language)}</span>
-                        <small>
-                          {formatMaybeCurrency(listing.price)} · {filterListingsByStores(group.products, selectedStores).length} {t.listedStores}
-                        </small>
-                      </button>
+                      <SearchResultCard
+                        key={listing.id}
+                        group={group}
+                        listing={listing}
+                        listings={filterListingsByStores(group.products, selectedStores)}
+                        language={language}
+                        t={t}
+                        onSelect={() => {
+                          setSelectedProductId(listing.id);
+                          setCollapsedSections((current) => ({ ...current, category: false }));
+                        }}
+                      />
                     );
                   })}
                 </div>
               )}
-            </section>
+            </CollapsibleSection>
           )}
 
-          <section className="panel category-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">{t.categories}</p>
-                <h2>{selectedCategory ? translateCategoryName(selectedCategory.name, language) : t.cheapest}</h2>
-              </div>
-              <span className="data-pill">
-                {selectedCategory?.totalProductCount.toLocaleString()} {t.productCount}
-              </span>
-            </div>
+          <CollapsibleSection
+            className="category-panel"
+            eyebrow={t.categories}
+            title={selectedCategory ? translateCategoryName(selectedCategory.name, language) : t.cheapest}
+            pill={`${selectedCategory?.totalProductCount.toLocaleString() ?? 0} ${t.productCount}`}
+            collapsed={collapsedSections.category}
+            expandLabel={t.expand}
+            collapseLabel={t.collapse}
+            onToggle={() => toggleSection("category")}
+          >
 
             <div className="department-tabs" aria-label={t.departmentMetric}>
               {categories.map((department) => (
@@ -794,15 +932,17 @@ export function App() {
                 )}
               </aside>
             </div>
-          </section>
+          </CollapsibleSection>
 
-          <section className="panel coverage-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">{t.coverageEyebrow}</p>
-                <h2>{t.departments}</h2>
-              </div>
-            </div>
+          <CollapsibleSection
+            className="coverage-panel"
+            eyebrow={t.coverageEyebrow}
+            title={t.departments}
+            collapsed={collapsedSections.coverage}
+            expandLabel={t.expand}
+            collapseLabel={t.collapse}
+            onToggle={() => toggleSection("coverage")}
+          >
             <div className="department-grid">
               {categories.map((department) => (
                 <article key={department.id} className="department-card">
@@ -814,7 +954,7 @@ export function App() {
                 </article>
               ))}
             </div>
-          </section>
+          </CollapsibleSection>
         </>
       )}
     </main>
@@ -830,29 +970,245 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CollapsibleSection({
+  className,
+  eyebrow,
+  title,
+  meta,
+  pill,
+  collapsed,
+  expandLabel,
+  collapseLabel,
+  onToggle,
+  children
+}: {
+  className?: string;
+  eyebrow: string;
+  title: string;
+  meta?: string;
+  pill?: string;
+  collapsed: boolean;
+  expandLabel: string;
+  collapseLabel: string;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`panel collapsible-panel ${className ?? ""}`}>
+      <div className="section-heading">
+        <button className="section-title-button" onClick={onToggle} aria-expanded={!collapsed}>
+          <span className={`collapse-icon ${collapsed ? "" : "open"}`}>›</span>
+          <span>
+            <span className="eyebrow">{eyebrow}</span>
+            <strong>
+              {title}
+              {meta && <span className="heading-date">{meta}</span>}
+            </strong>
+          </span>
+        </button>
+        <div className="section-heading-actions">
+          {pill && <span className="data-pill">{pill}</span>}
+          <button className="collapse-toggle" onClick={onToggle}>
+            {collapsed ? expandLabel : collapseLabel}
+          </button>
+        </div>
+      </div>
+      {!collapsed && children}
+    </section>
+  );
+}
+
+function SearchResultCard({
+  group,
+  listing,
+  listings,
+  language,
+  t,
+  onSelect
+}: {
+  group: ProductGroup;
+  listing: ProductListing;
+  listings: ProductListing[];
+  language: Language;
+  t: (typeof copy)[Language];
+  onSelect: () => void;
+}) {
+  const visibleListings = listings;
+
+  return (
+    <button className="search-result" onClick={onSelect}>
+      <ProductImage imageUrl={listing.imageUrl ?? firstImage(group)} name={listing.name} size="large" />
+      <span className="search-result-body">
+        <strong>{listing.name}</strong>
+        <span className="search-meta">{[listing.brand, listing.size, group.category].filter(Boolean).join(" · ") || formatGroupCaption(group, language)}</span>
+        <span className="search-price-labels">
+          {visibleListings.map((offer, index) => (
+            <span key={offer.id} className={`search-price-label ${index === 0 ? "best" : ""}`}>
+              <ChainBadge chain={offer.supermarket} />
+              <strong>{formatMaybeCurrency(offer.price)}</strong>
+              <span>{formatUnit(offer.unitPrice, offer.unit)}</span>
+            </span>
+          ))}
+        </span>
+        <small>
+          {t.bestStore} · {listings.length} {t.listedStores}
+        </small>
+      </span>
+    </button>
+  );
+}
+
 function ReviewWorkspace({
   candidates,
+  categories,
   isLoading,
   actionId,
   error,
   woolworthsOnly,
   totalCount,
+  language,
+  apiBaseUrl,
   t,
   onRefresh,
   onToggleWoolworthsOnly,
   onAction
 }: {
   candidates: MatchCandidate[];
+  categories: CategoryNode[];
   isLoading: boolean;
   actionId: string | null;
   error: string | null;
   woolworthsOnly: boolean;
   totalCount: number;
+  language: Language;
+  apiBaseUrl: string;
   t: (typeof copy)[Language];
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   onToggleWoolworthsOnly: () => void;
   onAction: (id: string, status: "approved" | "rejected") => void;
 }) {
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [sourceGroup, setSourceGroup] = useState<ProductGroup | null>(null);
+  const [destinationGroup, setDestinationGroup] = useState<ProductGroup | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [manualItem, setManualItem] = useState({
+    name: "",
+    description: "",
+    brand: "",
+    size: "",
+    category: ""
+  });
+  const [isCreatingItem, setIsCreatingItem] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const selectedCandidate = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? candidates[0] ?? null;
+  const sourceListing = selectedCandidate
+    ? sourceGroup?.products.find((product) => product.id === selectedCandidate.productId) ?? sourceGroup?.products[0] ?? null
+    : null;
+  const destinationListings = destinationGroup ? sortListings(destinationGroup.products) : [];
+  const categoryOptions = useMemo(() => {
+    const options = categories.filter((category) => category.kind !== "Department");
+    return options.length > 0 ? options : categories;
+  }, [categories]);
+
+  useEffect(() => {
+    if (candidates.length === 0) {
+      setSelectedCandidateId(null);
+      return;
+    }
+    if (!selectedCandidateId || !candidates.some((candidate) => candidate.id === selectedCandidateId)) {
+      setSelectedCandidateId(candidates[0].id);
+    }
+  }, [candidates, selectedCandidateId]);
+
+  useEffect(() => {
+    if (!selectedCandidate) {
+      setSourceGroup(null);
+      setDestinationGroup(null);
+      setCreateError(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadReviewDetail() {
+      setIsDetailLoading(true);
+      setDetailError(null);
+      try {
+        const [source, destinationMatches] = await Promise.all([
+          getProductGroup(selectedCandidate.productId, apiBaseUrl),
+          searchProducts(selectedCandidate.candidateItem, 100, [], apiBaseUrl)
+        ]);
+        if (cancelled) return;
+        setSourceGroup(source);
+        setDestinationGroup(destinationMatches.find((group) => group.itemId === selectedCandidate.candidateItemId) ?? null);
+      } catch (err) {
+        if (cancelled) return;
+        setSourceGroup(null);
+        setDestinationGroup(null);
+        setDetailError(err instanceof Error ? err.message : t.failed);
+      } finally {
+        if (!cancelled) setIsDetailLoading(false);
+      }
+    }
+
+    void loadReviewDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, selectedCandidate, t.failed]);
+
+  useEffect(() => {
+    if (!selectedCandidate) return;
+    const name = sourceListing?.name ?? selectedCandidate.productName;
+    const category = destinationGroup?.category ?? sourceGroup?.category ?? categoryOptions[0]?.name ?? "";
+    setManualItem({
+      name,
+      description: name,
+      brand: sourceListing?.brand ?? selectedCandidate.brand ?? "",
+      size: sourceListing?.size ?? selectedCandidate.size ?? "",
+      category
+    });
+    setCreateError(null);
+  }, [categoryOptions, destinationGroup?.category, selectedCandidate, sourceGroup?.category, sourceListing]);
+
+  async function handleCreateItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCandidate) return;
+
+    const name = manualItem.name.trim();
+    const category = manualItem.category.trim();
+    if (!name) {
+      setCreateError(t.itemNameRequired);
+      return;
+    }
+    if (!category) {
+      setCreateError(t.categoryRequired);
+      return;
+    }
+
+    setIsCreatingItem(true);
+    setCreateError(null);
+    try {
+      const item = await createItem(
+        {
+          name,
+          description: manualItem.description.trim() || null,
+          brand: manualItem.brand.trim() || null,
+          size: manualItem.size.trim() || null,
+          category
+        },
+        apiBaseUrl
+      );
+      await linkProductToItem(selectedCandidate.productId, item.id, apiBaseUrl);
+      await onRefresh();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : t.failed);
+    } finally {
+      setIsCreatingItem(false);
+    }
+  }
+
   return (
     <section className="panel review-panel">
       <div className="section-heading">
@@ -869,6 +1225,16 @@ function ReviewWorkspace({
         </div>
       </div>
 
+      <div className="review-rules">
+        <strong>{t.reviewRulesTitle}</strong>
+        <ul>
+          <li>{t.reviewRuleBrandSize}</li>
+          <li>{t.reviewRuleVariant}</li>
+          <li>{t.reviewRuleDestination}</li>
+          <li>{t.reviewRuleReject}</li>
+        </ul>
+      </div>
+
       <div className="review-summary">
         <Metric label={t.allCandidates} value={totalCount.toLocaleString()} />
         <Metric label={woolworthsOnly ? t.woolworthsOnly : t.reviewMode} value={candidates.length.toLocaleString()} />
@@ -878,55 +1244,187 @@ function ReviewWorkspace({
       {isLoading && <p className="empty-state">{t.reviewLoading}</p>}
       {!isLoading && candidates.length === 0 && <p className="empty-state">{t.noCandidates}</p>}
 
-      <div className="review-list">
-        {candidates.map((candidate) => (
-          <article key={candidate.id} className="review-card">
-            <div className="review-card-grid">
-              <div>
-                <p className="eyebrow">{t.storeProduct}</p>
-                <h3>{candidate.productName}</h3>
-                <p className="review-meta">
-                  <ChainBadge chain={candidate.supermarket} />
-                  <span>{candidate.brand || "-"}</span>
-                  {candidate.size && <span>{candidate.size}</span>}
-                  {candidate.price !== null && <span>{formatCurrency(candidate.price)}</span>}
-                </p>
-              </div>
-              <div>
-                <p className="eyebrow">{t.candidateItem}</p>
-                <h3>{candidate.candidateItem}</h3>
-                <p className="review-meta">
-                  <span>
-                    {t.matchScore} {formatScore(candidate.score)}
-                  </span>
-                </p>
-              </div>
+      {candidates.length > 0 && (
+        <div className="review-workspace">
+          <aside className="review-queue">
+            <div className="review-subheading">
+              <p className="eyebrow">{t.candidateQueue}</p>
+              <strong>{candidates.length.toLocaleString()}</strong>
             </div>
-            {candidate.reason && (
-              <p className="review-reason">
-                <strong>{t.matchReason}</strong>
-                <span>{candidate.reason}</span>
-              </p>
-            )}
-            <footer className="review-card-actions">
-              <button
-                className="reject-button"
-                disabled={actionId === candidate.id}
-                onClick={() => onAction(candidate.id, "rejected")}
-              >
-                {t.reject}
-              </button>
-              <button
-                className="approve-button"
-                disabled={actionId === candidate.id}
-                onClick={() => onAction(candidate.id, "approved")}
-              >
-                {t.approve}
-              </button>
-            </footer>
-          </article>
-        ))}
-      </div>
+            <div className="review-queue-list">
+              {candidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  className={candidate.id === selectedCandidate?.id ? "active" : ""}
+                  onClick={() => setSelectedCandidateId(candidate.id)}
+                >
+                  <span>
+                    <strong>{candidate.productName}</strong>
+                    <small>{candidate.brand || "-"}{candidate.size ? ` · ${candidate.size}` : ""}</small>
+                    <small>{formatProductIdentity(candidate.sku ?? candidate.sourceSku, candidate.productId, t)}</small>
+                  </span>
+                  <span className="review-score-pill">{formatScore(candidate.score)}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          {selectedCandidate && (
+            <article className="review-detail">
+              <div className="review-detail-heading">
+                <div>
+                  <p className="eyebrow">{t.selectedCandidate}</p>
+                  <h3>{selectedCandidate.productName}</h3>
+                </div>
+                <span className="review-score-pill strong">{t.matchScore} {formatScore(selectedCandidate.score)}</span>
+              </div>
+
+              {isDetailLoading && <p className="empty-state">{t.detailLoading}</p>}
+              {detailError && <p className="empty-state error-card">{detailError}</p>}
+
+              <div className="match-compare-grid">
+                <section className="match-side-card source">
+                  <p className="eyebrow">{t.sourceProduct}</p>
+                  <div className="match-product-hero">
+                    <ProductImage imageUrl={sourceListing?.imageUrl} name={selectedCandidate.productName} size="large" />
+                    <div>
+                      <h3>{sourceListing?.name ?? selectedCandidate.productName}</h3>
+                      <p className="review-meta">
+                        <ChainBadge chain={selectedCandidate.supermarket} />
+                        <span>{sourceListing ? formatStoreBranch(sourceListing.store, sourceListing.supermarket, language) : selectedCandidate.supermarket}</span>
+                        <span>{sourceListing?.brand ?? selectedCandidate.brand ?? "-"}</span>
+                        {(sourceListing?.size ?? selectedCandidate.size) && <span>{sourceListing?.size ?? selectedCandidate.size}</span>}
+                      </p>
+                      <p className="identity-line">{formatProductIdentity(sourceListing?.sku ?? sourceListing?.sourceSku ?? selectedCandidate.sku ?? selectedCandidate.sourceSku, selectedCandidate.productId, t)}</p>
+                      <strong className="match-price">{formatMaybeCurrency(sourceListing?.price ?? selectedCandidate.price)}</strong>
+                      {sourceListing && <small>{formatUnit(sourceListing.unitPrice, sourceListing.unit)}</small>}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="match-side-card destination">
+                  <p className="eyebrow">{t.destinationItem}</p>
+                  <h3>{destinationGroup?.description ?? selectedCandidate.candidateItem}</h3>
+                  <p className="review-meta">
+                    <span>{destinationGroup?.category ?? t.category}</span>
+                    {selectedCandidate.reason && <span>{selectedCandidate.reason}</span>}
+                  </p>
+                  <div className="review-reason compact">
+                    <strong>{t.matchReason}</strong>
+                    <span>{selectedCandidate.reason || "-"}</span>
+                  </div>
+                </section>
+              </div>
+
+              <section className="destination-products">
+                <div className="review-subheading">
+                  <p className="eyebrow">{t.currentItemProducts}</p>
+                  <strong>{destinationListings.length.toLocaleString()}</strong>
+                </div>
+                {destinationListings.length === 0 ? (
+                  <p className="empty-state">{t.destinationMissing}</p>
+                ) : (
+                  <div className="destination-product-list">
+                    {destinationListings.map((listing) => (
+                      <article key={listing.id} className="destination-product-row">
+                        <ProductImage imageUrl={listing.imageUrl} name={listing.name} size="small" />
+                        <div>
+                          <strong>{listing.name}</strong>
+                          <p className="review-meta">
+                            <ChainBadge chain={listing.supermarket} />
+                            <span>{formatStoreBranch(listing.store, listing.supermarket, language)}</span>
+                            {listing.brand && <span>{listing.brand}</span>}
+                            {listing.size && <span>{listing.size}</span>}
+                          </p>
+                          <p className="identity-line">{formatProductIdentity(listing.sku ?? listing.sourceSku, listing.id, t)}</p>
+                        </div>
+                        <div className="destination-price">
+                          <strong>{formatMaybeCurrency(listing.price)}</strong>
+                          <small>{formatUnit(listing.unitPrice, listing.unit)}</small>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="create-item-panel">
+                <div>
+                  <p className="eyebrow">{t.createItemTitle}</p>
+                  <p>{t.createItemHint}</p>
+                </div>
+                <form className="create-item-form" onSubmit={handleCreateItem}>
+                  <label className="form-field wide">
+                    <span>{t.createItemName}</span>
+                    <input
+                      value={manualItem.name}
+                      onChange={(event) => setManualItem((current) => ({ ...current, name: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field wide">
+                    <span>{t.createItemDescription}</span>
+                    <input
+                      value={manualItem.description}
+                      onChange={(event) => setManualItem((current) => ({ ...current, description: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>{t.createItemBrand}</span>
+                    <input
+                      value={manualItem.brand}
+                      onChange={(event) => setManualItem((current) => ({ ...current, brand: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>{t.createItemSize}</span>
+                    <input
+                      value={manualItem.size}
+                      onChange={(event) => setManualItem((current) => ({ ...current, size: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field wide">
+                    <span>{t.createItemCategory}</span>
+                    <select
+                      value={manualItem.category}
+                      onChange={(event) => setManualItem((current) => ({ ...current, category: event.target.value }))}
+                    >
+                      <option value="">{t.categoryRequired}</option>
+                      {categoryOptions.map((category) => (
+                        <option key={category.id} value={category.name}>
+                          {formatReviewCategoryOption(category, language)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {createError && <p className="create-item-error">{createError}</p>}
+                  <div className="create-item-actions">
+                    <button className="approve-button" disabled={isCreatingItem || actionId === selectedCandidate.id}>
+                      {t.createAndLink}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <footer className="review-card-actions">
+                <button
+                  className="reject-button"
+                  disabled={actionId === selectedCandidate.id}
+                  onClick={() => onAction(selectedCandidate.id, "rejected")}
+                >
+                  {t.reject}
+                </button>
+                <button
+                  className="approve-button"
+                  disabled={actionId === selectedCandidate.id}
+                  onClick={() => onAction(selectedCandidate.id, "approved")}
+                >
+                  {t.approve}
+                </button>
+              </footer>
+            </article>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -1033,6 +1531,11 @@ function firstImage(group: ProductGroup | null) {
   return group?.products.find((product) => product.imageUrl)?.imageUrl ?? null;
 }
 
+function formatProductIdentity(sku: string | null | undefined, _productId: string, t: (typeof copy)[Language]) {
+  if (sku) return `${t.sku}: ${sku}`;
+  return t.skuMissing;
+}
+
 function flattenCategories(categories: CategoryNode[]): CategoryNode[] {
   return categories.flatMap((category) => [category, ...flattenCategories(category.children)]);
 }
@@ -1099,6 +1602,12 @@ function formatPriceFreshness(listing: ProductListing, t: (typeof copy)[Language
 function translateCategoryName(name: string, language: Language) {
   if (language !== "zh") return name;
   return categoryNameZh[name] ?? name;
+}
+
+function formatReviewCategoryOption(category: CategoryNode, language: Language) {
+  const label = translateCategoryName(category.name, language);
+  const kind = language === "zh" ? (category.kind === "Aisle" ? "小类" : category.kind === "Shelf" ? "细分类" : "大类") : category.kind;
+  return `${label} · ${kind}`;
 }
 
 function formatChain(chain: Supermarket) {
