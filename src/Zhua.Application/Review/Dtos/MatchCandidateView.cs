@@ -4,6 +4,7 @@ namespace Zhua.Application.Review;
 public sealed record MatchCandidateView(
     Guid Id,
     Guid ProductId,             // the listing under review — target of PATCH /products/{id}
+    string SourceSku,           // source-store SKU/product id from the crawler source
     string ProductName,
     string? Brand,
     string? Size,

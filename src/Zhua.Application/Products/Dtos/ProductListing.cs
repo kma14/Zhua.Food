@@ -3,6 +3,7 @@ namespace Zhua.Application.Products;
 /// <summary>One store's listing of a product — pure per-listing facts (no group aggregates).</summary>
 public sealed record ProductListing(
     Guid Id,                 // this listing's product id — drill in via GET /products/{id}
+    string SourceSku,        // source-store SKU/product id from Woolworths/Foodstuffs; useful for admin review
     string Store,            // the store's display name, e.g. "PAK'nSAVE Albany"
     string Supermarket,      // Woolworths | NewWorld | PaknSave (internally Domain enum Chain)
     string Suburb,
