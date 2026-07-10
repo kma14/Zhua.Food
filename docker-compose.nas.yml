@@ -44,6 +44,16 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Front-end: nginx serves the built SPA and reverse-proxies the API paths to `api`
+  # (same-origin -> no CORS). Browse the app at http://<nas-ip>:3000.
+  web:
+    image: ghcr.io/${IMAGE_OWNER}/zhua-web:${IMAGE_TAG:-latest}
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   worker:
     image: ghcr.io/${IMAGE_OWNER}/zhua-worker:${IMAGE_TAG:-latest}
     environment:

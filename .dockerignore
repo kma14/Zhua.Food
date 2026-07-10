@@ -4,3 +4,5 @@
 .vs/
 .idea/
 **/*.user
+**/node_modules/
+**/dist/
