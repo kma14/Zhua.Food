@@ -55,7 +55,7 @@ public class ItemMatcherTests
     private Product Sp(Guid store, string sku, string name, string brand, string size, decimal price) => new()
     {
         StoreId = store,
-        SourceSku = sku,
+        Sku = sku,
         RawName = name,
         RawBrand = brand,
         RawSize = size,
@@ -83,7 +83,7 @@ public class ItemMatcherTests
         Assert.Equal(3, linked);
 
         // Ambiguous Woolworths product is NOT linked and produced pending candidates instead.
-        var w2 = await check.Products.SingleAsync(p => p.SourceSku == "W2");
+        var w2 = await check.Products.SingleAsync(p => p.Sku == "W2");
         Assert.Null(w2.ItemId);
         Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.ProductId == w2.Id && m.Status == MatchStatus.Pending));
     }
@@ -105,7 +105,7 @@ public class ItemMatcherTests
         // The store renames its listing; re-running the matcher must NOT overwrite the owned item text (D25).
         await using (var edit = NewContext())
         {
-            foreach (var sp in await edit.Products.Where(p => p.SourceSku == "C1").ToListAsync())
+            foreach (var sp in await edit.Products.Where(p => p.Sku == "C1").ToListAsync())
                 sp.RawName = "TOTALLY DIFFERENT NAME";
             await edit.SaveChangesAsync();
         }
@@ -128,7 +128,7 @@ public class ItemMatcherTests
         await using var check = NewContext();
         Assert.Equal(3, await check.Items.CountAsync()); // not doubled
         // W2 still has exactly its 2 pending candidates (not duplicated on re-run).
-        var w2 = await check.Products.SingleAsync(p => p.SourceSku == "W2");
+        var w2 = await check.Products.SingleAsync(p => p.Sku == "W2");
         Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.ProductId == w2.Id));
     }
 
@@ -157,7 +157,7 @@ public class ItemMatcherTests
         await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         await using var after = NewContext();
-        var c3 = await after.Products.SingleAsync(p => p.SourceSku == "C3");
+        var c3 = await after.Products.SingleAsync(p => p.Sku == "C3");
         Assert.Equal(survivorId, c3.ItemId);                                  // linked to the survivor, not recreated
         var tombstone = await after.Items.SingleAsync(c => c.MatchKey == "foodstuffs:C3");
         Assert.Equal(survivorId, tombstone.MergedIntoId);                     // stays a redirect tombstone
@@ -186,7 +186,7 @@ public class ItemMatcherTests
 
         await using var check = NewContext();
         var manual = await check.Items.SingleAsync(c => c.MatchKey == "manual:abc");
-        var wx = await check.Products.SingleAsync(p => p.SourceSku == "WX");
+        var wx = await check.Products.SingleAsync(p => p.Sku == "WX");
         Assert.Equal(manual.Id, wx.ItemId);              // auto-linked to the hand-made item via the (brand,size) index
         Assert.Equal(1, await check.Items.CountAsync()); // not duplicated/overwritten by the run
     }

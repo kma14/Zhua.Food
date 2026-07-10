@@ -26,7 +26,7 @@ public class Product
     public ICollection<ProductTag> Tags { get; } = new List<ProductTag>();
 
     /// <summary>The store's own product id/SKU at the source.</summary>
-    public required string SourceSku { get; set; }
+    public required string Sku { get; set; }
 
     public required string RawName { get; set; }
 

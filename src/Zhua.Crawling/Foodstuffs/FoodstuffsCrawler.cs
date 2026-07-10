@@ -229,7 +229,7 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
         decimal? unitPrice, string? unitOfMeasure, IReadOnlyList<ScrapedCategoryNode> path, IReadOnlyList<ScrapedTag> tags) =>
         new()
         {
-            SourceSku = sku,
+            Sku = sku,
             Name = name,
             Brand = brand,
             Size = size,

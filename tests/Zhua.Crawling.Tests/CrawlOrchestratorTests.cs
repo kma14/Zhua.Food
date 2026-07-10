@@ -47,7 +47,7 @@ public class CrawlOrchestratorTests
 
     private static ScrapedProduct Milk(decimal price, bool onSpecial = false, decimal? nonSpecial = null) => new()
     {
-        SourceSku = "SKU-MILK",
+        Sku = "SKU-MILK",
         Name = "Anchor Blue Milk 2L",
         Price = price,
         IsOnSpecial = onSpecial,

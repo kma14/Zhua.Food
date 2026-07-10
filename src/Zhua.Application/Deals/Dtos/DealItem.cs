@@ -2,6 +2,8 @@ namespace Zhua.Application.Deals;
 
 /// <summary>A product currently on special at a store.</summary>
 public sealed record DealItem(
+    Guid Id,                 // this listing's product id — drill in via GET /products/{id}
+    string Sku,        // source-store SKU/product id (Woolworths/Foodstuffs); tells apart look-alike specials
     string Product,
     string? Brand,
     string? ImageUrl,        // this store's product image

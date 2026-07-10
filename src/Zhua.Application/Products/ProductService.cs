@@ -119,7 +119,7 @@ public sealed class ProductService(
                     {
                         var norm = UnitPriceNormalizer.ToComparable(p.UnitPrice, p.UnitOfMeasure);
                         return new ProductListing(
-                            p.Id, p.Store.Name, p.Store.Chain.ToString(), p.Store.Suburb, p.RawName, p.RawBrand, p.RawSize,
+                            p.Id, p.Sku, p.Store.Name, p.Store.Chain.ToString(), p.Store.Suburb, p.RawName, p.RawBrand, p.RawSize,
                             p.ImageUrl, p.CurrentPrice, p.IsOnSpecial, p.CurrentNonSpecialPrice,
                             norm is { } n ? decimal.Round(n.Price, 2) : null, norm?.Unit,
                             p.PriceUpdatedAt, p.LastSeenAt);

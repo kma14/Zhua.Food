@@ -18,7 +18,7 @@ public sealed class MatchReview(IMatchCandidateRepository candidates, IUnitOfWor
 
         var rows = await candidates.GetPendingAsync(page, size);
         return rows.Select(m => new MatchCandidateView(
-                m.Id, m.ProductId, m.Product.RawName, m.Product.RawBrand, m.Product.RawSize,
+                m.Id, m.ProductId, m.Product.Sku, m.Product.RawName, m.Product.RawBrand, m.Product.RawSize,
                 m.Product.Store.Chain.ToString(), m.Product.CurrentPrice,
                 m.ItemId, m.Item.Name, m.Score, m.Reason))
             .ToList();

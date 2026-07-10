@@ -39,9 +39,9 @@ public sealed class ItemMatcher(
         foreach (var key in canonByKey.Keys.ToList())
             canonByKey[key] = ResolveLive(canonByKey[key], itemsById);
 
-        // --- Tier 1: Foodstuffs share productId → one item per SourceSku, link every branch's Product. ---
+        // --- Tier 1: Foodstuffs share productId → one item per Sku, link every branch's Product. ---
         var foodstuffs = products.Where(p => p.Store.Chain is Chain.NewWorld or Chain.PaknSave);
-        foreach (var grp in foodstuffs.GroupBy(p => p.SourceSku))
+        foreach (var grp in foodstuffs.GroupBy(p => p.Sku))
         {
             var key = "foodstuffs:" + grp.Key;
             var rep = grp.OrderByDescending(p => p.RawName.Length).First(); // longest name = most descriptive

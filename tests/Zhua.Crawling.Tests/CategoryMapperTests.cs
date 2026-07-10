@@ -68,7 +68,7 @@ public class CategoryMapperTests
             var shelf = new StoreCategory { Store = nw, Kind = CategoryKind.Shelf, ExternalId = "Beef Steaks", Slug = "beef-steaks", Name = "Beef Steaks", Parent = dept };
             db.StoreCategories.AddRange(dept, shelf);
             var canon = new Item { Name = "Angus Sirloin 300g", Category = "Uncategorized" };
-            var p = new Product { Store = nw, SourceSku = "NW-1", RawName = "Angus Sirloin 300g", FirstSeenAt = DateTimeOffset.UtcNow, Item = canon };
+            var p = new Product { Store = nw, Sku = "NW-1", RawName = "Angus Sirloin 300g", FirstSeenAt = DateTimeOffset.UtcNow, Item = canon };
             p.Categories.Add(dept);
             p.Categories.Add(shelf);
             db.Products.Add(p);
@@ -118,9 +118,9 @@ public class CategoryMapperTests
         db.StoreCategories.AddRange(nwDept, nwShelf, wwShelf);
 
         var canon = new Item { Name = "Angus Sirloin 300g", Category = "Uncategorized" };
-        var nwProduct = new Product { Store = nw, SourceSku = "NW-1", RawName = "Angus Sirloin 300g", FirstSeenAt = DateTimeOffset.UtcNow, Item = canon };
+        var nwProduct = new Product { Store = nw, Sku = "NW-1", RawName = "Angus Sirloin 300g", FirstSeenAt = DateTimeOffset.UtcNow, Item = canon };
         nwProduct.Categories.Add(nwShelf);
-        var wwProduct = new Product { Store = ww, SourceSku = "WW-1", RawName = "Angus Beef Sirloin", FirstSeenAt = DateTimeOffset.UtcNow, Item = canon };
+        var wwProduct = new Product { Store = ww, Sku = "WW-1", RawName = "Angus Beef Sirloin", FirstSeenAt = DateTimeOffset.UtcNow, Item = canon };
         wwProduct.Categories.Add(wwShelf);
         db.Products.AddRange(nwProduct, wwProduct);
 
