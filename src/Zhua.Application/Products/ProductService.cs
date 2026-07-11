@@ -1,3 +1,4 @@
+using Zhua.Application.Categories;
 using Zhua.Application.Common;
 using Zhua.Application.Pricing;
 using Zhua.Domain.Entities;
@@ -23,24 +24,13 @@ public sealed class ProductService(
         page = Math.Max(page, 1);
         var appliedSort = NormalizeSort(sort);
 
-        // Resolve the category subtree (if filtering by category). Archived nodes are hidden (D25 phase 3);
-        // an unknown/archived id → null → 404.
+        // Resolve the category subtree (if filtering by category) via the shared resolver. Archived nodes are hidden
+        // (D25 phase 3); an unknown/archived id → null → 404.
         IReadOnlyCollection<Guid>? subtree = null;
         if (categoryId is { } catId)
         {
-            var cats = await categories.GetActiveAsync();
-            if (cats.All(c => c.Id != catId)) return null;
-            var childrenByParent = cats.Where(c => c.ParentId != null)
-                .GroupBy(c => c.ParentId!.Value).ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
-            var set = new HashSet<Guid>();
-            var stack = new Stack<Guid>([catId]);
-            while (stack.Count > 0)
-            {
-                var n = stack.Pop();
-                if (!set.Add(n)) continue;
-                if (childrenByParent.TryGetValue(n, out var ch)) foreach (var c in ch) stack.Push(c);
-            }
-            subtree = set;
+            subtree = CategorySubtree.Resolve(await categories.GetActiveAsync(), catId);
+            if (subtree is null) return null;
         }
 
         // The storeId filter is applied to listings in the repository, so each built group already contains only the

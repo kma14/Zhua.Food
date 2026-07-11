@@ -54,16 +54,37 @@ public sealed class ProductRepository(ZhuaDbContext db) : IProductRepository
             .ToListAsync(ct);
     }
 
+    // The specials filter, shared by the page + the count so the two can't drift. Any current promotion is a deal —
+    // the was-price is optional (Foodstuffs often has no recoverable regular price until history accumulates, D23).
+    // The category/store predicates mirror FindListingsAsync exactly so /deals filters like /products.
+    private IQueryable<Product> SpecialsQuery(
+        Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds)
+    {
+        var query = db.Products.Where(p => p.Store.IsActive && p.IsOnSpecial && p.CurrentPrice != null);
+        if (supermarket is { } chain)
+            query = query.Where(p => p.Store.Chain == chain);
+        if (storeIds is { Count: > 0 })
+            query = query.Where(p => storeIds.Contains(p.StoreId));
+        if (categoryIds is { Count: > 0 })
+            query = query.Where(p =>
+                p.ItemId != null && p.Item!.CategoryId != null && categoryIds.Contains(p.Item.CategoryId.Value));
+        return query;
+    }
+
     public async Task<IReadOnlyList<Product>> FindSpecialsAsync(
-        Chain? supermarket, int page, int size, CancellationToken ct = default) =>
-        await db.Products
-            .Where(p => p.Store.IsActive && p.IsOnSpecial
-                && p.CurrentNonSpecialPrice != null && p.CurrentPrice != null
-                && (supermarket == null || p.Store.Chain == supermarket))
-            .OrderByDescending(p => p.CurrentNonSpecialPrice - p.CurrentPrice)
+        Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,
+        int page, int size, CancellationToken ct = default) =>
+        await SpecialsQuery(supermarket, categoryIds, storeIds)
+            .OrderByDescending(p => p.CurrentNonSpecialPrice != null)          // deals with a known saving first
+            .ThenByDescending(p => p.CurrentNonSpecialPrice - p.CurrentPrice)  // biggest saving first
             .Skip((page - 1) * size).Take(size)
             .Include(p => p.Store)
             .ToListAsync(ct);
+
+    public Task<int> CountSpecialsAsync(
+        Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,
+        CancellationToken ct = default) =>
+        SpecialsQuery(supermarket, categoryIds, storeIds).CountAsync(ct);
 
     public Task<Product?> GetForUpdateAsync(Guid id, CancellationToken ct = default) =>
         db.Products.FirstOrDefaultAsync(p => p.Id == id, ct);

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Zhua.Infrastructure.Persistence;
 
 namespace Zhua.Api.Tests;
 
@@ -11,7 +12,7 @@ public class DealAndAdminTests(ApiFactory factory)
     [Fact]
     public async Task Deals_returns_specials_with_was_price_and_saving()
     {
-        var deals = await _client.GetFromJsonAsync<List<DealItem>>("/deals");
+        var deals = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals"))?.Items;
 
         Assert.NotNull(deals);
         var mince = deals!.Single(d => d.Store == "Woolworths Takapuna");
@@ -23,13 +24,49 @@ public class DealAndAdminTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Deals_include_current_specials_with_no_was_price()
+    {
+        var deals = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals"))?.Items;
+        var noWas = deals!.Single(d => d.Sku == "pns-special-nowas");
+        Assert.Equal("PaknSave", noWas.Supermarket);
+        Assert.Equal(8.99m, noWas.Price);
+        Assert.Null(noWas.WasPrice);   // Foodstuffs first-seen-on-special: no recoverable regular price yet
+        Assert.Null(noWas.Saving);     // so no computed saving — but still surfaced as a current promotion
+    }
+
+    [Fact]
     public async Task Deals_filter_by_supermarket()
     {
-        var nw = await _client.GetFromJsonAsync<List<DealItem>>("/deals?supermarket=NewWorld");
+        var nw = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals?supermarket=NewWorld"))?.Items;
         Assert.Empty(nw!); // no New World specials in the seed
 
-        var ww = await _client.GetFromJsonAsync<List<DealItem>>("/deals?supermarket=Woolworths");
+        var ww = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals?supermarket=Woolworths"))?.Items;
         Assert.Contains(ww!, d => d.Store == "Woolworths Takapuna");
+    }
+
+    [Fact]
+    public async Task Deals_filter_by_category_and_store()
+    {
+        // Category filter mirrors /products: the Beef aisle subtree → only the on-special beef mince (Woolworths),
+        // NOT the unmatched salmon special (it has no item/category). Unknown category → 404.
+        var beef = (await _client.GetFromJsonAsync<PagedResult<DealItem>>(
+            $"/deals?category={TestData.AisleBeef}"))?.Items;
+        Assert.Contains(beef!, d => d.Store == "Woolworths Takapuna");
+        Assert.DoesNotContain(beef!, d => d.Sku == "pns-special-nowas");
+
+        var unknown = await _client.GetAsync($"/deals?category={Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        // Store filter: only deals at the given store. The salmon special is at PAK'nSAVE Botany.
+        var botany = (await _client.GetFromJsonAsync<PagedResult<DealItem>>(
+            $"/deals?storeId={StoreSeed.PaknSaveBotany}"))?.Items;
+        Assert.All(botany!, d => Assert.Equal("PAK'nSAVE Botany", d.Store));
+        Assert.Contains(botany!, d => d.Sku == "pns-special-nowas");
+
+        // supermarket + storeId intersect: PAK store + Woolworths chain → empty.
+        var none = (await _client.GetFromJsonAsync<PagedResult<DealItem>>(
+            $"/deals?storeId={StoreSeed.PaknSaveBotany}&supermarket=Woolworths"))?.Items;
+        Assert.Empty(none!);
     }
 
     [Fact]
