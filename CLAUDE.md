@@ -12,6 +12,8 @@ Auckland grocery **price-intelligence** platform (information layer only — NOT
 
 📋 **Full background, all decisions (D1–D9) and the phased roadmap live in [plan-cc.md](plan-cc.md)** — that's the source of truth; read it before non-trivial work and keep it updated as decisions change. (Linked rather than `@import`-ed, to keep each session's context lean — ask if you'd prefer the whole plan auto-loaded every session.)
 
+🧾 **Known tech debt is tracked in [docs/internals/tech-debt.md](docs/internals/tech-debt.md)** — deliberate shortcuts/layering inconsistencies we've accepted (not bugs), each with the fix + why it's deferred. Consult it before a refactor, and **add an entry (with a Decision-log line) whenever you take a shortcut** so it's tracked, not forgotten.
+
 ## Prior art
 
 A similar NZ price tracker already exists — **kiwiprice.xyz** (GitHub `Jason-nzd`). Study these as references (don't depend on them; check licenses before copying): `Jason-nzd/pakn-scraper` (**.NET + Playwright** — our exact stack), `Jason-nzd/countdown-scraper`, `Jason-nzd/supermarket-prices-nextjs`.
