@@ -104,7 +104,7 @@ public class DealAndAdminTests(ApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, link.StatusCode);
 
         // It's now findable (store-first search on the listing's real name) + priced, and its candidate is gone.
-        var hits = await _client.GetFromJsonAsync<List<ProductGroup>>("/products?q=create me");
+        var hits = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?q=create me"))?.Items;
         var created = hits!.Single(g => g.ItemId == item.Id);
         Assert.Equal(TestData.CreateTargetSp, created.Products.Single().Id);  // the linked listing
         Assert.Equal(6.00m, created.Products.Single().Price);

@@ -12,7 +12,7 @@ public class ProductTests(ApiFactory factory)
     [Fact]
     public async Task Search_groups_listings_by_item_with_all_stores()
     {
-        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>("/products?q=mince");
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?q=mince"))?.Items;
 
         Assert.NotNull(groups);
         var mince = groups!.Single(g => g.ItemId == TestData.BeefMince);
@@ -31,17 +31,40 @@ public class ProductTests(ApiFactory factory)
     [Fact]
     public async Task Bare_products_returns_the_catalogue_paginated()
     {
-        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>("/products?size=5");
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?size=5"))?.Items;
         Assert.NotNull(groups);
         Assert.NotEmpty(groups!);                                  // no longer 400s without a filter
         Assert.True(groups!.Count <= 5);
     }
 
     [Fact]
+    public async Task List_is_a_paged_sorted_envelope()
+    {
+        var env = await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?size=1&sort=priceAsc");
+        Assert.NotNull(env);
+        Assert.Equal(1, env!.Page);
+        Assert.Equal(1, env.Size);
+        Assert.Single(env.Items);
+        Assert.True(env.Total >= 1);
+        Assert.Equal((int)Math.Ceiling(env.Total / 1.0), env.TotalPages);
+        Assert.Equal(env.Page < env.TotalPages, env.HasMore);      // more pages after this one-item page
+        Assert.Equal("priceAsc", env.Sort);                        // echoes the applied sort
+
+        // Sorting happens server-side over the whole set before paging: nameAsc → non-decreasing names.
+        var byName = await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?sort=nameAsc&size=100");
+        var names = byName!.Items.Select(g => g.Description ?? g.Products[0].Name).ToList();
+        Assert.Equal(names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase), names);
+
+        // Unknown sort falls back to the default, echoed back.
+        var def = await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?size=5&sort=bogus");
+        Assert.Equal("unitPriceAsc", def!.Sort);
+    }
+
+    [Fact]
     public async Task Search_storeId_filter_scopes_to_that_store()
     {
-        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>(
-            $"/products?q=mince&storeId={StoreSeed.WoolworthsTakapuna}");
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/products?q=mince&storeId={StoreSeed.WoolworthsTakapuna}"))?.Items;
 
         var mince = groups!.Single(g => g.ItemId == TestData.BeefMince);
         Assert.Single(mince.Products);                            // only the Woolworths listing
@@ -52,8 +75,8 @@ public class ProductTests(ApiFactory factory)
     [Fact]
     public async Task Products_by_category_matches_the_subresource()
     {
-        var viaProducts = await _client.GetFromJsonAsync<List<ProductGroup>>(
-            $"/products?category={TestData.AisleBeef}");
+        var viaProducts = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/products?category={TestData.AisleBeef}"))?.Items;
         Assert.Equal(2, viaProducts!.Count);                     // mince group + eye fillet
         Assert.Contains(viaProducts!, g => g.ItemId == TestData.BeefMince);
     }

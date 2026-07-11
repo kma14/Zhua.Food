@@ -88,8 +88,8 @@ public class CategoryAdminTests(ApiFactory factory)
     public async Task Archive_hides_the_node_and_its_products_from_browse()
     {
         // Before: the shelf and its product are browsable.
-        var before = await _client.GetFromJsonAsync<List<ProductGroup>>(
-            $"/categories/{TestData.ArchiveMeShelf}/products");
+        var before = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.ArchiveMeShelf}/products"))?.Items;
         Assert.Contains(before!, g => g.ItemId == TestData.FrozenProduct);
 
         var res = await _client.DeleteAsync($"/categories/{TestData.ArchiveMeShelf}");

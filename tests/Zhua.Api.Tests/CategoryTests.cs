@@ -56,8 +56,8 @@ public class CategoryTests(ApiFactory factory)
     [Fact]
     public async Task Category_products_group_listings_across_stores()
     {
-        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>(
-            $"/categories/{TestData.AisleBeef}/products");
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.AisleBeef}/products"))?.Items;
 
         Assert.NotNull(groups);
         Assert.Equal(2, groups!.Count); // mince (shelf) + eye fillet (aisle) — whole subtree
@@ -73,8 +73,8 @@ public class CategoryTests(ApiFactory factory)
     [Fact]
     public async Task Category_products_storeId_filter_scopes_to_store()
     {
-        var groups = await _client.GetFromJsonAsync<List<ProductGroup>>(
-            $"/categories/{TestData.AisleBeef}/products?storeId={StoreSeed.PaknSaveAlbany}");
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.AisleBeef}/products?storeId={StoreSeed.PaknSaveAlbany}"))?.Items;
 
         Assert.NotNull(groups);
         Assert.Single(groups!);                             // only the mince is at Albany

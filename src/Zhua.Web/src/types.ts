@@ -49,6 +49,18 @@ export type ProductGroup = {
   products: ProductListing[];
 };
 
+export type ProductSort = "unitPriceAsc" | "priceAsc" | "nameAsc" | "discountDesc";
+
+export type PagedResult<T> = {
+  items: T[];
+  page: number;
+  size: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+  sort: ProductSort;
+};
+
 export type PriceHistoryPoint = {
   date: string;
   price: number | null;

@@ -16,11 +16,12 @@ public sealed class ProductService(
     IMatchCandidateRepository candidates,
     IUnitOfWork uow) : IProductService
 {
-    public async Task<IReadOnlyList<ProductGroup>?> ListAsync(
-        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size)
+    public async Task<PagedResult<ProductGroup>?> ListAsync(
+        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size, string? sort)
     {
         size = Math.Clamp(size, 1, 100);
         page = Math.Max(page, 1);
+        var appliedSort = NormalizeSort(sort);
 
         // Resolve the category subtree (if filtering by category). Archived nodes are hidden (D25 phase 3);
         // an unknown/archived id → null → 404.
@@ -42,11 +43,15 @@ public sealed class ProductService(
             subtree = set;
         }
 
+        // The storeId filter is applied to listings in the repository, so each built group already contains only the
+        // visible listings and groups with none don't exist — total/sort/paging are all computed post-filter.
         var listings = await products.FindListingsAsync(q, subtree, storeIds);
-        return Build(listings)
-            .OrderBy(g => g.Description ?? g.Products[0].Name)   // stable, neutral group order — the client re-sorts
-            .Skip((page - 1) * size).Take(size)
-            .ToList();
+        var sorted = SortGroups(Build(listings), appliedSort);   // sort the whole set BEFORE paging → correct pages
+
+        var total = sorted.Count;
+        var totalPages = (int)Math.Ceiling(total / (double)size);
+        var items = sorted.Skip((page - 1) * size).Take(size).ToList();
+        return new PagedResult<ProductGroup>(items, page, size, total, totalPages, page < totalPages, appliedSort);
     }
 
     public async Task<ProductGroup?> GetGroupAsync(Guid productId)
@@ -128,4 +133,59 @@ public sealed class ProductService(
                 return new ProductGroup(any.ItemId, any.Item?.Description, any.Item?.Category, products);
             })
             .ToList();
+
+    // ---- Server-side sort (applied over the whole filtered set, before paging) ----------------------------------
+    private const string SortUnitPriceAsc = "unitPriceAsc";   // default
+    private const string SortPriceAsc = "priceAsc";
+    private const string SortNameAsc = "nameAsc";
+    private const string SortDiscountDesc = "discountDesc";
+
+    /// <summary>Map the raw sort param to a supported key; unknown/blank/null ⇒ the default (echoed back).</summary>
+    private static string NormalizeSort(string? sort) => sort?.Trim() switch
+    {
+        SortPriceAsc => SortPriceAsc,
+        SortNameAsc => SortNameAsc,
+        SortDiscountDesc => SortDiscountDesc,
+        _ => SortUnitPriceAsc,
+    };
+
+    /// <summary>
+    /// Order the groups by the chosen key. Keys derive from each group's (already store-filtered) listings; for the
+    /// ascending price keys a null value sorts last; ties break by name so the order is stable across pages.
+    /// </summary>
+    private static List<ProductGroup> SortGroups(List<ProductGroup> groups, string sort) => sort switch
+    {
+        SortPriceAsc => groups
+            .OrderBy(g => MinOrNull(g, l => l.Price) ?? decimal.MaxValue)
+            .ThenBy(NameKey, StringComparer.OrdinalIgnoreCase).ToList(),
+        SortNameAsc => groups
+            .OrderBy(NameKey, StringComparer.OrdinalIgnoreCase).ToList(),
+        SortDiscountDesc => groups
+            .OrderByDescending(MaxSaving)
+            .ThenBy(NameKey, StringComparer.OrdinalIgnoreCase).ToList(),
+        _ /* unitPriceAsc: lowest comparable unit price, fall back to shelf price */ => groups
+            .OrderBy(g => (MinOrNull(g, l => l.UnitPrice) ?? MinOrNull(g, l => l.Price)) ?? decimal.MaxValue)
+            .ThenBy(NameKey, StringComparer.OrdinalIgnoreCase).ToList(),
+    };
+
+    /// <summary>The lowest non-null value across a group's listings, or null if every listing is null.</summary>
+    private static decimal? MinOrNull(ProductGroup g, Func<ProductListing, decimal?> pick)
+    {
+        decimal? min = null;
+        foreach (var l in g.Products)
+            if (pick(l) is { } v && (min is null || v < min)) min = v;
+        return min;
+    }
+
+    /// <summary>The biggest current saving (wasPrice − price) among the group's on-special listings; 0 if none.</summary>
+    private static decimal MaxSaving(ProductGroup g)
+    {
+        decimal max = 0;
+        foreach (var l in g.Products)
+            if (l.WasPrice is { } was && l.Price is { } price && was > price && was - price > max)
+                max = was - price;
+        return max;
+    }
+
+    private static string NameKey(ProductGroup g) => g.Description ?? g.Products[0].Name;
 }

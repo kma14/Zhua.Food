@@ -4,9 +4,11 @@ import type {
   ItemView,
   MatchCandidate,
   MatchCandidateDecision,
+  PagedResult,
   ProductGroup,
   ProductLinkView,
   ProductPriceHistory,
+  ProductSort,
   StoreOption
 } from "./types";
 
@@ -56,11 +58,19 @@ export function getStores(apiBaseUrl?: string) {
   return getJson<StoreOption[]>("/stores", undefined, apiBaseUrl);
 }
 
-export function getCategoryProducts(categoryId: string, size = 20, storeIds: string[] = [], apiBaseUrl?: string) {
-  return getJson<ProductGroup[]>(`/categories/${categoryId}/products`, {
+export function getCategoryProducts(
+  categoryId: string,
+  page = 1,
+  size = 20,
+  sort: ProductSort = "unitPriceAsc",
+  storeIds: string[] = [],
+  apiBaseUrl?: string
+) {
+  return getJson<PagedResult<ProductGroup>>(`/categories/${categoryId}/products`, {
     storeId: storeIds,
-    page: 1,
-    size
+    page,
+    size,
+    sort
   }, apiBaseUrl);
 }
 
@@ -73,15 +83,29 @@ export function getProductPriceHistory(productId: string, days = 14, apiBaseUrl?
 }
 
 export function searchProducts(q: string, size = 8, storeIds: string[] = [], apiBaseUrl?: string) {
-  return getJson<ProductGroup[]>("/products", { q, storeId: storeIds, page: 1, size }, apiBaseUrl);
+  return getJson<PagedResult<ProductGroup>>("/products", { q, storeId: storeIds, page: 1, size }, apiBaseUrl);
 }
 
 export function getDeals(size = 8, apiBaseUrl?: string) {
   return getJson<DealItem[]>("/deals", { page: 1, size }, apiBaseUrl);
 }
 
-export function getMatchCandidates(size = 100, apiBaseUrl?: string) {
-  return getJson<MatchCandidate[]>("/match-candidates", { page: 1, size }, apiBaseUrl);
+export function getMatchCandidates(page = 1, size = 100, apiBaseUrl?: string) {
+  return getJson<MatchCandidate[]>("/match-candidates", { page, size }, apiBaseUrl);
+}
+
+export async function getAllMatchCandidates(apiBaseUrl?: string) {
+  const size = 500;
+  const maxPages = 50;
+  const rows: MatchCandidate[] = [];
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const pageRows = await getMatchCandidates(page, size, apiBaseUrl);
+    rows.push(...pageRows);
+    if (pageRows.length < size) break;
+  }
+
+  return rows;
 }
 
 export function decideMatchCandidate(id: string, status: "approved" | "rejected", apiBaseUrl?: string) {

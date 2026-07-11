@@ -8,9 +8,14 @@ namespace Zhua.Application.Products;
 /// </summary>
 public interface IProductService
 {
+    /// <summary>
+    /// The grouped product collection as a server-sorted, server-paged envelope. <paramref name="sort"/> is applied
+    /// over the whole filtered set before paging (unknown/null ⇒ the default <c>unitPriceAsc</c>); the applied value
+    /// is echoed back in <see cref="PagedResult{T}.Sort"/>.
+    /// </summary>
     /// <returns><c>null</c> only when <paramref name="categoryId"/> is given but unknown/archived (→ 404).</returns>
-    Task<IReadOnlyList<ProductGroup>?> ListAsync(
-        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size);
+    Task<PagedResult<ProductGroup>?> ListAsync(
+        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size, string? sort);
 
     /// <summary>The group containing <paramref name="productId"/> (its cross-store listings); <c>null</c> if unknown.</summary>
     Task<ProductGroup?> GetGroupAsync(Guid productId);
