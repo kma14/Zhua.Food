@@ -12,4 +12,4 @@ public sealed record PagedResult<T>(
     int Total,
     int TotalPages,
     bool HasMore,
-    string Sort);
+    string? Sort = null);   // the applied sort key when the endpoint sorts server-side; null when it doesn't

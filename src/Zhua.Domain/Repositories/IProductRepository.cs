@@ -25,9 +25,15 @@ public interface IProductRepository
     Task<IReadOnlyList<Product>> FindGroupWithHistoryAsync(
         Guid? itemId, Guid productId, DateTimeOffset since, CancellationToken ct = default);
 
-    /// <summary>Current specials (biggest saving first), paged, with Store loaded.</summary>
+    /// <summary>Current specials matching the supermarket/category/store filters (saving first), paged, Store loaded.</summary>
     Task<IReadOnlyList<Product>> FindSpecialsAsync(
-        Chain? supermarket, int page, int size, CancellationToken ct = default);
+        Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,
+        int page, int size, CancellationToken ct = default);
+
+    /// <summary>Total specials matching the same filters (for the paged envelope's <c>total</c>).</summary>
+    Task<int> CountSpecialsAsync(
+        Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,
+        CancellationToken ct = default);
 
     /// <summary>A single listing (tracked) for a link/unlink write.</summary>
     Task<Product?> GetForUpdateAsync(Guid id, CancellationToken ct = default);

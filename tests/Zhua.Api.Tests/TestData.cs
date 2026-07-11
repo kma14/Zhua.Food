@@ -96,6 +96,10 @@ internal static class TestData
             // Eye fillet only at PAK'nSAVE Botany (for the store-filter test)
             Sp(StoreSeed.PaknSaveBotany, "pns-fillet", "Pams Beef Eye Fillet", 30.00m, EyeFillet,
                 img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5106653.png"),
+            // A current promotion with NO recoverable was-price (Foodstuffs first-seen-on-special) — still a deal;
+            // wasPrice/saving come back null. Unmatched so it doesn't disturb item/category counts.
+            Sp(StoreSeed.PaknSaveBotany, "pns-special-nowas", "Fresh Salmon Portions 1kg", 8.99m, itemId: null,
+                onSpecial: true),
             // Chicken breast only at New World
             Sp(StoreSeed.NewWorldMetro, "nw-chicken", "Tegel Chicken Breast 500g", 9.99m, ChickenBreast,
                 img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png"),
