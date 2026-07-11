@@ -21,10 +21,10 @@ public sealed class ProductsController(IProductService products) : ZhuaControlle
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string? q, [FromQuery] Guid? category, [FromQuery] Guid[]? storeId,
-        [FromQuery] int page = 1, [FromQuery] int size = 20)
+        [FromQuery] int page = 1, [FromQuery] int size = 20, [FromQuery] string? sort = null)
     {
-        var groups = await products.ListAsync(q, category, storeId, page, size);
-        return groups is null ? NotFound() : Ok(groups);
+        var result = await products.ListAsync(q, category, storeId, page, size, sort);
+        return result is null ? NotFound() : Ok(result);
     }
 
     /// <summary>

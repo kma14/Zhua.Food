@@ -22,14 +22,16 @@ public sealed class CategoriesController(ICategoryService categories, IProductSe
 
     /// <summary>
     /// Products inside a category node (its whole subtree), grouped by item — the browse alias of
-    /// GET /products?category={id} (same ProductGroup[] shape). Optional ?storeId= (repeatable). Archived id → 404.
+    /// GET /products?category={id} (same <c>PagedResult&lt;ProductGroup&gt;</c> envelope). Optional ?storeId=
+    /// (repeatable) and ?sort= (unitPriceAsc|priceAsc|nameAsc|discountDesc, default unitPriceAsc). Archived id → 404.
     /// </summary>
     [HttpGet("{id:guid}/products")]
     public async Task<IActionResult> Products(
-        Guid id, [FromQuery] Guid[]? storeId, [FromQuery] int page = 1, [FromQuery] int size = 20)
+        Guid id, [FromQuery] Guid[]? storeId,
+        [FromQuery] int page = 1, [FromQuery] int size = 20, [FromQuery] string? sort = null)
     {
-        var groups = await products.ListAsync(q: null, categoryId: id, storeId, page, size);
-        return groups is null ? NotFound() : Ok(groups);
+        var result = await products.ListAsync(q: null, categoryId: id, storeId, page, size, sort);
+        return result is null ? NotFound() : Ok(result);
     }
 
     /// <summary>Create a curated category. Path/slug are derived from the name (+ parent); path must be unique.</summary>

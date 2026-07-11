@@ -128,12 +128,20 @@ back as **one group with all its listings**. The API computes **no** cheapest/sa
 is the payload and **the client ranks it** (cheapest, nearest, on-special). Unmatched listings are a group of one.
 
 **Query (all optional):** `q` (search the real store name/brand) · `category={id}` (a category node — its whole
-subtree) · `storeId=` (repeatable) · `page` · `size`. No filter ⇒ the whole catalogue, paged. `category` returns
-only matched listings (the item carries the category); an unknown/archived `category` → `404`.
+subtree) · `storeId=` (repeatable) · `page` · `size` · `sort`. No filter ⇒ the whole catalogue, paged. `category`
+returns only matched listings (the item carries the category); an unknown/archived `category` → `404`.
 
-**Response:** `ProductGroup[]`:
+**Sorting (`sort=`, applied server-side over the whole filtered set *before* paging, so pages are globally correct):**
+`unitPriceAsc` (**default** — lowest comparable unit price, falls back to shelf price) · `priceAsc` (lowest shelf
+price) · `nameAsc` (group name A–Z) · `discountDesc` (biggest current saving first). Ascending price keys sort null
+last; an unknown value falls back to the default. Keys derive from each group's **visible** listings (after the
+`storeId` filter). The applied value is echoed in the response `sort`.
+
+**Response:** `PagedResult<ProductGroup>` — a **paged envelope**: `items` is the group array, plus paging fields and
+the applied `sort`. `total` = number of **groups** after the `storeId` filter (not raw listings).
 ```json
-[{
+{
+  "items": [{
   "itemId": "019ef1a2-880e-737b-a6e8-bc376177a9d3", // internal grouping id; null = an unmatched listing
   "description": "Beef Mince 1kg",                  // item caption (D25); client decides usage — see note
   "category": "Beef Mince",                         // item category leaf (denormalized); null if unmatched
@@ -149,8 +157,9 @@ only matched listings (the item carries the category); an unknown/archived `cate
       "name": "Woolworths Beef Mince", "price": 12.00, "isOnSpecial": true, "wasPrice": 15.00,
       "unitPrice": 12.00, "unit": "1kg", … },
     { "id": "dddd…00a2", "store": "New World Metro", "supermarket": "NewWorld", "price": 13.50, "isOnSpecial": false, … }
-  ]
-}]
+  ] }],
+  "page": 1, "size": 30, "total": 408, "totalPages": 14, "hasMore": true, "sort": "unitPriceAsc"
+}
 ```
 > Root holds only **item metadata** (`itemId` + `description` + `category`); everything else is per-listing inside
 > `products[]`. `sku` is the supermarket/source product id from the crawler source (not our internal GUID).
@@ -197,12 +206,14 @@ One **step series per store** from the change-only snapshots (D3). Optional `?da
 The products under a category node (its **whole subtree**), grouped by item — the **browse alias** of
 `GET /products?category={id}`. `id` comes from `GET /categories`.
 
-> **Two equivalent URLs (same `ProductGroup[]`):** `GET /categories/{id}/products` (sub-resource) and
-> `GET /products?category={id}` (filter on the products collection). Use whichever fits the call site.
+> **Two equivalent URLs (same `PagedResult<ProductGroup>` envelope):** `GET /categories/{id}/products` (sub-resource)
+> and `GET /products?category={id}` (filter on the products collection). Use whichever fits the call site.
 
-**Query:** `page`, `size`; optional **`?storeId=`** (repeatable — restrict to those stores; see [Filtering by store](#filtering-by-store-storeid)).
+**Query:** `page`, `size`, `sort` (see [`GET /products`](#get-products--the-product-collection-search--browse) for
+the sort values; default `unitPriceAsc`); optional **`?storeId=`** (repeatable — restrict to those stores; see
+[Filtering by store](#filtering-by-store-storeid)).
 
-**Response:** `ProductGroup[]` — identical shape to [`GET /products`](#get-products--the-product-collection-search--browse).
+**Response:** `PagedResult<ProductGroup>` — identical envelope + sorting to [`GET /products`](#get-products--the-product-collection-search--browse).
 
 > **Mixed units caveat:** a broad node (e.g. the *Beef* aisle) mixes per-kg steaks with per-pack sausages, so each
 > listing's comparable `unitPrice` spans `1kg` and `1ea` — group by the `unit` field, or query a **shelf**
@@ -323,3 +334,4 @@ The whole flow is now backed end-to-end.
 - 2026-07-10 22:39 🧑‍⚖️ Expose `sku` on product listing and match-candidate responses so the review UI can show the supermarket/source SKU instead of our internal GUID.
 - 2026-07-11 01:30 🧑‍⚖️ Add `id` + `sku` to `/deals` (`DealItem`) too — deals had neither, so look-alike specials (same brand/name/size) couldn't be told apart or drilled into.
 - 2026-07-11 02:00 🧑‍⚖️ Rename `SourceSku` → `Sku` everywhere (domain `Product.Sku`, DB column via `RenameSourceSkuToSku` migration, crawlers, matcher, all DTOs/JSON `sku`, tests, docs). Kevin: the `source` prefix is unwanted; "SKU" already means the store's own id. Full rename, not just the API field.
+- 2026-07-11 15:45 🧑‍⚖️ Product list endpoints (`GET /products`, `GET /products?category=`, `GET /categories/{id}/products`) now return a `PagedResult<ProductGroup>` envelope (`items/page/size/total/totalPages/hasMore/sort`) instead of a bare `ProductGroup[]`, with a server-side `sort` (`unitPriceAsc` default · `priceAsc` · `nameAsc` · `discountDesc`) applied over the whole filtered set before paging. `total` = group count after the storeId filter. Front-end (Codex) must switch from reading the array to reading `.items` in lockstep.
