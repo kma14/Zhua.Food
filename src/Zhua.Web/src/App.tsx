@@ -2,10 +2,10 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 
 import {
   createItem,
   decideMatchCandidate,
+  getAllMatchCandidates,
   getCategories,
   getCategoryProducts,
   getDeals,
-  getMatchCandidates,
   getProductGroup,
   getProductPriceHistory,
   getStores,
@@ -19,6 +19,7 @@ import type {
   ProductGroup,
   ProductListing,
   ProductPriceHistory,
+  ProductSort,
   StoreOption,
   Supermarket
 } from "./types";
@@ -27,6 +28,8 @@ type Language = "zh" | "en";
 type ApiSource = "local" | "nas";
 
 const nasApiBaseUrl = "http://192.168.1.5:8080";
+const categoryPageSizeOptions = [10, 20, 30, 50, 100] as const;
+const defaultCategoryPageSize = 30;
 
 const copy = {
   zh: {
@@ -51,7 +54,7 @@ const copy = {
     departmentMetric: "大类",
     aisleMetric: "小类",
     categories: "商品分类",
-    cheapest: "当前分类低价前十",
+    cheapest: "当前分类商品",
     compare: "同品各店报价",
     grouping: "同品说明",
     history: "价格历史",
@@ -105,7 +108,7 @@ const copy = {
     reviewTitle: "人工确认同品匹配",
     reviewIntro: "这里处理还没完全确定的门店商品。确认后，这个真实商品会连到同一个同品组；拒绝后，系统不再推荐这组。",
     woolworthsOnly: "只看 Woolworths",
-    allCandidates: "全部候选",
+    allCandidates: "待匹配商品",
     refresh: "刷新",
     approve: "确认匹配",
     reject: "拒绝",
@@ -121,6 +124,9 @@ const copy = {
     reviewRuleDestination: "右侧 Destination Item 里会显示它已经包含的真实门店商品；确认后左侧商品会加入这个组。",
     reviewRuleReject: "拒绝后，这一对 Product 和 Item 不会再被系统推荐。",
     candidateQueue: "候选队列",
+    productQueue: "商品队列",
+    candidateItems: "候选 Item",
+    candidateCount: "个候选",
     selectedCandidate: "当前候选",
     sourceProduct: "Source Product",
     destinationItem: "Destination Item",
@@ -130,7 +136,15 @@ const copy = {
     expand: "展开",
     collapse: "收起",
     bestStore: "最低价",
-    storeOffers: "门店报价"
+    storeOffers: "门店报价",
+    loadMore: "加载更多",
+    loadedAll: "已显示全部",
+    showingProducts: "已显示",
+    sortBy: "排序",
+    pageSize: "每页",
+    previousPage: "上一页",
+    nextPage: "下一页",
+    pageLabel: "第"
   },
   en: {
     loading: "Connecting to the local price API...",
@@ -154,7 +168,7 @@ const copy = {
     departmentMetric: "Departments",
     aisleMetric: "Aisles",
     categories: "Categories",
-    cheapest: "Cheapest top 10 in category",
+    cheapest: "Products in category",
     compare: "Same-item store prices",
     grouping: "Grouping note",
     history: "Price history",
@@ -208,7 +222,7 @@ const copy = {
     reviewTitle: "Manual same-item review",
     reviewIntro: "Resolve uncertain store listings. Approve links the real listing into a same-item group; reject blocks that suggestion.",
     woolworthsOnly: "Woolworths only",
-    allCandidates: "All candidates",
+    allCandidates: "Products to match",
     refresh: "Refresh",
     approve: "Approve",
     reject: "Reject",
@@ -224,6 +238,9 @@ const copy = {
     reviewRuleDestination: "Destination Item shows the real store products already inside it; approving adds the source product to that group.",
     reviewRuleReject: "Rejecting blocks this Product and Item pair from being suggested again.",
     candidateQueue: "Candidate queue",
+    productQueue: "Product queue",
+    candidateItems: "Candidate Items",
+    candidateCount: "candidates",
     selectedCandidate: "Selected candidate",
     sourceProduct: "Source Product",
     destinationItem: "Destination Item",
@@ -233,7 +250,15 @@ const copy = {
     expand: "Expand",
     collapse: "Collapse",
     bestStore: "Best price",
-    storeOffers: "Store offers"
+    storeOffers: "Store offers",
+    loadMore: "Load more",
+    loadedAll: "All products loaded",
+    showingProducts: "Showing",
+    sortBy: "Sort",
+    pageSize: "Per page",
+    previousPage: "Previous",
+    nextPage: "Next",
+    pageLabel: "Page"
   }
 };
 
@@ -291,6 +316,12 @@ export function App() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [groups, setGroups] = useState<ProductGroup[]>([]);
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [categoryPageSize, setCategoryPageSize] = useState(defaultCategoryPageSize);
+  const [categoryTotal, setCategoryTotal] = useState(0);
+  const [categoryTotalPages, setCategoryTotalPages] = useState(1);
+  const [categoryHasMore, setCategoryHasMore] = useState(false);
+  const [categorySort, setCategorySort] = useState<ProductSort>("unitPriceAsc");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [comparison, setComparison] = useState<ProductGroup | null>(null);
   const [history, setHistory] = useState<ProductPriceHistory | null>(null);
@@ -299,12 +330,12 @@ export function App() {
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [isReviewMode, setIsReviewMode] = useState(false);
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
-  const [reviewWoolworthsOnly, setReviewWoolworthsOnly] = useState(true);
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewActionId, setReviewActionId] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<ProductGroup[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState({
     deals: true,
     search: false,
@@ -333,7 +364,7 @@ export function App() {
     [storeOptions, selectedStoreIds]
   );
   const isStoreFilterActive = selectedStoreIds.length > 0;
-  const rankedGroups = useMemo(() => rankProductGroups(groups, selectedStores), [groups, selectedStores]);
+  const visibleGroups = useMemo(() => prepareProductGroups(groups, selectedStores), [groups, selectedStores]);
   const detailProducts = useMemo(
     () => filterListingsByStores(comparison?.products ?? [], selectedStores),
     [comparison, selectedStores]
@@ -341,25 +372,17 @@ export function App() {
   const selectedListing =
     detailProducts.find((product) => product.id === selectedProductId) ??
     detailProducts[0] ??
-    findListingById(rankedGroups, selectedProductId) ??
+    findListingById(visibleGroups, selectedProductId) ??
     null;
   const visibleDeals = useMemo(() => filterDealsByStores(deals, selectedStores), [deals, selectedStores]);
   const dealsDataDate = useMemo(() => latestDate(visibleDeals.map((deal) => deal.priceAsOf)), [visibleDeals]);
   const totalProducts = categories.reduce((sum, category) => sum + category.totalProductCount, 0);
   const aisleCount = categories.reduce((sum, category) => sum + category.children.length, 0);
-  const visibleMatchCandidates = useMemo(
-    () =>
-      reviewWoolworthsOnly
-        ? matchCandidates.filter((candidate) => candidate.supermarket === "Woolworths")
-        : matchCandidates,
-    [matchCandidates, reviewWoolworthsOnly]
-  );
-
   const loadMatchCandidates = useCallback(async () => {
     setIsReviewLoading(true);
     setReviewError(null);
     try {
-      const rows = await getMatchCandidates(150, apiBaseUrl);
+      const rows = await getAllMatchCandidates(apiBaseUrl);
       setMatchCandidates(rows);
     } catch (err) {
       setReviewError(err instanceof Error ? err.message : t.failed);
@@ -369,6 +392,7 @@ export function App() {
   }, [apiBaseUrl, t.failed]);
 
   function toggleStoreFilter(id: string) {
+    setCategoryPage(1);
     setSelectedStoreIds((current) => {
       if (current.includes(id)) return current.filter((value) => value !== id);
       const next = [...current, id];
@@ -384,8 +408,10 @@ export function App() {
     if (nextSource === apiSource) return;
     setApiSource(nextSource);
     setSelectedStoreIds([]);
+    setCategoryPage(1);
     setSelectedProductId("");
     setSearchResults([]);
+    setSearchTotal(0);
     setHasSearched(false);
     setComparison(null);
     setHistory(null);
@@ -457,11 +483,15 @@ export function App() {
     async function loadProducts() {
       setIsProductsLoading(true);
       try {
-        const rows = await getCategoryProducts(selectedCategoryId, 40, selectedStoreIds, apiBaseUrl);
+        const result = await getCategoryProducts(selectedCategoryId, categoryPage, categoryPageSize, categorySort, selectedStoreIds, apiBaseUrl);
         if (cancelled) return;
-        const ranked = rankProductGroups(rows, selectedStores);
-        setGroups(rows);
-        setSelectedProductId(bestListing(ranked[0], selectedStores)?.id ?? "");
+        const prepared = prepareProductGroups(result.items, selectedStores);
+        setGroups(result.items);
+        setCategoryPage(result.page);
+        setCategoryTotal(result.total);
+        setCategoryTotalPages(Math.max(1, result.totalPages));
+        setCategoryHasMore(result.hasMore);
+        setSelectedProductId(bestListing(prepared[0], selectedStores)?.id ?? "");
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : t.failed);
       } finally {
@@ -474,11 +504,28 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiBaseUrl, selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
+  }, [apiBaseUrl, categoryPage, categoryPageSize, categorySort, selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
+
+  function changeCategoryPage(nextPage: number) {
+    if (isProductsLoading) return;
+    const boundedPage = Math.min(Math.max(1, nextPage), categoryTotalPages);
+    if (boundedPage !== categoryPage) setCategoryPage(boundedPage);
+  }
+
+  function changeCategorySort(nextSort: ProductSort) {
+    setCategorySort(nextSort);
+    setCategoryPage(1);
+  }
+
+  function changeCategoryPageSize(nextSize: number) {
+    setCategoryPageSize(nextSize);
+    setCategoryPage(1);
+  }
 
   useEffect(() => {
     setHasSearched(false);
     setSearchResults([]);
+    setSearchTotal(0);
   }, [selectedStoreIds]);
 
   useEffect(() => {
@@ -524,8 +571,9 @@ export function App() {
     if (!query) return;
 
     setHasSearched(true);
-    const rows = await searchProducts(query, 24, selectedStoreIds, apiBaseUrl);
-    setSearchResults(rows);
+    const result = await searchProducts(query, 24, selectedStoreIds, apiBaseUrl);
+    setSearchResults(result.items);
+    setSearchTotal(result.total);
     setCollapsedSections((current) => ({ ...current, search: false }));
   }
 
@@ -586,19 +634,16 @@ export function App() {
       </section>
 
       {isReviewMode ? (
-        <ReviewWorkspace
-          candidates={visibleMatchCandidates}
+        <ReviewWorkspaceV2
+          candidates={matchCandidates}
           categories={flattenedCategories}
           isLoading={isReviewLoading}
           actionId={reviewActionId}
           error={reviewError}
-          woolworthsOnly={reviewWoolworthsOnly}
-          totalCount={matchCandidates.length}
           language={language}
           apiBaseUrl={apiBaseUrl}
           t={t}
           onRefresh={loadMatchCandidates}
-          onToggleWoolworthsOnly={() => setReviewWoolworthsOnly((value) => !value)}
           onAction={handleCandidateAction}
         />
       ) : (
@@ -630,7 +675,13 @@ export function App() {
                   <strong>{isStoreFilterActive ? `${t.selectedStores} ${selectedStoreIds.length}` : t.allStores}</strong>
                   <small>{isStoreFilterActive ? t.storeFilterPending : t.storeFilterHint}</small>
                 </div>
-                <button className={!isStoreFilterActive ? "active" : ""} onClick={() => setSelectedStoreIds([])}>
+                <button
+                  className={!isStoreFilterActive ? "active" : ""}
+                  onClick={() => {
+                    setCategoryPage(1);
+                    setSelectedStoreIds([]);
+                  }}
+                >
                   {t.allStores}
                 </button>
               </div>
@@ -686,7 +737,7 @@ export function App() {
                   }}
                 >
                   <div className="deal-card-top">
-                    <ProductImage imageUrl={deal.imageUrl} name={deal.product} size="medium" />
+                    <ProductImage imageUrl={imageForDeal(deal)} name={deal.product} size="medium" />
                     <div>
                       <ChainBadge chain={deal.supermarket} />
                       <h3>{deal.product}</h3>
@@ -716,7 +767,7 @@ export function App() {
               className="search-panel"
               eyebrow={t.searchEyebrow}
               title={t.searchTitle}
-              pill={`${searchResults.length} ${t.productCount}`}
+              pill={`${searchTotal.toLocaleString()} ${t.productCount}`}
               collapsed={collapsedSections.search}
               expandLabel={t.expand}
               collapseLabel={t.collapse}
@@ -753,7 +804,7 @@ export function App() {
             className="category-panel"
             eyebrow={t.categories}
             title={selectedCategory ? translateCategoryName(selectedCategory.name, language) : t.cheapest}
-            pill={`${selectedCategory?.totalProductCount.toLocaleString() ?? 0} ${t.productCount}`}
+            pill={`${categoryTotal.toLocaleString()} ${t.productCount}`}
             collapsed={collapsedSections.category}
             expandLabel={t.expand}
             collapseLabel={t.collapse}
@@ -766,6 +817,7 @@ export function App() {
                   key={department.id}
                   className={selectedDepartment?.id === department.id ? "active" : ""}
                   onClick={() => {
+                    setCategoryPage(1);
                     setSelectedDepartmentId(department.id);
                     setSelectedCategoryId(department.children[0]?.id ?? department.id);
                   }}
@@ -782,7 +834,10 @@ export function App() {
                   <button
                     key={category.id}
                     className={selectedCategoryId === category.id ? "active" : ""}
-                    onClick={() => setSelectedCategoryId(category.id)}
+                    onClick={() => {
+                      setCategoryPage(1);
+                      setSelectedCategoryId(category.id);
+                    }}
                   >
                     <strong>{translateCategoryName(category.name, language)}</strong>
                     <span>{category.totalProductCount}</span>
@@ -796,8 +851,34 @@ export function App() {
             <div className="main-grid">
               <section className="table-card">
                 <div className="table-heading">
-                  <h3>{t.cheapest}</h3>
-                  {isProductsLoading && <span>{t.loadingShort}</span>}
+                  <div>
+                    <h3>{t.cheapest}</h3>
+                    <span>
+                      {t.pageLabel} {categoryPage} / {categoryTotalPages} · {t.showingProducts} {visibleGroups.length.toLocaleString()} / {categoryTotal.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="table-controls">
+                    <label className="sort-control">
+                      <span>{t.sortBy}</span>
+                      <select value={categorySort} onChange={(event) => changeCategorySort(event.target.value as ProductSort)}>
+                        {(["unitPriceAsc", "priceAsc", "nameAsc", "discountDesc"] as ProductSort[]).map((sort) => (
+                          <option key={sort} value={sort}>
+                            {formatSortLabel(sort, language)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="sort-control">
+                      <span>{t.pageSize}</span>
+                      <select value={categoryPageSize} onChange={(event) => changeCategoryPageSize(Number(event.target.value))}>
+                        {categoryPageSizeOptions.map((size) => (
+                          <option key={size} value={size}>
+                            {size}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <div className="table-wrap">
                   <table>
@@ -812,7 +893,7 @@ export function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {rankedGroups.slice(0, 10).map((group, index) => {
+                      {visibleGroups.map((group, index) => {
                         const listing = bestListing(group, selectedStores);
                         if (!listing) return null;
                         return (
@@ -822,14 +903,14 @@ export function App() {
                             onClick={() => setSelectedProductId(listing.id)}
                           >
                             <td>
-                              <span className="rank">#{index + 1}</span>
+                              <span className="rank">#{(categoryPage - 1) * categoryPageSize + index + 1}</span>
                             </td>
                             <td>
                               <div className="product-cell">
-                                <ProductImage imageUrl={listing.imageUrl} name={listing.name} size="small" />
+                                <ProductImage imageUrl={imageForListing(listing)} name={listing.name} size="small" />
                                 <div>
                                   <strong>{listing.name}</strong>
-                                  <small>{formatGroupCaption(group, language)}</small>
+                                  <small>{formatListingMeta(listing, group, language)}</small>
                                 </div>
                               </div>
                             </td>
@@ -848,15 +929,40 @@ export function App() {
                     </tbody>
                   </table>
                 </div>
+                {visibleGroups.length === 0 && !isProductsLoading && <p className="empty-state">{t.noResults}</p>}
+                <div className="pagination-bar">
+                  <button onClick={() => changeCategoryPage(categoryPage - 1)} disabled={isProductsLoading || categoryPage <= 1}>
+                    {t.previousPage}
+                  </button>
+                  <div className="page-number-group" aria-label={t.pageLabel}>
+                    {paginationPages(categoryPage, categoryTotalPages).map((page, index) =>
+                      page === "ellipsis" ? (
+                        <span key={`ellipsis-${index}`} className="page-ellipsis">…</span>
+                      ) : (
+                        <button
+                          key={page}
+                          className={page === categoryPage ? "active" : ""}
+                          onClick={() => changeCategoryPage(page)}
+                          disabled={isProductsLoading || page === categoryPage}
+                        >
+                          {page}
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <button onClick={() => changeCategoryPage(categoryPage + 1)} disabled={isProductsLoading || !categoryHasMore}>
+                    {t.nextPage}
+                  </button>
+                </div>
               </section>
 
               <aside className="detail-card">
                 <div className="detail-heading">
-                  <ProductImage imageUrl={selectedListing?.imageUrl ?? firstImage(comparison)} name={selectedListing?.name ?? ""} size="large" />
+                  <ProductImage imageUrl={imageForListing(selectedListing) ?? firstImage(comparison)} name={selectedListing?.name ?? ""} size="large" />
                   <div>
                     <p className="eyebrow">{t.compare}</p>
                     <h3>{selectedListing?.name ?? "..."}</h3>
-                    {comparison && <p>{formatGroupCaption(comparison, language)}</p>}
+                    {selectedListing && comparison && <p>{formatListingMeta(selectedListing, comparison, language)}</p>}
                   </div>
                 </div>
 
@@ -893,6 +999,7 @@ export function App() {
                           </div>
                           <small>
                             <span>{listing.name}</span>
+                            <span>{formatListingMeta(listing, comparison, language)}</span>
                             <span>{formatPriceFreshness(listing, t)}</span>
                           </small>
                         </article>
@@ -970,6 +1077,21 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function paginationPages(currentPage: number, totalPages: number): Array<number | "ellipsis"> {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+  const visible = [...pages]
+    .filter((page) => page >= 1 && page <= totalPages)
+    .sort((a, b) => a - b);
+
+  return visible.flatMap((page, index) => {
+    const previous = visible[index - 1];
+    if (previous && page - previous > 1) return ["ellipsis" as const, page];
+    return [page];
+  });
+}
+
 function CollapsibleSection({
   className,
   eyebrow,
@@ -1037,7 +1159,7 @@ function SearchResultCard({
 
   return (
     <button className="search-result" onClick={onSelect}>
-      <ProductImage imageUrl={listing.imageUrl ?? firstImage(group)} name={listing.name} size="large" />
+      <ProductImage imageUrl={imageForListing(listing) ?? firstImage(group)} name={listing.name} size="large" />
       <span className="search-result-body">
         <strong>{listing.name}</strong>
         <span className="search-meta">{[listing.brand, listing.size, group.category].filter(Boolean).join(" · ") || formatGroupCaption(group, language)}</span>
@@ -1055,6 +1177,458 @@ function SearchResultCard({
         </small>
       </span>
     </button>
+  );
+}
+
+type ReviewProductGroup = {
+  productId: string;
+  productName: string;
+  brand: string | null;
+  size: string | null;
+  supermarket: Supermarket;
+  price: number | null;
+  sku: string | null;
+  topScore: number;
+  candidates: MatchCandidate[];
+};
+
+function ReviewWorkspaceV2({
+  candidates,
+  categories,
+  isLoading,
+  actionId,
+  error,
+  language,
+  apiBaseUrl,
+  t,
+  onRefresh,
+  onAction
+}: {
+  candidates: MatchCandidate[];
+  categories: CategoryNode[];
+  isLoading: boolean;
+  actionId: string | null;
+  error: string | null;
+  language: Language;
+  apiBaseUrl: string;
+  t: (typeof copy)[Language];
+  onRefresh: () => void | Promise<void>;
+  onAction: (id: string, status: "approved" | "rejected") => void;
+}) {
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [sourceGroup, setSourceGroup] = useState<ProductGroup | null>(null);
+  const [destinationGroup, setDestinationGroup] = useState<ProductGroup | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [manualItem, setManualItem] = useState({
+    name: "",
+    description: "",
+    brand: "",
+    size: "",
+    category: ""
+  });
+  const [isCreateItemOpen, setIsCreateItemOpen] = useState(false);
+  const [isCreatingItem, setIsCreatingItem] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const productGroups = useMemo(() => groupMatchCandidates(candidates), [candidates]);
+  const selectedProductGroup = productGroups.find((group) => group.productId === selectedProductId) ?? productGroups[0] ?? null;
+  const selectedCandidate =
+    selectedProductGroup?.candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+    selectedProductGroup?.candidates[0] ??
+    null;
+  const sourceListing = selectedCandidate
+    ? sourceGroup?.products.find((product) => product.id === selectedCandidate.productId) ?? sourceGroup?.products[0] ?? null
+    : null;
+  const destinationListings = destinationGroup ? sortListings(destinationGroup.products) : [];
+  const categoryOptions = useMemo(() => {
+    const options = categories.filter((category) => category.kind !== "Department");
+    return options.length > 0 ? options : categories;
+  }, [categories]);
+
+  useEffect(() => {
+    if (productGroups.length === 0) {
+      setSelectedProductId(null);
+      setSelectedCandidateId(null);
+      return;
+    }
+    if (!selectedProductId || !productGroups.some((group) => group.productId === selectedProductId)) {
+      const firstGroup = productGroups[0];
+      setSelectedProductId(firstGroup.productId);
+      setSelectedCandidateId(firstGroup.candidates[0]?.id ?? null);
+    }
+  }, [productGroups, selectedProductId]);
+
+  useEffect(() => {
+    if (!selectedProductGroup) return;
+    if (!selectedCandidateId || !selectedProductGroup.candidates.some((candidate) => candidate.id === selectedCandidateId)) {
+      setSelectedCandidateId(selectedProductGroup.candidates[0]?.id ?? null);
+    }
+  }, [selectedCandidateId, selectedProductGroup]);
+
+  useEffect(() => {
+    if (!selectedCandidate) {
+      setSourceGroup(null);
+      setDestinationGroup(null);
+      setCreateError(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadReviewDetail() {
+      setIsDetailLoading(true);
+      setDetailError(null);
+      try {
+        const [source, destinationMatches] = await Promise.all([
+          getProductGroup(selectedCandidate.productId, apiBaseUrl),
+          searchProducts(selectedCandidate.candidateItem, 100, [], apiBaseUrl)
+        ]);
+        if (cancelled) return;
+        setSourceGroup(source);
+        setDestinationGroup(destinationMatches.items.find((group) => group.itemId === selectedCandidate.candidateItemId) ?? null);
+      } catch (err) {
+        if (cancelled) return;
+        setSourceGroup(null);
+        setDestinationGroup(null);
+        setDetailError(err instanceof Error ? err.message : t.failed);
+      } finally {
+        if (!cancelled) setIsDetailLoading(false);
+      }
+    }
+
+    void loadReviewDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, selectedCandidate, t.failed]);
+
+  useEffect(() => {
+    if (!selectedCandidate) return;
+    const name = sourceListing?.name ?? selectedCandidate.productName;
+    const category = destinationGroup?.category ?? sourceGroup?.category ?? categoryOptions[0]?.name ?? "";
+    setManualItem({
+      name,
+      description: name,
+      brand: sourceListing?.brand ?? selectedCandidate.brand ?? "",
+      size: sourceListing?.size ?? selectedCandidate.size ?? "",
+      category
+    });
+    setCreateError(null);
+  }, [categoryOptions, destinationGroup?.category, selectedCandidate, sourceGroup?.category, sourceListing]);
+
+  async function handleCreateItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCandidate) return;
+
+    const name = manualItem.name.trim();
+    const category = manualItem.category.trim();
+    if (!name) {
+      setCreateError(t.itemNameRequired);
+      return;
+    }
+    if (!category) {
+      setCreateError(t.categoryRequired);
+      return;
+    }
+
+    setIsCreatingItem(true);
+    setCreateError(null);
+    try {
+      const item = await createItem(
+        {
+          name,
+          description: manualItem.description.trim() || null,
+          brand: manualItem.brand.trim() || null,
+          size: manualItem.size.trim() || null,
+          category
+        },
+        apiBaseUrl
+      );
+      await linkProductToItem(selectedCandidate.productId, item.id, apiBaseUrl);
+      await onRefresh();
+      setIsCreateItemOpen(false);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : t.failed);
+    } finally {
+      setIsCreatingItem(false);
+    }
+  }
+
+  return (
+    <section className="panel review-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">{t.reviewMode}</p>
+          <h2>{t.reviewTitle}</h2>
+          <p className="review-intro">{t.reviewIntro}</p>
+        </div>
+        <div className="review-actions">
+          <button onClick={onRefresh}>{t.refresh}</button>
+        </div>
+      </div>
+
+      <div className="review-rules">
+        <strong>{t.reviewRulesTitle}</strong>
+        <ul>
+          <li>{t.reviewRuleBrandSize}</li>
+          <li>{t.reviewRuleVariant}</li>
+          <li>{t.reviewRuleDestination}</li>
+          <li>{t.reviewRuleReject}</li>
+        </ul>
+      </div>
+
+      {error && <p className="empty-state error-card">{error}</p>}
+      {isLoading && <p className="empty-state">{t.reviewLoading}</p>}
+      {!isLoading && productGroups.length === 0 && <p className="empty-state">{t.noCandidates}</p>}
+
+      {productGroups.length > 0 && (
+        <div className="review-workspace">
+          <aside className="review-product-column">
+            {selectedCandidate && (
+              <section className="review-source-card">
+                <p className="eyebrow">{t.sourceProduct}</p>
+                <ProductImage imageUrl={imageForListing(sourceListing)} name={selectedCandidate.productName} size="large" />
+                <h3>{sourceListing?.name ?? selectedCandidate.productName}</h3>
+                <p className="review-meta">
+                  <ChainBadge chain={selectedCandidate.supermarket} />
+                  <span>{sourceListing ? formatStoreBranch(sourceListing.store, sourceListing.supermarket, language) : selectedCandidate.supermarket}</span>
+                  <span>{sourceListing?.brand ?? selectedCandidate.brand ?? "-"}</span>
+                  {(sourceListing?.size ?? selectedCandidate.size) && <span>{sourceListing?.size ?? selectedCandidate.size}</span>}
+                </p>
+                <p className="identity-line">{formatProductIdentity(sourceListing?.sku ?? sourceListing?.sourceSku ?? selectedCandidate.sku ?? selectedCandidate.sourceSku, selectedCandidate.productId, t)}</p>
+                <strong className="match-price">{formatMaybeCurrency(sourceListing?.price ?? selectedCandidate.price)}</strong>
+                {sourceListing && <small>{formatUnit(sourceListing.unitPrice, sourceListing.unit)}</small>}
+              </section>
+            )}
+
+            <section className="review-queue">
+              <div className="review-subheading">
+                <p className="eyebrow">{t.productQueue}</p>
+                <strong>{productGroups.length.toLocaleString()}</strong>
+              </div>
+              <div className="review-queue-list">
+                {productGroups.map((group) => (
+                  <button
+                    key={group.productId}
+                    className={group.productId === selectedProductGroup?.productId ? "active" : ""}
+                    onClick={() => {
+                      setSelectedProductId(group.productId);
+                      setSelectedCandidateId(group.candidates[0]?.id ?? null);
+                    }}
+                  >
+                    <span>
+                      <strong>{group.productName}</strong>
+                      <small>{group.brand || "-"}{group.size ? ` · ${group.size}` : ""}</small>
+                      <small>{formatProductIdentity(group.sku, group.productId, t)}</small>
+                    </span>
+                    <span className="review-score-stack">
+                      <span className="review-score-pill">{formatScore(group.topScore)}</span>
+                      <small>{group.candidates.length} {t.candidateCount}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </aside>
+
+          {selectedProductGroup && (
+            <section className="review-candidate-column">
+              <div className="review-subheading">
+                <p className="eyebrow">{t.candidateItems}</p>
+                <strong>{selectedProductGroup.candidates.length.toLocaleString()}</strong>
+              </div>
+              <div className="candidate-item-list">
+                {selectedProductGroup.candidates.map((candidate) => (
+                  <article
+                    key={candidate.id}
+                    role="button"
+                    tabIndex={0}
+                    className={`candidate-item-card ${candidate.id === selectedCandidate?.id ? "active" : ""}`}
+                    onClick={() => setSelectedCandidateId(candidate.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      setSelectedCandidateId(candidate.id);
+                    }}
+                  >
+                    <span className="candidate-item-card-title">
+                      <strong>{candidate.candidateItem}</strong>
+                      <span className="review-score-pill">{formatScore(candidate.score)}</span>
+                    </span>
+                    {candidate.id === selectedCandidate?.id && (
+                      <p className="review-meta candidate-item-meta">
+                        <span>{destinationGroup?.category ?? t.category}</span>
+                      </p>
+                    )}
+                    <MatchReasonEvidence
+                      reason={candidate.reason}
+                      language={language}
+                      brand={candidate.brand}
+                      size={candidate.size}
+                      compact
+                    />
+                    {candidate.id === selectedCandidate?.id && (
+                      <span className="review-card-actions candidate-actions">
+                        <button
+                          type="button"
+                          className="candidate-action secondary-button"
+                          disabled={isCreatingItem || actionId === candidate.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setCreateError(null);
+                            setIsCreateItemOpen(true);
+                          }}
+                        >
+                          {t.createItemTitle}
+                        </button>
+                        <button
+                          type="button"
+                          className="candidate-action reject-button"
+                          disabled={actionId === candidate.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onAction(candidate.id, "rejected");
+                          }}
+                        >
+                          {t.reject}
+                        </button>
+                        <button
+                          type="button"
+                          className="candidate-action approve-button"
+                          disabled={actionId === candidate.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onAction(candidate.id, "approved");
+                          }}
+                        >
+                          {t.approve}
+                        </button>
+                      </span>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {selectedCandidate && (
+            <section className="review-item-column">
+              {isDetailLoading && <p className="empty-state">{t.detailLoading}</p>}
+              {detailError && <p className="empty-state error-card">{detailError}</p>}
+
+              <section className="destination-products review-item-products">
+                <div className="review-subheading">
+                  <p className="eyebrow">{t.currentItemProducts}</p>
+                  <strong>{destinationListings.length.toLocaleString()}</strong>
+                </div>
+                {destinationListings.length === 0 ? (
+                  <p className="empty-state">{t.destinationMissing}</p>
+                ) : (
+                  <div className="destination-product-list">
+                    {destinationListings.map((listing) => (
+                      <article key={listing.id} className="destination-product-row">
+                        <ProductImage imageUrl={imageForListing(listing)} name={listing.name} size="medium" />
+                        <div>
+                          <strong>{listing.name}</strong>
+                          <p className="review-meta">
+                            <ChainBadge chain={listing.supermarket} />
+                            <span>{formatStoreBranch(listing.store, listing.supermarket, language)}</span>
+                            {listing.brand && <span>{listing.brand}</span>}
+                            {listing.size && <span>{listing.size}</span>}
+                          </p>
+                          <p className="identity-line">{formatProductIdentity(listing.sku ?? listing.sourceSku, listing.id, t)}</p>
+                        </div>
+                        <div className="destination-price">
+                          <strong>{formatMaybeCurrency(listing.price)}</strong>
+                          <small>{formatUnit(listing.unitPrice, listing.unit)}</small>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </section>
+          )}
+
+          {selectedCandidate && isCreateItemOpen && (
+            <div className="modal-backdrop" onMouseDown={() => setIsCreateItemOpen(false)}>
+              <section
+                className="create-item-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="create-item-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="modal-heading">
+                  <div>
+                    <p className="eyebrow">{t.createItemTitle}</p>
+                    <h3 id="create-item-title">{t.createItemTitle}</h3>
+                    <p>{t.createItemHint}</p>
+                  </div>
+                  <button className="modal-close" type="button" onClick={() => setIsCreateItemOpen(false)}>
+                    {language === "zh" ? "关闭" : "Close"}
+                  </button>
+                </div>
+                <form className="create-item-form" onSubmit={handleCreateItem}>
+                  <label className="form-field wide">
+                    <span>{t.createItemName}</span>
+                    <input
+                      value={manualItem.name}
+                      onChange={(event) => setManualItem((current) => ({ ...current, name: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field wide">
+                    <span>{t.createItemDescription}</span>
+                    <input
+                      value={manualItem.description}
+                      onChange={(event) => setManualItem((current) => ({ ...current, description: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>{t.createItemBrand}</span>
+                    <input
+                      value={manualItem.brand}
+                      onChange={(event) => setManualItem((current) => ({ ...current, brand: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>{t.createItemSize}</span>
+                    <input
+                      value={manualItem.size}
+                      onChange={(event) => setManualItem((current) => ({ ...current, size: event.target.value }))}
+                    />
+                  </label>
+                  <label className="form-field wide">
+                    <span>{t.createItemCategory}</span>
+                    <select
+                      value={manualItem.category}
+                      onChange={(event) => setManualItem((current) => ({ ...current, category: event.target.value }))}
+                    >
+                      <option value="">{t.categoryRequired}</option>
+                      {categoryOptions.map((category) => (
+                        <option key={category.id} value={category.name}>
+                          {formatReviewCategoryOption(category, language)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {createError && <p className="create-item-error">{createError}</p>}
+                  <div className="create-item-actions">
+                    <button type="button" onClick={() => setIsCreateItemOpen(false)}>
+                      {language === "zh" ? "取消" : "Cancel"}
+                    </button>
+                    <button className="approve-button" disabled={isCreatingItem || actionId === selectedCandidate.id}>
+                      {t.createAndLink}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1087,6 +1661,7 @@ function ReviewWorkspace({
   onToggleWoolworthsOnly: () => void;
   onAction: (id: string, status: "approved" | "rejected") => void;
 }) {
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [sourceGroup, setSourceGroup] = useState<ProductGroup | null>(null);
   const [destinationGroup, setDestinationGroup] = useState<ProductGroup | null>(null);
@@ -1102,7 +1677,12 @@ function ReviewWorkspace({
   const [isCreatingItem, setIsCreatingItem] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const selectedCandidate = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? candidates[0] ?? null;
+  const candidateGroups = useMemo(() => groupMatchCandidates(candidates), [candidates]);
+  const selectedProductGroup = candidateGroups.find((group) => group.productId === selectedProductId) ?? candidateGroups[0] ?? null;
+  const selectedCandidate =
+    selectedProductGroup?.candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+    selectedProductGroup?.candidates[0] ??
+    null;
   const sourceListing = selectedCandidate
     ? sourceGroup?.products.find((product) => product.id === selectedCandidate.productId) ?? sourceGroup?.products[0] ?? null
     : null;
@@ -1113,14 +1693,24 @@ function ReviewWorkspace({
   }, [categories]);
 
   useEffect(() => {
-    if (candidates.length === 0) {
+    if (candidateGroups.length === 0) {
+      setSelectedProductId(null);
       setSelectedCandidateId(null);
       return;
     }
-    if (!selectedCandidateId || !candidates.some((candidate) => candidate.id === selectedCandidateId)) {
-      setSelectedCandidateId(candidates[0].id);
+    if (!selectedProductId || !candidateGroups.some((group) => group.productId === selectedProductId)) {
+      const firstGroup = candidateGroups[0];
+      setSelectedProductId(firstGroup.productId);
+      setSelectedCandidateId(firstGroup.candidates[0]?.id ?? null);
     }
-  }, [candidates, selectedCandidateId]);
+  }, [candidateGroups, selectedProductId]);
+
+  useEffect(() => {
+    if (!selectedProductGroup) return;
+    if (!selectedCandidateId || !selectedProductGroup.candidates.some((candidate) => candidate.id === selectedCandidateId)) {
+      setSelectedCandidateId(selectedProductGroup.candidates[0]?.id ?? null);
+    }
+  }, [selectedCandidateId, selectedProductGroup]);
 
   useEffect(() => {
     if (!selectedCandidate) {
@@ -1141,7 +1731,7 @@ function ReviewWorkspace({
         ]);
         if (cancelled) return;
         setSourceGroup(source);
-        setDestinationGroup(destinationMatches.find((group) => group.itemId === selectedCandidate.candidateItemId) ?? null);
+        setDestinationGroup(destinationMatches.items.find((group) => group.itemId === selectedCandidate.candidateItemId) ?? null);
       } catch (err) {
         if (cancelled) return;
         setSourceGroup(null);
@@ -1286,7 +1876,7 @@ function ReviewWorkspace({
                 <section className="match-side-card source">
                   <p className="eyebrow">{t.sourceProduct}</p>
                   <div className="match-product-hero">
-                    <ProductImage imageUrl={sourceListing?.imageUrl} name={selectedCandidate.productName} size="large" />
+                    <ProductImage imageUrl={imageForListing(sourceListing)} name={selectedCandidate.productName} size="large" />
                     <div>
                       <h3>{sourceListing?.name ?? selectedCandidate.productName}</h3>
                       <p className="review-meta">
@@ -1307,11 +1897,11 @@ function ReviewWorkspace({
                   <h3>{destinationGroup?.description ?? selectedCandidate.candidateItem}</h3>
                   <p className="review-meta">
                     <span>{destinationGroup?.category ?? t.category}</span>
-                    {selectedCandidate.reason && <span>{selectedCandidate.reason}</span>}
+                    <span>{formatMatchReason(selectedCandidate.reason, language)}</span>
                   </p>
                   <div className="review-reason compact">
                     <strong>{t.matchReason}</strong>
-                    <span>{selectedCandidate.reason || "-"}</span>
+                    <span>{formatMatchReason(selectedCandidate.reason, language)}</span>
                   </div>
                 </section>
               </div>
@@ -1327,7 +1917,7 @@ function ReviewWorkspace({
                   <div className="destination-product-list">
                     {destinationListings.map((listing) => (
                       <article key={listing.id} className="destination-product-row">
-                        <ProductImage imageUrl={listing.imageUrl} name={listing.name} size="small" />
+                        <ProductImage imageUrl={imageForListing(listing)} name={listing.name} size="small" />
                         <div>
                           <strong>{listing.name}</strong>
                           <p className="review-meta">
@@ -1464,8 +2054,32 @@ function ProductImage({
   );
 }
 
+function imageForListing(listing: ProductListing | null | undefined) {
+  if (!listing) return null;
+  return listing.imageUrl ?? foodstuffsImageUrl(listing.supermarket, listing.sku ?? listing.sourceSku);
+}
+
+function imageForDeal(deal: DealItem) {
+  return deal.imageUrl ?? foodstuffsImageUrl(deal.supermarket, deal.sku);
+}
+
+function foodstuffsImageUrl(supermarket: Supermarket, sku: string | null | undefined) {
+  if (supermarket === "Woolworths" || !sku) return null;
+  const productId = sku.match(/^\d+/)?.[0];
+  return productId ? `https://a.fsimg.co.nz/product/retail/fan/image/400x400/${productId}.png` : null;
+}
+
 function ChainBadge({ chain }: { chain: Supermarket }) {
   return <span className={`chain-badge ${chainClass[chain]}`}>{formatChain(chain)}</span>;
+}
+
+function prepareProductGroups(groups: ProductGroup[], selectedStores: StoreOption[]) {
+  return groups
+    .map((group) => ({
+      ...group,
+      products: filterListingsByStores(group.products, selectedStores)
+    }))
+    .filter((group) => group.products.length > 0);
 }
 
 function rankProductGroups(groups: ProductGroup[], selectedStores: StoreOption[]) {
@@ -1528,12 +2142,183 @@ function findListingById(groups: ProductGroup[], productId: string) {
 }
 
 function firstImage(group: ProductGroup | null) {
-  return group?.products.find((product) => product.imageUrl)?.imageUrl ?? null;
+  const product = group?.products.find((listing) => imageForListing(listing));
+  return product ? imageForListing(product) : null;
+}
+
+function groupMatchCandidates(candidates: MatchCandidate[]): ReviewProductGroup[] {
+  const groups = new Map<string, ReviewProductGroup>();
+  candidates.forEach((candidate) => {
+    const existing = groups.get(candidate.productId);
+    if (existing) {
+      existing.candidates.push(candidate);
+      existing.topScore = Math.max(existing.topScore, candidate.score);
+      return;
+    }
+    groups.set(candidate.productId, {
+      productId: candidate.productId,
+      productName: candidate.productName,
+      brand: candidate.brand,
+      size: candidate.size,
+      supermarket: candidate.supermarket,
+      price: candidate.price,
+      sku: candidate.sku ?? candidate.sourceSku ?? null,
+      topScore: candidate.score,
+      candidates: [candidate]
+    });
+  });
+
+  return [...groups.values()].sort((a, b) => {
+    const score = b.topScore - a.topScore;
+    if (score !== 0) return score;
+    const count = b.candidates.length - a.candidates.length;
+    if (count !== 0) return count;
+    return a.productName.localeCompare(b.productName);
+  });
 }
 
 function formatProductIdentity(sku: string | null | undefined, _productId: string, t: (typeof copy)[Language]) {
   if (sku) return `${t.sku}: ${sku}`;
   return t.skuMissing;
+}
+
+function formatSortLabel(sort: ProductSort, language: Language) {
+  const labels: Record<ProductSort, Record<Language, string>> = {
+    unitPriceAsc: { zh: "单位价最低", en: "Lowest unit price" },
+    priceAsc: { zh: "标价最低", en: "Lowest shelf price" },
+    nameAsc: { zh: "名称 A-Z", en: "Name A-Z" },
+    discountDesc: { zh: "省钱最多", en: "Biggest saving" }
+  };
+  return labels[sort][language];
+}
+
+function MatchReasonEvidence({
+  reason,
+  language,
+  brand,
+  size,
+  compact = false
+}: {
+  reason: string | null | undefined;
+  language: Language;
+  brand: string | null | undefined;
+  size: string | null | undefined;
+  compact?: boolean;
+}) {
+  const evidence = formatMatchEvidence(reason, language, brand, size);
+  return (
+    <ul className={`match-evidence${compact ? " compact" : ""}`}>
+      {evidence.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function cleanMatchReason(reason: string | null | undefined) {
+  if (!reason?.trim()) return "-";
+
+  return reason
+    .replace(/;\s*ambiguous\s*\(\d+\s*candidates?\)/gi, "")
+    .replace(/\s*ambiguous\s*\(\d+\s*candidates?\)/gi, "")
+    .trim();
+}
+
+function formatMatchEvidence(reason: string | null | undefined, language: Language, brand?: string | null, size?: string | null) {
+  const normalized = cleanMatchReason(reason);
+  if (normalized === "-") return ["-"];
+
+  const pieces: string[] = [];
+  if (/brand\+size match/i.test(normalized)) {
+    pieces.push(
+      brand
+        ? language === "zh"
+          ? `品牌同为 ${brand}`
+          : `Same brand: ${brand}`
+        : language === "zh"
+          ? "品牌一致"
+          : "Brand matches"
+    );
+    pieces.push(
+      size
+        ? language === "zh"
+          ? `规格同为 ${size}`
+          : `Same size: ${size}`
+        : language === "zh"
+          ? "规格一致"
+          : "Size matches"
+    );
+  } else {
+    if (/\bbrand\b/i.test(normalized)) {
+      pieces.push(
+        brand
+          ? language === "zh"
+            ? `品牌同为 ${brand}`
+            : `Same brand: ${brand}`
+          : language === "zh"
+            ? "品牌一致"
+            : "Brand matches"
+      );
+    }
+    if (/\bsize\b/i.test(normalized)) {
+      pieces.push(
+        size
+          ? language === "zh"
+            ? `规格同为 ${size}`
+            : `Same size: ${size}`
+          : language === "zh"
+            ? "规格一致"
+            : "Size matches"
+      );
+    }
+  }
+
+  const overlap = normalized.match(/name overlap\s+([0-9.]+)/i);
+  if (overlap) {
+    const score = Number.parseFloat(overlap[1]);
+    const display = Number.isFinite(score) ? `${Math.round(score * 100)}%` : overlap[1];
+    pieces.push(language === "zh" ? `名称重合 ${display}` : `Name overlap: ${display}`);
+  }
+
+  const remainder = normalized
+    .replace(/brand\+size match;?/gi, "")
+    .replace(/name overlap\s+[0-9.]+;?/gi, "")
+    .replace(/;+$/g, "")
+    .trim();
+
+  if (remainder && pieces.length === 0) pieces.push(remainder);
+  if (remainder && pieces.length > 0 && !pieces.includes(remainder)) pieces.push(remainder);
+  return pieces.length > 0 ? pieces : ["-"];
+}
+
+function formatMatchReason(reason: string | null | undefined, language: Language) {
+  const normalized = cleanMatchReason(reason);
+  if (normalized === "-") return "-";
+
+  const pieces: string[] = [];
+  if (/brand\+size match/i.test(normalized)) {
+    pieces.push(language === "zh" ? "品牌和规格一致" : "brand and size match");
+  } else {
+    if (/\bbrand\b/i.test(normalized)) pieces.push(language === "zh" ? "品牌一致" : "brand matches");
+    if (/\bsize\b/i.test(normalized)) pieces.push(language === "zh" ? "规格一致" : "size matches");
+  }
+
+  const overlap = normalized.match(/name overlap\s+([0-9.]+)/i);
+  if (overlap) {
+    const score = Number.parseFloat(overlap[1]);
+    const display = Number.isFinite(score) ? `${Math.round(score * 100)}%` : overlap[1];
+    pieces.push(language === "zh" ? `名称重合 ${display}` : `name overlap ${display}`);
+  }
+
+  const remainder = normalized
+    .replace(/brand\+size match;?/gi, "")
+    .replace(/name overlap\s+[0-9.]+;?/gi, "")
+    .replace(/;+$/g, "")
+    .trim();
+
+  if (remainder && pieces.length === 0) return remainder;
+  if (remainder) pieces.push(remainder);
+  return pieces.length > 0 ? pieces.join(language === "zh" ? "，" : ", ") : "-";
 }
 
 function flattenCategories(categories: CategoryNode[]): CategoryNode[] {
@@ -1593,6 +2378,12 @@ function formatGroupCaption(group: ProductGroup, language: Language) {
   const parts = [group.description, group.category].filter(Boolean);
   if (parts.length === 0) return language === "zh" ? "未归入同品组" : "Ungrouped listing";
   return parts.join(" · ");
+}
+
+function formatListingMeta(listing: ProductListing, group: ProductGroup | null | undefined, language: Language) {
+  const category = group?.category ? translateCategoryName(group.category, language) : null;
+  const parts = [listing.brand, listing.size, category].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : group ? formatGroupCaption(group, language) : "";
 }
 
 function formatPriceFreshness(listing: ProductListing, t: (typeof copy)[Language]) {
