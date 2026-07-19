@@ -1,4 +1,5 @@
 using Zhua.Domain.Entities;
+using Zhua.Domain.Enums;
 using Zhua.Domain.ValueObjects;
 
 namespace Zhua.Crawling.Tests;
@@ -10,9 +11,12 @@ public class ProductTests
 
     private static Product NewProduct() => new() { Sku = "SKU", RawName = "x", FirstSeenAt = T0 };
 
-    private static ProductObservation Milk(decimal price, bool onSpecial = false, decimal? nonSpecial = null) =>
+    private static ProductObservation Milk(
+        decimal price, bool onSpecial = false, decimal? nonSpecial = null,
+        PromoType promo = PromoType.None, decimal? memberPrice = null, int? multiQty = null, decimal? multiTotal = null) =>
         new("Anchor Blue Milk 2L", "Anchor", "2L", "9400000000001", null, null,
-            price, nonSpecial, onSpecial, price / 2, "1L");
+            price, nonSpecial, onSpecial ? PromoType.Special : promo, memberPrice, multiQty, multiTotal,
+            price / 2, "1L");
 
     [Fact]
     public void First_observation_counts_as_a_change_and_sets_fields()
@@ -71,7 +75,55 @@ public class ProductTests
         Assert.Equal(2, p.PriceSnapshots.Count);
     }
 
-    // --- Foodstuffs was-price reconstruction: source flags a special but publishes no was-price (D13 gap). ---
+    // --- Promo-type model (docs/internals/promotions-model.md, B2): type + member/multibuy are in the D3 tuple. ---
+
+    [Fact]
+    public void Member_price_is_not_on_special_and_its_change_appends_a_snapshot()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m), T0);
+
+        var snap = p.ApplyObservation(
+            Milk(3.50m, promo: PromoType.MemberPrice, memberPrice: 2.99m), T0.AddHours(12));
+
+        Assert.NotNull(snap);                            // member price appearing IS a tuple change
+        Assert.False(p.IsOnSpecial);                     // …but not a public special (decision C)
+        Assert.Equal(PromoType.MemberPrice, p.PromoType);
+        Assert.Equal(2.99m, p.MemberPrice);
+        Assert.Equal(3.50m, p.CurrentPrice);             // shelf price untouched
+        Assert.Null(p.CurrentNonSpecialPrice);           // no D23 reconstruction for member deals
+    }
+
+    [Fact]
+    public void Promo_type_flip_at_the_same_price_is_a_change()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(2.99m, promo: PromoType.MemberPrice, memberPrice: 2.50m), T0);
+
+        var snap = p.ApplyObservation(Milk(2.99m, onSpecial: true), T0.AddHours(12));
+
+        Assert.NotNull(snap);                            // member→special at the same shelf price snapshots (B2)
+        Assert.Equal(PromoType.Special, snap!.PromoType);
+        Assert.Null(p.MemberPrice);
+        Assert.True(p.IsOnSpecial);
+    }
+
+    [Fact]
+    public void Multibuy_pair_changes_append_a_snapshot()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m, promo: PromoType.Multibuy, multiQty: 3, multiTotal: 9.00m), T0);
+
+        var snap = p.ApplyObservation(
+            Milk(3.50m, promo: PromoType.Multibuy, multiQty: 2, multiTotal: 6.50m), T0.AddHours(12));
+
+        Assert.NotNull(snap);
+        Assert.Equal(2, p.MultibuyQuantity);
+        Assert.Equal(6.50m, p.MultibuyTotal);
+        Assert.False(p.IsOnSpecial);                     // multibuy is not a public special either
+    }
+
+    // --- Foodstuffs was-price reconstruction: source flags a special but publishes no was-price (D23). ---
 
     [Fact]
     public void Foodstuffs_special_reconstructs_was_price_from_prior_shelf_price()

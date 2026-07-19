@@ -1,7 +1,40 @@
 {
   "products": {
-    "totalItems": 3,
+    "totalItems": 5,
     "items": [
+      {
+        "type": "Product",
+        "sku": "6006733",
+        "name": "Ocean Blue Smoked Salmon Cold Smoked",
+        "brand": "Ocean Blue",
+        "barcode": "9343005001575",
+        "images": { "big": "https://img/salmon.jpg" },
+        "price": {
+          "originalPrice": 12.6,
+          "salePrice": 11.95,
+          "savePrice": 0.65,
+          "isSpecial": true,
+          "isClubPrice": true
+        },
+        "size": { "volumeSize": "150g", "cupListPrice": 84.0, "cupPrice": 79.67, "cupMeasure": "1kg" },
+        "productTag": { "tagType": "IsClubPrice", "multiBuy": null }
+      },
+      {
+        "type": "Product",
+        "sku": "777777",
+        "name": "Woolworths Raw Prawns Tail On",
+        "brand": "Woolworths",
+        "barcode": "9400000777777",
+        "images": { "big": "https://img/prawns.jpg" },
+        "price": {
+          "originalPrice": 9.0,
+          "salePrice": 9.0,
+          "isSpecial": false,
+          "isClubPrice": false
+        },
+        "size": { "volumeSize": "250g", "cupPrice": 36.0, "cupMeasure": "1kg" },
+        "productTag": { "tagType": "IsGreatPriceMultiBuy", "multiBuy": { "quantity": 3.0, "value": 20.0, "link": "/shop/productgroup/189827" } }
+      },
       {
         "type": "Product",
         "sku": "265262",

@@ -26,10 +26,13 @@ import type {
 
 type Language = "zh" | "en";
 type ApiSource = "local" | "nas";
+type DealCategoryScope = "all" | "selected";
 
-const nasApiBaseUrl = "http://192.168.1.5:8080";
+const nasApiBaseUrl = "http://jarvis:8080";
 const categoryPageSizeOptions = [10, 20, 30, 50, 100] as const;
 const defaultCategoryPageSize = 30;
+const dealPageSizeOptions = [10, 20, 24, 50, 100] as const;
+const defaultDealPageSize = 10;
 
 const copy = {
   zh: {
@@ -322,10 +325,18 @@ export function App() {
   const [categoryTotalPages, setCategoryTotalPages] = useState(1);
   const [categoryHasMore, setCategoryHasMore] = useState(false);
   const [categorySort, setCategorySort] = useState<ProductSort>("unitPriceAsc");
+  const [categoryRefreshKey, setCategoryRefreshKey] = useState(0);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [comparison, setComparison] = useState<ProductGroup | null>(null);
   const [history, setHistory] = useState<ProductPriceHistory | null>(null);
   const [deals, setDeals] = useState<DealItem[]>([]);
+  const [dealPage, setDealPage] = useState(1);
+  const [dealPageSize, setDealPageSize] = useState(defaultDealPageSize);
+  const [dealTotal, setDealTotal] = useState(0);
+  const [dealTotalPages, setDealTotalPages] = useState(1);
+  const [dealHasMore, setDealHasMore] = useState(false);
+  const [dealRefreshKey, setDealRefreshKey] = useState(0);
+  const [dealCategoryScope, setDealCategoryScope] = useState<DealCategoryScope>("selected");
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [isReviewMode, setIsReviewMode] = useState(false);
@@ -337,7 +348,7 @@ export function App() {
   const [searchResults, setSearchResults] = useState<ProductGroup[]>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState({
-    deals: true,
+    deals: false,
     search: false,
     category: false,
     coverage: true
@@ -345,6 +356,7 @@ export function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isProductsLoading, setIsProductsLoading] = useState(false);
+  const [isDealsLoading, setIsDealsLoading] = useState(false);
   const [isProductLoading, setIsProductLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = copy[language];
@@ -374,7 +386,7 @@ export function App() {
     detailProducts[0] ??
     findListingById(visibleGroups, selectedProductId) ??
     null;
-  const visibleDeals = useMemo(() => filterDealsByStores(deals, selectedStores), [deals, selectedStores]);
+  const visibleDeals = useMemo(() => sortDeals(deals), [deals]);
   const dealsDataDate = useMemo(() => latestDate(visibleDeals.map((deal) => deal.priceAsOf)), [visibleDeals]);
   const totalProducts = categories.reduce((sum, category) => sum + category.totalProductCount, 0);
   const aisleCount = categories.reduce((sum, category) => sum + category.children.length, 0);
@@ -393,6 +405,7 @@ export function App() {
 
   function toggleStoreFilter(id: string) {
     setCategoryPage(1);
+    setDealPage(1);
     setSelectedStoreIds((current) => {
       if (current.includes(id)) return current.filter((value) => value !== id);
       const next = [...current, id];
@@ -409,6 +422,7 @@ export function App() {
     setApiSource(nextSource);
     setSelectedStoreIds([]);
     setCategoryPage(1);
+    setDealPage(1);
     setSelectedProductId("");
     setSearchResults([]);
     setSearchTotal(0);
@@ -437,15 +451,13 @@ export function App() {
 
     async function loadInitialData() {
       try {
-        const [categoryTree, dealRows, storeRows] = await Promise.all([
+        const [categoryTree, storeRows] = await Promise.all([
           getCategories(undefined, selectedStoreIds, apiBaseUrl),
-          getDeals(24, apiBaseUrl),
           getStores(apiBaseUrl).catch(() => [] as StoreOption[])
         ]);
         if (cancelled) return;
 
         setCategories(categoryTree);
-        setDeals(dealRows);
         setStores(storeRows);
 
         const flat = flattenCategories(categoryTree);
@@ -480,6 +492,35 @@ export function App() {
     if (!selectedCategoryId) return;
     let cancelled = false;
 
+    async function loadDeals() {
+      setIsDealsLoading(true);
+      try {
+        const categoryId = dealCategoryScope === "selected" ? selectedCategoryId : undefined;
+        const result = await getDeals(dealPage, dealPageSize, apiBaseUrl, categoryId, selectedStoreIds);
+        if (cancelled) return;
+        const items = Array.isArray(result.items) ? result.items : [];
+        setDeals(items);
+        setDealTotal(Number.isFinite(result.total) ? result.total : items.length);
+        setDealTotalPages(Math.max(1, result.totalPages));
+        setDealHasMore(result.hasMore);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : t.failed);
+      } finally {
+        if (!cancelled) setIsDealsLoading(false);
+      }
+    }
+
+    loadDeals();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, dealCategoryScope, dealPage, dealPageSize, dealRefreshKey, selectedCategoryId, selectedStoreIds, t.failed]);
+
+  useEffect(() => {
+    if (!selectedCategoryId) return;
+    let cancelled = false;
+
     async function loadProducts() {
       setIsProductsLoading(true);
       try {
@@ -504,7 +545,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiBaseUrl, categoryPage, categoryPageSize, categorySort, selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
+  }, [apiBaseUrl, categoryPage, categoryPageSize, categoryRefreshKey, categorySort, selectedCategoryId, selectedStoreIds, selectedStores, t.failed]);
 
   function changeCategoryPage(nextPage: number) {
     if (isProductsLoading) return;
@@ -522,11 +563,35 @@ export function App() {
     setCategoryPage(1);
   }
 
+  function refreshCategoryProducts() {
+    setCategoryRefreshKey((current) => current + 1);
+  }
+
+  function changeDealPage(nextPage: number) {
+    if (isDealsLoading) return;
+    const boundedPage = Math.min(Math.max(1, nextPage), dealTotalPages);
+    if (boundedPage !== dealPage) setDealPage(boundedPage);
+  }
+
+  function changeDealPageSize(nextSize: number) {
+    setDealPageSize(nextSize);
+    setDealPage(1);
+  }
+
+  function refreshDeals() {
+    setDealRefreshKey((current) => current + 1);
+  }
+
+  function changeDealCategoryScope(nextScope: DealCategoryScope) {
+    setDealCategoryScope(nextScope);
+    setDealPage(1);
+  }
+
   useEffect(() => {
     setHasSearched(false);
     setSearchResults([]);
     setSearchTotal(0);
-  }, [selectedStoreIds]);
+  }, [selectedCategoryId, selectedStoreIds]);
 
   useEffect(() => {
     if (isReviewMode) void loadMatchCandidates();
@@ -571,7 +636,7 @@ export function App() {
     if (!query) return;
 
     setHasSearched(true);
-    const result = await searchProducts(query, 24, selectedStoreIds, apiBaseUrl);
+    const result = await searchProducts(query, 24, selectedStoreIds, apiBaseUrl, selectedCategoryId || undefined);
     setSearchResults(result.items);
     setSearchTotal(result.total);
     setCollapsedSections((current) => ({ ...current, search: false }));
@@ -679,6 +744,7 @@ export function App() {
                   className={!isStoreFilterActive ? "active" : ""}
                   onClick={() => {
                     setCategoryPage(1);
+                    setDealPage(1);
                     setSelectedStoreIds([]);
                   }}
                 >
@@ -711,7 +777,7 @@ export function App() {
             <Metric label={t.productCount} value={totalProducts.toLocaleString()} />
             <Metric label={t.departmentMetric} value={categories.length.toLocaleString()} />
             <Metric label={t.aisleMetric} value={aisleCount.toLocaleString()} />
-            <Metric label={t.deals} value={visibleDeals.length.toLocaleString()} />
+            <Metric label={t.deals} value={dealTotal.toLocaleString()} />
           </section>
 
           <CollapsibleSection
@@ -719,12 +785,51 @@ export function App() {
             eyebrow={t.dealsEyebrow}
             title={t.deals}
             meta={dealsDataDate ? `${t.dealsDate} ${formatDate(dealsDataDate)}` : undefined}
-            pill={`${visibleDeals.length} · ${t.dealSource}`}
+            pill={`${dealTotal.toLocaleString()} · ${t.dealSource}`}
+            actions={
+              <div className="scope-toggle" aria-label={language === "zh" ? "特价类别范围" : "Deal category scope"}>
+                <button
+                  className={dealCategoryScope === "all" ? "active" : ""}
+                  onClick={() => changeDealCategoryScope("all")}
+                >
+                  {language === "zh" ? "全类别" : "All categories"}
+                </button>
+                <button
+                  className={dealCategoryScope === "selected" ? "active" : ""}
+                  onClick={() => changeDealCategoryScope("selected")}
+                >
+                  {language === "zh" ? "所选类别" : "Selected category"}
+                </button>
+              </div>
+            }
             collapsed={collapsedSections.deals}
             expandLabel={t.expand}
             collapseLabel={t.collapse}
             onToggle={() => toggleSection("deals")}
           >
+            <div className="table-heading deals-heading">
+              <div>
+                <h3>{t.deals}</h3>
+                <span>
+                  {t.pageLabel} {dealPage} / {dealTotalPages} · {t.showingProducts} {visibleDeals.length.toLocaleString()} / {dealTotal.toLocaleString()}
+                </span>
+              </div>
+              <div className="table-controls">
+                <button className="refresh-button" onClick={refreshDeals} disabled={isDealsLoading}>
+                  {isDealsLoading ? t.loadingShort : t.refresh}
+                </button>
+                <label className="sort-control">
+                  <span>{t.pageSize}</span>
+                  <select value={dealPageSize} onChange={(event) => changeDealPageSize(Number(event.target.value))}>
+                    {dealPageSizeOptions.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
             <div className="deals-grid">
               {visibleDeals.length === 0 && <p className="empty-state">{t.noDealsForStores}</p>}
               {visibleDeals.map((deal) => (
@@ -759,6 +864,30 @@ export function App() {
                   </footer>
                 </button>
               ))}
+            </div>
+            <div className="pagination-bar">
+              <button onClick={() => changeDealPage(dealPage - 1)} disabled={isDealsLoading || dealPage <= 1}>
+                {t.previousPage}
+              </button>
+              <div className="page-number-group" aria-label={t.pageLabel}>
+                {paginationPages(dealPage, dealTotalPages).map((page, index) =>
+                  page === "ellipsis" ? (
+                    <span key={`deal-ellipsis-${index}`} className="page-ellipsis">…</span>
+                  ) : (
+                    <button
+                      key={page}
+                      className={page === dealPage ? "active" : ""}
+                      onClick={() => changeDealPage(page)}
+                      disabled={isDealsLoading || page === dealPage}
+                    >
+                      {page}
+                    </button>
+                  )
+                )}
+              </div>
+              <button onClick={() => changeDealPage(dealPage + 1)} disabled={isDealsLoading || !dealHasMore}>
+                {t.nextPage}
+              </button>
             </div>
           </CollapsibleSection>
 
@@ -818,6 +947,7 @@ export function App() {
                   className={selectedDepartment?.id === department.id ? "active" : ""}
                   onClick={() => {
                     setCategoryPage(1);
+                    setDealPage(1);
                     setSelectedDepartmentId(department.id);
                     setSelectedCategoryId(department.children[0]?.id ?? department.id);
                   }}
@@ -836,6 +966,7 @@ export function App() {
                     className={selectedCategoryId === category.id ? "active" : ""}
                     onClick={() => {
                       setCategoryPage(1);
+                      setDealPage(1);
                       setSelectedCategoryId(category.id);
                     }}
                   >
@@ -858,6 +989,9 @@ export function App() {
                     </span>
                   </div>
                   <div className="table-controls">
+                    <button className="refresh-button" onClick={refreshCategoryProducts} disabled={isProductsLoading}>
+                      {isProductsLoading ? t.loadingShort : t.refresh}
+                    </button>
                     <label className="sort-control">
                       <span>{t.sortBy}</span>
                       <select value={categorySort} onChange={(event) => changeCategorySort(event.target.value as ProductSort)}>
@@ -920,7 +1054,10 @@ export function App() {
                               <span>{formatStoreBranch(listing.store, listing.supermarket, language)}</span>
                             </td>
                             <td>
-                              <strong>{formatMaybeCurrency(listing.price)}</strong>
+                              <div className="table-price-cell">
+                                <strong>{formatMaybeCurrency(listing.price)}</strong>
+                                <PromotionBadges listing={listing} language={language} compact />
+                              </div>
                             </td>
                             <td>{formatUnit(listing.unitPrice, listing.unit)}</td>
                           </tr>
@@ -995,6 +1132,7 @@ export function App() {
                           </div>
                           <div>
                             <strong>{formatMaybeCurrency(listing.price)}</strong>
+                            <PromotionBadges listing={listing} language={language} compact />
                             <span>{formatUnit(listing.unitPrice, listing.unit)}</span>
                           </div>
                           <small>
@@ -1018,13 +1156,17 @@ export function App() {
                                 <strong>{formatStoreBranch(store.store, store.supermarket as Supermarket, language)}</strong>
                               </div>
                               <div className="history-current">
-                                <strong>{formatMaybeCurrency(latestHistoryPoint(store)?.price ?? null)}</strong>
+                                <span className="history-current-price">
+                                  <strong>{formatMaybeCurrency(latestHistoryPoint(store)?.price ?? null)}</strong>
+                                  <PromotionBadges point={latestHistoryPoint(store)} language={language} compact />
+                                </span>
                                 <span>{describeHistory(store, t)}</span>
                               </div>
                               <div className="history-points" aria-label={t.history}>
                                 {store.points.slice(-3).map((point) => (
-                                  <span key={`${store.store}-${point.date}`} title={formatDateTime(point.date)}>
-                                    {formatMaybeCurrency(point.price)}
+                                  <span className="history-point" key={`${store.store}-${point.date}`} title={formatDateTime(point.date)}>
+                                    <strong>{formatMaybeCurrency(point.price)}</strong>
+                                    <PromotionBadges point={point} language={language} compact />
                                   </span>
                                 ))}
                               </div>
@@ -1098,6 +1240,7 @@ function CollapsibleSection({
   title,
   meta,
   pill,
+  actions,
   collapsed,
   expandLabel,
   collapseLabel,
@@ -1109,6 +1252,7 @@ function CollapsibleSection({
   title: string;
   meta?: string;
   pill?: string;
+  actions?: ReactNode;
   collapsed: boolean;
   expandLabel: string;
   collapseLabel: string;
@@ -1130,6 +1274,7 @@ function CollapsibleSection({
         </button>
         <div className="section-heading-actions">
           {pill && <span className="data-pill">{pill}</span>}
+          {actions}
           <button className="collapse-toggle" onClick={onToggle}>
             {collapsed ? expandLabel : collapseLabel}
           </button>
@@ -1167,7 +1312,10 @@ function SearchResultCard({
           {visibleListings.map((offer, index) => (
             <span key={offer.id} className={`search-price-label ${index === 0 ? "best" : ""}`}>
               <ChainBadge chain={offer.supermarket} />
-              <strong>{formatMaybeCurrency(offer.price)}</strong>
+              <span className="search-offer-price">
+                <strong>{formatMaybeCurrency(offer.price)}</strong>
+                <PromotionBadges listing={offer} language={language} compact />
+              </span>
               <span>{formatUnit(offer.unitPrice, offer.unit)}</span>
             </span>
           ))}
@@ -2073,6 +2221,63 @@ function ChainBadge({ chain }: { chain: Supermarket }) {
   return <span className={`chain-badge ${chainClass[chain]}`}>{formatChain(chain)}</span>;
 }
 
+function PromotionBadges({
+  listing,
+  point,
+  language,
+  compact = false
+}: {
+  listing?: ProductListing | null;
+  point?: ProductPriceHistory["stores"][number]["points"][number] | null;
+  language: Language;
+  compact?: boolean;
+}) {
+  const promoType = listing?.promoType ?? point?.promoType ?? null;
+  const memberPrice = listing?.memberPrice ?? point?.memberPrice ?? null;
+  const wasPrice = listing?.wasPrice ?? point?.wasPrice ?? null;
+  const multibuyQuantity = listing?.multibuyQuantity ?? null;
+  const multibuyTotal = listing?.multibuyTotal ?? null;
+  const hasMultibuy = multibuyQuantity !== null && multibuyQuantity > 1 && multibuyTotal !== null;
+  const multibuyOffer = hasMultibuy
+    ? language === "zh"
+      ? `${multibuyQuantity} 件 ${formatCurrency(multibuyTotal)}`
+      : `${multibuyQuantity} for ${formatCurrency(multibuyTotal)}`
+    : null;
+  const labels =
+    language === "zh"
+      ? { special: "特价", was: "原价", member: "会员价", memberMultibuy: "会员多件价", multibuy: "多件价" }
+      : { special: "Special", was: "was", member: "Member", memberMultibuy: "Member multibuy", multibuy: "Multibuy" };
+
+  if (!promoType && !hasMultibuy) return null;
+
+  return (
+    <span className={`promotion-badges${compact ? " compact" : ""}`}>
+      {promoType === "Special" && (
+        <span className="promotion-badge promotion-special">
+          {labels.special}
+          {wasPrice !== null ? ` · ${labels.was} ${formatCurrency(wasPrice)}` : ""}
+        </span>
+      )}
+      {promoType === "MemberPrice" && memberPrice !== null && (
+        <span className="promotion-badge promotion-member">
+          {labels.member} {formatCurrency(memberPrice)}
+        </span>
+      )}
+      {hasMultibuy && (
+        <span className={`promotion-badge ${promoType === "MemberPrice" ? "promotion-member" : "promotion-multibuy"}`}>
+          {promoType === "MemberPrice" ? labels.memberMultibuy : labels.multibuy} · {multibuyOffer}
+        </span>
+      )}
+      {promoType === "MemberPrice" && memberPrice === null && !hasMultibuy && (
+        <span className="promotion-badge promotion-member">{labels.member}</span>
+      )}
+      {promoType === "Multibuy" && !hasMultibuy && (
+        <span className="promotion-badge promotion-multibuy">{labels.multibuy}</span>
+      )}
+    </span>
+  );
+}
+
 function prepareProductGroups(groups: ProductGroup[], selectedStores: StoreOption[]) {
   return groups
     .map((group) => ({
@@ -2111,11 +2316,8 @@ function filterListingsByStores(listings: ProductListing[], selectedStores: Stor
   return sortListings(listings.filter((listing) => selectedStores.some((store) => sameStore(store, listing.store, listing.supermarket))));
 }
 
-function filterDealsByStores(deals: DealItem[], selectedStores: StoreOption[]) {
-  const visible = selectedStores.length === 0
-    ? deals
-    : deals.filter((deal) => selectedStores.some((store) => sameStore(store, deal.store, deal.supermarket)));
-  return visible
+function sortDeals(deals: DealItem[]) {
+  return deals
     .filter((deal) => deal.price !== null)
     .sort((a, b) => (b.saving ?? 0) - (a.saving ?? 0));
 }

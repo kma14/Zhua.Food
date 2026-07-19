@@ -151,12 +151,14 @@ the applied `sort`. `total` = number of **groups** after the `storeId` filter (n
       "name": "Pams Beef Mince 1kg", "brand": "Pams", "size": "1kg",
       "imageUrl": "https://a.fsimg.co.nz/…/5125914.png",
       "price": 11.00, "isOnSpecial": false, "wasPrice": null,
+      "promoType": null, "memberPrice": null, "multibuyQuantity": null, "multibuyTotal": null,
       "unitPrice": 11.00, "unit": "1kg",            // normalised COMPARABLE unit price (server-side); null if N/A
       "priceUpdatedAt": "2026-06-22T08:08:59+00:00", "priceAsOf": "2026-06-24T06:01:44+00:00" },
     { "id": "dddd…00a1", "store": "Woolworths Takapuna", "supermarket": "Woolworths", "suburb": "Takapuna",
       "name": "Woolworths Beef Mince", "price": 12.00, "isOnSpecial": true, "wasPrice": 15.00,
-      "unitPrice": 12.00, "unit": "1kg", … },
-    { "id": "dddd…00a2", "store": "New World Metro", "supermarket": "NewWorld", "price": 13.50, "isOnSpecial": false, … }
+      "promoType": "Special", "unitPrice": 12.00, "unit": "1kg", … },
+    { "id": "dddd…00a2", "store": "New World Metro", "supermarket": "NewWorld", "price": 12.59, "isOnSpecial": false,
+      "promoType": "MemberPrice", "memberPrice": 11.29, … }
   ] }],
   "page": 1, "size": 30, "total": 408, "totalPages": 14, "hasMore": true, "sort": "unitPriceAsc"
 }
@@ -166,6 +168,14 @@ the applied `sort`. `total` = number of **groups** after the `storeId` filter (n
 > The listing **`name` is a real store name** — use it as the title; render `description` as a
 > *grouping caption*, never the title. `products[]` comes back cheapest-first as a neutral default — **re-sort it
 > however you like** (the group is ≤7 stores). Drill into one listing via its `id` → `GET /products/{id}`.
+
+> **Promotion fields (2026-07-17, promo-type model):** `promoType` = `"Special"` (public temporary special) |
+> `"MemberPrice"` (loyalty-card deal — Woolworths Everyday Rewards / New World Clubcard) | `"Multibuy"` ("N for $X")
+> | `null` (no promotion). **`price` is always what a cardless shopper pays**; on a `MemberPrice` listing the card
+> price is in `memberPrice` — render it beside the shelf price ("member $11.29"), and note `isOnSpecial` is now
+> **`Special` only** (member/multibuy listings have `isOnSpecial: false`). A multibuy carries the
+> `multibuyQuantity` + `multibuyTotal` pair (e.g. 3 + 20.00 = "3 for $20") whatever the `promoType`; the pair never
+> affects `price`/`unitPrice`.
 
 ### `GET /products/{id}` — the group for one product (cross-store view)
 
@@ -189,9 +199,9 @@ One **step series per store** from the change-only snapshots (D3). Optional `?da
   "stores": [
     { "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
       "points": [
-        { "date": "2026-06-22T…", "price": 3.49, "isOnSpecial": true, "wasPrice": null, "unitPrice": … },
-        { "date": "2026-06-23T…", "price": 2.99, "isOnSpecial": true, "wasPrice": null, "unitPrice": … },
-        { "date": "2026-06-24T…", "price": 3.49, "isOnSpecial": true, "wasPrice": null, "unitPrice": … }
+        { "date": "2026-06-22T…", "price": 3.49, "isOnSpecial": true, "wasPrice": null, "promoType": "Special", "memberPrice": null, "unitPrice": … },
+        { "date": "2026-06-23T…", "price": 2.99, "isOnSpecial": true, "wasPrice": null, "promoType": "Special", "memberPrice": null, "unitPrice": … },
+        { "date": "2026-06-24T…", "price": 3.49, "isOnSpecial": false, "wasPrice": null, "promoType": "MemberPrice", "memberPrice": 2.99, "unitPrice": … }
       ] }
   ]
 }
@@ -243,12 +253,17 @@ as `/products`.
   "page": 1, "size": 24, "total": 123, "totalPages": 6, "hasMore": true, "sort": null
 }
 ```
-> ⚠️ **`wasPrice`/`saving` may be `null`.** A deal is **any current promotion** (`isOnSpecial`), whether or not we
-> have a regular price for it. Woolworths publishes its was-price. NW/PAK publish **none**, so we *reconstruct* it
-> from our own history — the shelf price we last recorded before the product went on special (D23, going-forward
-> only). Until that reconstruction is possible (e.g. a Foodstuffs item first seen already on special), the deal is
-> **still returned** but with `wasPrice: null` and `saving: null`. Deals with a known saving sort first (biggest
-> first); no-saving promotions come after. So the front-end should render `saving`/`wasPrice` **only when present**.
+> **A deal = a current PUBLIC special** (`promoType: "Special"`) — narrowed 2026-07-17 by the promo-type model:
+> member-only prices (Woolworths club / NW Clubcard) and multibuys are **not** deals; they surface on the product
+> listings instead (`promoType`/`memberPrice`/`multibuy*` fields — see `/products`). This is why every item here is
+> genuinely buyable at `price` by anyone, card or not.
+>
+> ⚠️ **`wasPrice`/`saving` may still be `null`.** Woolworths publishes its was-price. NW/PAK publish **none** for a
+> public special (the shelf price *is* the promo price), so we *reconstruct* it from our own history — the shelf
+> price we last recorded before the product went on special (D23, going-forward only). Until that reconstruction is
+> possible (e.g. a Foodstuffs item first seen already on special), the deal is **still returned** but with
+> `wasPrice: null` and `saving: null`. Deals with a known saving sort first (biggest first); no-saving promotions
+> come after. So the front-end should render `saving`/`wasPrice` **only when present**.
 >
 > Each deal also carries its listing `id` (drill in via `GET /products/{id}`) and `sku` (the supermarket/source
 > product id — tells apart look-alike specials that share brand/name/size).
@@ -346,3 +361,4 @@ The whole flow is now backed end-to-end.
 - 2026-07-11 15:45 🧑‍⚖️ Product list endpoints (`GET /products`, `GET /products?category=`, `GET /categories/{id}/products`) now return a `PagedResult<ProductGroup>` envelope (`items/page/size/total/totalPages/hasMore/sort`) instead of a bare `ProductGroup[]`, with a server-side `sort` (`unitPriceAsc` default · `priceAsc` · `nameAsc` · `discountDesc`) applied over the whole filtered set before paging. `total` = group count after the storeId filter. Front-end (Codex) must switch from reading the array to reading `.items` in lockstep.
 - 2026-07-11 21:50 🧑‍⚖️ `/deals` now returns **any current promotion** (`isOnSpecial`), not just ones with a was-price — a deal no longer requires a recoverable regular price (was excluding most Foodstuffs specials until history accumulated). No-was deals come back with `wasPrice`/`saving` `null` and sort after the ones with a known saving. Front-end renders `saving`/`wasPrice` only when present.
 - 2026-07-11 22:02 🧑‍⚖️ `/deals` gains `category` + `storeId` filters aligned with `/products` (shared subtree resolver + repository predicate, so they can't drift; `supermarket`+`storeId` intersect; unknown category → 404), and now returns the `PagedResult<DealItem>` envelope (`sort: null`). Front-end reads `.items` (lockstep). Deal ordering is a fixed saving-first default; the client re-sorts.
+- 2026-07-17 21:30 🧑‍⚖️ **Promo-type model** (decisions A–E in [internals/promotions-model.md](internals/promotions-model.md)): listings + price-history points gain `promoType` (`"Special"`|`"MemberPrice"`|`"Multibuy"`|null), `memberPrice`, and listings the `multibuyQuantity`/`multibuyTotal` pair. **`price` is now always the cardless shelf price** (Woolworths club deals used to report the member price here). `isOnSpecial` narrowed to `promoType == "Special"` — so **`/deals` = public specials only**; member prices render beside the shelf price on listings, and Clubcard/multibuy promos no longer appear as deals. Front-end (Codex): render `memberPrice`/multibuy badges from the new fields.

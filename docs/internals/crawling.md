@@ -23,32 +23,44 @@ the entity, not the crawler: [`Product.ApplyObservation`](../../src/Zhua.Domain/
 | Categories | crawl the store's own tree → many-to-many `StoreCategory` links (D11) | products sit under several shelves; never a denormalized category string |
 
 **The observation each product becomes** (`ScrapedProduct` → `ProductObservation`): `Name, Brand, Size,
-Gtin, Url, ImageUrl, Price, NonSpecialPrice, IsOnSpecial, UnitPrice, UnitOfMeasure` + `CategoryPath` + `Tags`.
-The price tuple `{Price, IsOnSpecial, NonSpecialPrice, UnitPrice}` is what D3 snapshots on change.
+Gtin, Url, ImageUrl, Price, NonSpecialPrice, PromoType, MemberPrice, MultibuyQuantity, MultibuyTotal, UnitPrice,
+UnitOfMeasure` + `CategoryPath` + `Tags`. The price tuple `{Price, PromoType, NonSpecialPrice, UnitPrice,
+MemberPrice, MultibuyQuantity, MultibuyTotal}` is what D3 snapshots on change; the entity derives
+`IsOnSpecial = (PromoType == Special)`.
 
-### ⚠️ Special detection & the "was" price — the highest-value, most fragile logic
+### ⚠️ Promotions & the "was" price — the highest-value, most fragile logic
 
-The savings number on `/deals` and `wasPrice` in price-history depend entirely on two things being read right:
-**(a) is it on special**, and **(b) what was the regular price**. The two chains differ fundamentally:
+`/deals`, the `promoType`/`memberPrice` fields and `wasPrice` in price-history depend entirely on reading each
+chain's promo signals right. **The full model + per-chain decode evidence live in
+[promotions-model.md](promotions-model.md)** (decided 2026-07-17); this section is the crawler-facing summary.
+Universal rule: **`Price` is always the unit price a cardless shopper pays** — never a member price, never a
+multibuy total.
 
 | | Woolworths | Foodstuffs (NW / PAK'nSAVE) |
 |---|---|---|
-| "on special" signal | explicit boolean `price.isSpecial` | **implicit** — a non-empty `promotions[]` array is attached |
-| regular ("was") price | **published**: `price.originalPrice` | **not published at all** |
-| how we get the "was" | read it directly | **reconstructed** from our own history (D23) — see below |
-| when a special **ends** | `isSpecial` → `false`, `salePrice` rises to regular | `promotions[]` **disappears**, `singlePrice.price` rises to regular |
+| public special → `PromoType.Special` | `price.isSpecial && !price.isClubPrice` | best promo, `cardDependencyFlag: false`, `threshold ≤ 1` |
+| member price → `PromoType.MemberPrice` | `price.isClubPrice` (⚠️ **always also flagged `isSpecial`** — split club out FIRST) | best promo, `cardDependencyFlag: true` (93% of NW promos; PAK has none) |
+| multibuy pair ("N for $X") | `productTag.multiBuy { quantity, value }` | `threshold > 1`, `rewardValue` = the **total** for N (cents) |
+| `Price` (cardless shelf) | club: `originalPrice`; else `salePrice` | `singlePrice.price` (already the promo price for a *public* special) |
+| `MemberPrice` | club: `salePrice` | single-unit club deal: `rewardValue/100` (guard `< Price`) |
+| regular ("was") price | **published**: `price.originalPrice` | **not published** for public specials → reconstructed (D23) |
+| when a promo **ends** | flags → `false`, `salePrice` rises | `promotions[]` **disappears**, `singlePrice.price` rises |
 
 There is **no explicit "special ended" flag on either site** — the end of a special is the *absence* of the
-special signal in the next crawl. `ApplyObservation` handles that transition: `IsOnSpecial` goes false, the
+special signal in the next crawl. `ApplyObservation` handles that transition: `PromoType` goes `None`, the
 reconstructed was-price is cleared, the product drops out of `/deals`, and the price-rise writes a closing snapshot.
+No source publishes promo start/end dates (verified 2026-07-17 — WW has the fields, always null); observed windows
+come from our own snapshot history.
 
-**Foodstuffs was-price reconstruction (D23)** — because NW/PAK never publish the regular price, when an
-observation is on special with no source was-price we recover it from our own prior state:
+**Foodstuffs was-price reconstruction (D23)** — a NW/PAK **public** special's `singlePrice` *is* the promo price
+and the regular price is unpublished, so when an observation is `Special` with no source was-price we recover it
+from our own prior state:
 - product was **off-special last crawl** → the prior shelf price is the "was" (guarded `prior > special`);
 - product **still on special** → carry the previously-reconstructed was-price forward;
 - **first time we ever saw it, already on special** → unrecoverable, stays `null` (it won't show a saving until it
   re-prices). Going-forward only. Chain-agnostic, but only fires when the source omits the was-price → Woolworths
-  is never touched.
+  is never touched. **Member deals never trigger it** (their `Price` is the undiscounted shelf price — both prices
+  are published by the source).
 
 ---
 
@@ -88,10 +100,12 @@ the session. Without this, crawls die partway through a department.
 | `Size` | `size.volumeSize` ?? `size.packageType` | |
 | `Gtin` | `barcode` | Woolworths **has** a barcode (helps item match, D9) |
 | `ImageUrl` | `images.big` ?? `images.small` | |
-| `Price` (current) | `price.salePrice` ?? `price.originalPrice` | special price if on special, else shelf |
-| `IsOnSpecial` | `price.isSpecial` | explicit boolean |
-| `NonSpecialPrice` (was) | `isSpecial ? price.originalPrice : null` | **published** was-price |
-| `UnitPrice` | `size.cupPrice` | |
+| `Price` (cardless shelf) | club deal: `price.originalPrice`; else `price.salePrice` ?? `originalPrice` | on a club deal `salePrice` is the MEMBER price |
+| `PromoType` | `isClubPrice` → MemberPrice; else `isSpecial` → Special; else `multiBuy` → Multibuy | `isClubPrice ⊂ isSpecial` — club first! |
+| `MemberPrice` | club deal: `price.salePrice` (guard `< originalPrice`) | |
+| `NonSpecialPrice` (was) | Special only: `price.originalPrice` | **published** was-price; null for club (shelf isn't discounted) |
+| `MultibuyQuantity`/`Total` | `productTag.multiBuy.quantity` / `.value` | "3 for $20"; captured whatever the primary type |
+| `UnitPrice` | club deal: `size.cupListPrice` ?? `cupPrice`; else `cupPrice` | `cupPrice` tracks `salePrice` → use the list one for club |
 | `UnitOfMeasure` | `size.cupMeasure` | e.g. `1kg`, `100g`, `1L`, `1ea` (as published) |
 | promo `Tag` | `productTag.tagType` | skip `"Other"` (no real promo); "Low Price" = `IsGreatPrice` (D13) |
 
@@ -142,17 +156,67 @@ read each product's path(s). A product is emitted **once per category tree** who
 | `Size` | `displayName` | |
 | `Gtin` | — | **none** — search API exposes no barcode → item match falls back to brand+name (D9) |
 | `ImageUrl` | **derived** from `productId` | not in the API; built as `https://a.fsimg.co.nz/product/retail/fan/image/400x400/{prefix}.png` where `prefix` = the digits before the first `-`. ⚠️ **prefix, not the full SKU** — `5039995-KGM-000` → `5039995.png`. Same URL the storefront uses; deterministic & free. No-photo products resolve to the CDN placeholder. |
-| `Price` (current) | `singlePrice.price / 100` | **⚠️ cents** — divide by 100. This is the **promo** price while on special |
-| `IsOnSpecial` | `promotions` is a non-empty array | **⚠️ implicit** — no boolean |
-| `NonSpecialPrice` (was) | **always `null`** at crawl time | **not published** → reconstructed in `ApplyObservation` (D23) |
+| `Price` (cardless shelf) | `singlePrice.price / 100` | **⚠️ cents** — divide by 100. Public special: this IS the promo price. **Club deal: this is the NON-member price** (the club price is in the promo's `rewardValue`) |
+| `PromoType` | from the **best** `promotions[]` element (`bestPromotion: true`, fallback first): `cardDependencyFlag` → MemberPrice; else `threshold > 1` → Multibuy; else Special | decoded 2026-07-17 — see [promotions-model.md](promotions-model.md) |
+| `MemberPrice` | single-unit club deal: `rewardValue / 100` (guard `< Price`) | member multibuy (`threshold > 1`): rewardValue is a TOTAL → goes to the pair, `MemberPrice` stays null |
+| `MultibuyQuantity`/`Total` | `threshold` / `rewardValue / 100` when `threshold > 1` | "3 for $5.00" |
+| `NonSpecialPrice` (was) | **always `null`** at crawl time | **not published** → reconstructed for public specials in `ApplyObservation` (D23) |
 | `UnitPrice` | `singlePrice.comparativePrice.pricePerUnit / 100` | cents |
 | `UnitOfMeasure` | `comparativePrice.measureDescription` ?? `unitQuantityUom` | |
 | `CategoryPath` | `categoryTrees[].level0/1/2` | ExternalId = the **name** (source has no stable category id) |
-| promo `Tag` | `promotions[0].decal` (code) + `rewardType` (label) | e.g. `rewardType:NEW_PRICE` |
+| promo `Tag` | best promo's `decal` (code) + `rewardType` (label) | decals: `3000` NW public · `4000` NW club · `5000` NW club multibuy · `6000` PAK public |
 
 **Quirks:** prices in **cents** everywhere. No GTIN. The image URL is **not in the response** but is derived from
-the SKU prefix (see the `ImageUrl` row). A "special" only tells you the *current* promo price, never the original —
-the whole reason for the D23 reconstruction above.
+the SKU prefix (see the `ImageUrl` row). A *public* special only tells you the *current* promo price, never the
+original — the whole reason for the D23 reconstruction above; a *club* deal publishes both prices (shelf in
+`singlePrice`, club in `rewardValue`) so D23 never fires for it. `rewardType` is always `NEW_PRICE` (2,725/2,725
+archived promos) — the real discriminators are `cardDependencyFlag` and `threshold`.
+
+---
+
+## FreshChoice — MyFoodLink (D26)
+
+`src/Zhua.Crawling/FreshChoice/FreshChoiceCrawler.cs`. **A fundamentally different crawler from the other two** —
+FreshChoice online runs on the **MyFoodLink** platform, which **server-renders the product data into the page HTML**
+(no JSON API to intercept). So this crawler is **plain `HttpClient` + HTML parsing (AngleSharp)** — **no Playwright,
+no headed browser** (verified: a plain `curl` returns 200 with the full product HTML; no WAF block). Big win for the
+NAS: FreshChoice needs no Chromium.
+
+> FreshChoice is a **Woolworths NZ** banner (not Foodstuffs) but a **separate MyFoodLink storefront** → its own
+> `Chain.FreshChoice` + its own crawler. **Independently priced per store** (like Foodstuffs). **Publishes the
+> was-price directly** (like Woolworths) → **no D23 reconstruction needed.** Per-store subdomain, e.g. Hauraki Corner
+> = `https://hc.store.freshchoice.co.nz` (seed as `Store.SiteBaseUrl` / the crawler's base).
+
+**Category pages** (the product source): `GET <base>/category/<slug>?page=<n>` — server-rendered HTML, **~48
+products/page**, paginated (`rel="next"` + `?page=N`; a department like `/category/meat` spans its whole subtree,
+e.g. 183 results ≈ 4 pages). Follow pages until no `rel="next"`.
+
+**Product card → our fields** (AngleSharp selectors; one card = `div.talker[id^="line_"]`):
+| Field | Selector / rule |
+|---|---|
+| `Sku` | the card's `id` attr, strip the `line_` prefix (a Mongo ObjectId, e.g. `6a3e00a7f83bb1e8db4ffa5c`) — stable, prefer over the slug |
+| `Name` | `span.talker__product-name` (text) |
+| `Size` | `span.talker__name__size` (text, e.g. `720g`) |
+| `Url` | `a[href^="/lines/"]` → `<base>` + href (the product "line" page) |
+| `ImageUrl` | `img[src]` (or the webp `picture > source[srcset]`) — fsimg-style CloudFront |
+| `Price` (sell) | `strong.price__sell` → strip `$`, parse decimal |
+| `UnitOfMeasure` | `span.price__units` (text: `each` / etc.) |
+| `PromoType.Special` | the card `div.talker` has class `talker--Special` (also `.special`) — only temporary specials seen so far; recon member/everyday stickers during the build ([promotions-model.md](promotions-model.md)) |
+| `NonSpecialPrice` (was) | `span.talker__prices__was` → strip `was $`, parse (absent ⇒ not on special ⇒ null) |
+| `UnitPrice` + comparison unit | `span.talker__prices__comparison--UnitPrice` → e.g. `$24.98 per kg` (parse value + `per kg`/`per 100g`) |
+| specials sticker | `.talker__sticker--Saving .talker__sticker__label` (the "save $X" badge) → optional `ProductTag` (D13) |
+
+**Category tree (D11):** the shared MyFoodLink sidebar is served as JSON from CloudFront —
+`https://<dist>.cloudfront.net/sidebar/<rootDeptId>/<ver>.json?customer_group[]=<cg>&price_level[]=<pl>` — a flat list
+of `{id, name, parent_id, slug}` = the whole Department→Aisle→Shelf tree. The `<dist>`/`<rootDeptId>`/`<ver>`/`<cg>`/
+`<pl>` are store-specific (discover from the store's homepage HTML, or seed them). *(Alternatively parse the sidebar
+`a[href^="/category/"]` links from HTML — coarser but no param discovery.)* **The product card carries no category**,
+so a product is tagged with the category page it was crawled under (crawl per category for fine-grained D11).
+
+**Gotchas:** prices are dollars (not cents, unlike Foodstuffs). The product data is **only** in the page HTML (there
+is NO product XHR — DevTools shows nothing because it's SSR + disk-cached), so `recon` (which dumps JSON) won't catch
+it; use `curl <base>/category/<slug>` to see the HTML. HTML parsing is more brittle than JSON — the class names above
+(`talker*`, `price__*`) are the contract; if they change, this crawler silently returns fewer/no products.
 
 ---
 
@@ -178,5 +242,18 @@ fresh archived response in as a fixture, and assert the new mapping.
 `dotnet run --project src/Zhua.Worker -- recon <url>` (headed, dumps every JSON response + request headers/body).
 
 ---
+
+## Decision log
+
+Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then 🧑‍⚖️ if user-instructed.
+
+- **2026-07-12 21:00** — 🧑‍⚖️ *(Kevin: "1 吧" — build FreshChoice now)* Added the **FreshChoice — MyFoodLink (D26)**
+  section as the implementation spec (recon done: SSR HTML, plain HttpClient + AngleSharp, no Playwright). Crawler
+  build paused behind the promotions model.
+- **2026-07-17 21:35** — 🧑‍⚖️ Promo-type model applied to both crawlers (decisions A–E in
+  [promotions-model.md](promotions-model.md)): mappings now produce `PromoType`/`MemberPrice`/`Multibuy*` instead
+  of a bare `IsOnSpecial`. Behaviour changes: WW splits `isClubPrice` out of `isSpecial` and reports the
+  **non-member** shelf price as `Price` (was the member price); Foodstuffs picks the `bestPromotion` element (was
+  `First()`), decodes `cardDependencyFlag`/`threshold`, and no longer flags member/multibuy promos as on-special.
 
 *Keep this file in sync with the crawlers — it documents a contract owned by external sites, so it drifts silently.*

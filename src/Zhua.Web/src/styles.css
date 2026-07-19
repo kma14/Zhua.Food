@@ -111,6 +111,32 @@ p {
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
 }
 
+.scope-toggle {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid #c8dccd;
+  border-radius: 999px;
+  background: #eef5f0;
+  padding: 3px;
+}
+
+.scope-toggle button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #526157;
+  cursor: pointer;
+  padding: 5px 9px;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.scope-toggle button.active {
+  background: #ffffff;
+  color: #143321;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
@@ -1227,7 +1253,12 @@ h4 {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px 12px;
+}
+
+.deals-heading {
+  margin-bottom: 14px;
 }
 
 .sort-control {
@@ -1247,6 +1278,23 @@ h4 {
   color: #12231a;
   font: inherit;
   padding: 7px 9px;
+}
+
+.refresh-button {
+  border: 1px solid #b9d6c2;
+  border-radius: 8px;
+  background: #eef7f1;
+  color: #153623;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 8px 12px;
+}
+
+.refresh-button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .table-wrap {
@@ -1539,6 +1587,55 @@ td .chain-badge {
   gap: 4px;
 }
 
+.table-price-cell,
+.search-offer-price,
+.history-current-price {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+}
+
+.promotion-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.promotion-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.promotion-badges.compact .promotion-badge {
+  padding: 2px 5px;
+  font-size: 0.7rem;
+}
+
+.promotion-badge.promotion-special {
+  border-color: #efc8bc;
+  background: #fff0eb;
+  color: #8f3522;
+}
+
+.promotion-badge.promotion-member {
+  border-color: #c5d5ef;
+  background: #edf4ff;
+  color: #24518b;
+}
+
+.promotion-badge.promotion-multibuy {
+  border-color: #ddcf91;
+  background: #fff8d8;
+  color: #6c5510;
+}
+
 .price-row small {
   display: grid;
   grid-column: 1 / -1;
@@ -1587,6 +1684,10 @@ td .chain-badge {
   font-size: 1.25rem;
 }
 
+.history-current-price > strong {
+  font-size: 1.25rem;
+}
+
 .history-current span {
   color: #637267;
   font-size: 0.86rem;
@@ -1598,13 +1699,19 @@ td .chain-badge {
   gap: 6px;
 }
 
-.history-points span {
-  border-radius: 999px;
+.history-point {
+  display: grid;
+  gap: 4px;
+  border-radius: 6px;
   background: #eaf7ed;
   color: #245f34;
   padding: 5px 8px;
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.history-point > strong {
+  white-space: nowrap;
 }
 
 .department-grid,
@@ -1613,6 +1720,10 @@ td .chain-badge {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.deals-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .department-card,
@@ -1690,6 +1801,12 @@ td .chain-badge {
 }
 
 .search-price-label > strong {
+  font-size: 1rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.search-offer-price > strong {
   font-size: 1rem;
   line-height: 1;
   white-space: nowrap;

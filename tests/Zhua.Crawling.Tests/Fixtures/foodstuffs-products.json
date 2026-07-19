@@ -47,6 +47,43 @@
       ]
     },
     {
+      "productId": "5039995-EA-000",
+      "brand": "Otaika Valley",
+      "name": "Free Range Size 7 Eggs",
+      "displayName": "12pk",
+      "saleType": "UNITS",
+      "singlePrice": {
+        "price": 1259,
+        "promoId": "130261000",
+        "comparativePrice": { "pricePerUnit": 105, "unitQuantityUom": "ea", "measureDescription": "ea" }
+      },
+      "promotions": [
+        { "promoId": "888888", "rewardValue": 1199, "decal": "3000", "sapType": "LAYERED", "rewardType": "NEW_PRICE", "threshold": 1, "multiProducts": false, "cardDependencyFlag": false, "bestPromotion": false },
+        { "promoId": "130261000", "rewardValue": 1129, "decal": "4000", "sapType": "BASE", "rewardType": "NEW_PRICE", "threshold": 1, "multiProducts": false, "cardDependencyFlag": true, "bestPromotion": true }
+      ],
+      "categoryTrees": [
+        { "level0": "Meat, Poultry & Seafood", "level1": "Eggs", "level2": "Free Range Eggs" }
+      ]
+    },
+    {
+      "productId": "5222222-EA-000",
+      "brand": "Anchor",
+      "name": "Uno Squeezie Smooth Strawberry Yoghurt",
+      "displayName": "100g",
+      "saleType": "UNITS",
+      "singlePrice": {
+        "price": 249,
+        "promoId": "130260493",
+        "comparativePrice": { "pricePerUnit": 249, "unitQuantityUom": "100g", "measureDescription": "100g" }
+      },
+      "promotions": [
+        { "promoId": "130260493", "rewardValue": 500, "decal": "5000", "sapType": "BASE", "rewardType": "NEW_PRICE", "threshold": 3, "multiProducts": true, "cardDependencyFlag": true, "bestPromotion": true }
+      ],
+      "categoryTrees": [
+        { "level0": "Meat, Poultry & Seafood", "level1": "Eggs", "level2": "Free Range Eggs" }
+      ]
+    },
+    {
       "productId": "5999999-EA-000",
       "name": "Cross-Department Item",
       "displayName": "ea",

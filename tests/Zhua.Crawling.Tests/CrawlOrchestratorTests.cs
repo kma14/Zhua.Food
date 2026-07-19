@@ -50,7 +50,7 @@ public class CrawlOrchestratorTests
         Sku = "SKU-MILK",
         Name = "Anchor Blue Milk 2L",
         Price = price,
-        IsOnSpecial = onSpecial,
+        PromoType = onSpecial ? PromoType.Special : PromoType.None,
         NonSpecialPrice = nonSpecial,
     };
 

@@ -24,6 +24,24 @@ public class DealAndAdminTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Deals_are_public_specials_only_member_prices_stay_out()
+    {
+        // Decision C (docs/internals/promotions-model.md): /deals = PromoType Special; a Clubcard-only deal is a
+        // separate axis on the listing, not a deal.
+        var deals = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals"))?.Items;
+        Assert.DoesNotContain(deals!, d => d.Sku == "nw-club-eggs");
+
+        // …but the listing itself carries the member axis.
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?q=otaika"))?.Items;
+        var eggs = groups!.Single().Products.Single();
+        Assert.False(eggs.IsOnSpecial);
+        Assert.Equal("MemberPrice", eggs.PromoType);
+        Assert.Equal(12.59m, eggs.Price);        // non-member shelf price
+        Assert.Equal(11.29m, eggs.MemberPrice);  // Clubcard price beside it
+        Assert.Null(eggs.WasPrice);
+    }
+
+    [Fact]
     public async Task Deals_include_current_specials_with_no_was_price()
     {
         var deals = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals"))?.Items;

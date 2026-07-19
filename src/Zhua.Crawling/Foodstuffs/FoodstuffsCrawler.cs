@@ -189,17 +189,50 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
             var unitPrice = Int(comp, "pricePerUnit") is { } pp ? pp / 100m : (decimal?)null;
             var unitMeasure = Str(comp, "measureDescription") ?? Str(comp, "unitQuantityUom");
 
-            // On special when a promotion is attached (Foodstuffs gives the promo price, not a "was" price → null).
-            var hasPromo = item.TryGetProperty("promotions", out var promos)
-                && promos.ValueKind == JsonValueKind.Array && promos.GetArrayLength() > 0;
-
-            var tags = new List<ScrapedTag>();
-            if (hasPromo)
+            // Promotions (docs/internals/promotions-model.md, decoded 2026-07-17): take the primary element —
+            // the one flagged bestPromotion (decision D1), falling back to the first.
+            // cardDependencyFlag = Clubcard-only (93% of NW promos!) → MemberPrice: singlePrice is the NON-member
+            // shelf price and rewardValue the club price. threshold>1 = multibuy: rewardValue is the TOTAL for N.
+            // Otherwise (public NEW_PRICE) the shelf price is already the promo price; the regular price is not
+            // published → NonSpecialPrice stays null and D23 reconstruction recovers it.
+            JsonElement best = default;
+            if (item.TryGetProperty("promotions", out var promos) && promos.ValueKind == JsonValueKind.Array)
             {
-                var promo = promos.EnumerateArray().First();
-                var decal = Str(promo, "decal");
+                foreach (var promo in promos.EnumerateArray())
+                {
+                    if (best.ValueKind == JsonValueKind.Undefined) best = promo;
+                    if (Bool(promo, "bestPromotion")) { best = promo; break; }
+                }
+            }
+
+            var promoType = PromoType.None;
+            decimal? memberPrice = null, multiTotal = null;
+            int? multiQty = null;
+            var tags = new List<ScrapedTag>();
+            if (best.ValueKind == JsonValueKind.Object)
+            {
+                var reward = Int(best, "rewardValue") is { } rw ? rw / 100m : (decimal?)null;
+                var threshold = Int(best, "threshold") ?? 1;
+                var cardOnly = Bool(best, "cardDependencyFlag");
+
+                if (threshold > 1 && reward is not null)
+                {
+                    multiQty = threshold;
+                    multiTotal = reward;
+                }
+
+                promoType = cardOnly ? PromoType.MemberPrice
+                    : multiQty is not null ? PromoType.Multibuy
+                    : PromoType.Special;
+
+                // Per-unit member price only makes sense for a single-unit club deal (a member multibuy's
+                // rewardValue is the N-for total and lands in the multibuy pair instead).
+                if (cardOnly && multiQty is null && reward is { } club && club < price)
+                    memberPrice = club;
+
+                var decal = Str(best, "decal");
                 if (!string.IsNullOrWhiteSpace(decal))
-                    tags.Add(new ScrapedTag(ProductTagSource.Primary, decal!, Str(promo, "rewardType")));
+                    tags.Add(new ScrapedTag(ProductTagSource.Primary, decal!, Str(best, "rewardType")));
             }
 
             var name = Str(item, "name") ?? sku;
@@ -214,18 +247,19 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
                 {
                     var level0 = Str(tree, "level0");
                     if (level0 is null || !DepartmentNames.Contains(level0)) continue;
-                    into.Add(NewProduct(sku!, name, brand, size, price, hasPromo, unitPrice, unitMeasure, BuildPath(tree), tags));
+                    into.Add(NewProduct(sku!, name, brand, size, price, promoType, memberPrice, multiQty, multiTotal, unitPrice, unitMeasure, BuildPath(tree), tags));
                     emitted = true;
                 }
             }
 
             if (!emitted)
-                into.Add(NewProduct(sku!, name, brand, size, price, hasPromo, unitPrice, unitMeasure, [], tags));
+                into.Add(NewProduct(sku!, name, brand, size, price, promoType, memberPrice, multiQty, multiTotal, unitPrice, unitMeasure, [], tags));
         }
     }
 
     private static ScrapedProduct NewProduct(
-        string sku, string name, string? brand, string? size, decimal price, bool isOnSpecial,
+        string sku, string name, string? brand, string? size, decimal price, PromoType promoType,
+        decimal? memberPrice, int? multibuyQuantity, decimal? multibuyTotal,
         decimal? unitPrice, string? unitOfMeasure, IReadOnlyList<ScrapedCategoryNode> path, IReadOnlyList<ScrapedTag> tags) =>
         new()
         {
@@ -239,8 +273,11 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
             CategoryPath = path,
             Tags = tags,
             Price = price,
-            NonSpecialPrice = null, // no "was" price exposed
-            IsOnSpecial = isOnSpecial,
+            NonSpecialPrice = null, // a public special's regular price isn't published → D23 reconstruction
+            PromoType = promoType,
+            MemberPrice = memberPrice,
+            MultibuyQuantity = multibuyQuantity,
+            MultibuyTotal = multibuyTotal,
             UnitPrice = unitPrice,
             UnitOfMeasure = unitOfMeasure,
         };
@@ -329,4 +366,7 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
         if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(name, out var v)) return null;
         return v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
     }
+
+    private static bool Bool(JsonElement el, string name) =>
+        el.ValueKind == JsonValueKind.Object && el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
 }
