@@ -1,5 +1,7 @@
 export type Supermarket = "Woolworths" | "NewWorld" | "PaknSave";
 
+export type PromoType = "Special" | "MemberPrice" | "Multibuy";
+
 export type StoreOption = {
   id: string;
   name: string;
@@ -36,6 +38,10 @@ export type ProductListing = {
   price: number | null;
   isOnSpecial: boolean;
   wasPrice: number | null;
+  promoType: PromoType | null;
+  memberPrice: number | null;
+  multibuyQuantity: number | null;
+  multibuyTotal: number | null;
   unitPrice: number | null;
   unit: string | null;
   priceUpdatedAt: string | null;
@@ -58,7 +64,7 @@ export type PagedResult<T> = {
   total: number;
   totalPages: number;
   hasMore: boolean;
-  sort: ProductSort;
+  sort: ProductSort | null;
 };
 
 export type PriceHistoryPoint = {
@@ -66,6 +72,8 @@ export type PriceHistoryPoint = {
   price: number | null;
   isOnSpecial: boolean;
   wasPrice: number | null;
+  promoType: PromoType | null;
+  memberPrice: number | null;
   unitPrice: number | null;
 };
 

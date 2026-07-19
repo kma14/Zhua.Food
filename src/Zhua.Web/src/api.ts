@@ -15,6 +15,7 @@ import type {
 const defaultApiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 
 type QueryParamValue = string | number | readonly string[] | undefined;
+type PagedOrArray<T> = PagedResult<T> | T[];
 
 async function getJson<T>(path: string, params?: Record<string, QueryParamValue>, apiBaseUrl = defaultApiBaseUrl) {
   const url = new URL(path, apiBaseUrl || window.location.origin);
@@ -82,12 +83,23 @@ export function getProductPriceHistory(productId: string, days = 14, apiBaseUrl?
   return getJson<ProductPriceHistory>(`/products/${productId}/price-history`, { days }, apiBaseUrl);
 }
 
-export function searchProducts(q: string, size = 8, storeIds: string[] = [], apiBaseUrl?: string) {
-  return getJson<PagedResult<ProductGroup>>("/products", { q, storeId: storeIds, page: 1, size }, apiBaseUrl);
+export function searchProducts(q: string, size = 8, storeIds: string[] = [], apiBaseUrl?: string, categoryId?: string) {
+  return getJson<PagedResult<ProductGroup>>("/products", { q, category: categoryId, storeId: storeIds, page: 1, size }, apiBaseUrl);
 }
 
-export function getDeals(size = 8, apiBaseUrl?: string) {
-  return getJson<DealItem[]>("/deals", { page: 1, size }, apiBaseUrl);
+export async function getDeals(page = 1, size = 8, apiBaseUrl?: string, categoryId?: string, storeIds: string[] = []) {
+  const result = await getJson<PagedOrArray<DealItem>>("/deals", { category: categoryId, storeId: storeIds, page, size }, apiBaseUrl);
+  if (!Array.isArray(result)) return result;
+
+  return {
+    items: result,
+    page,
+    size,
+    total: result.length,
+    totalPages: 1,
+    hasMore: false,
+    sort: null
+  } satisfies PagedResult<DealItem>;
 }
 
 export function getMatchCandidates(page = 1, size = 100, apiBaseUrl?: string) {
