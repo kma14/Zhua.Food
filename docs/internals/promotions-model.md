@@ -51,6 +51,11 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   gain `promoType`/`memberPrice`(+ listings the multibuy pair); `/deals` = public specials only. Tests: 65
   crawling + 52 api green (new: WW club/multibuy fixtures, FS bestPromotion/club/member-multibuy fixtures, D3
   type-flip cases, /deals member-exclusion).
+- **2026-07-19 20:47** — 🧑‍⚖️ *(Kevin)* **Per-run promo-distribution report**: every crawl run must end with the
+  per-chain PromoType table (with each chain's loyalty-program name) in the log — see the "Per-run report" section.
+  Implemented (`PromoReport` + `Chain.LoyaltyProgram()` + `report` CLI command) after the first full local crawl on
+  the new model verified the mapping end-to-end (7 stores, 15,527 products, 4 data invariants at 0 violations,
+  `/deals` = 2,591 = the Special count exactly).
 - **2026-07-17 19:10** — **CORRECTION** (prompted by Kevin asking "non-members must pay *some* price — is it
   really not shown?"): **NW Clubcard deals publish BOTH prices.** `singlePrice.price` = the **non-member shelf
   price**, `rewardValue` = the **club price** — they differ on 423/423 card promos (e.g. eggs $12.59 shelf /
@@ -207,6 +212,30 @@ price is what we compare, and member/special describe that unit price while mult
 member price — while NW stores the non-member price. Same club-deal product, opposite semantics per chain; the new
 model fixes the comparison. `MemberPrice` (and the multibuy pair) join the D3 tuple alongside `PromoType` (B2 —
 member price changes weekly; a change must snapshot).
+
+### Per-run report (🧑‍⚖️ 2026-07-19)
+
+Every crawl ends by logging a **promo-distribution table** (`[report]` lines — scheduled `CrawlJob` and the
+one-shot `crawl` command both; `dotnet run --project src/Zhua.Worker -- report` prints it ad-hoc without
+crawling). Builder: [`Infrastructure/Crawling/PromoReport.cs`](../../src/Zhua.Infrastructure/Crawling/PromoReport.cs);
+program names from `Chain.LoyaltyProgram()` (Domain). Purpose: a **mapping regression tripwire** — if a source
+renames a promo signal (e.g. `cardDependencyFlag`), the matching column collapses toward 0 in the next run's log.
+
+First real run (local, 2026-07-19):
+
+```
+chain       program                total    none special  member multibuy  promo%
+Woolworths  Everyday Rewards        3398    2290     789     212      107    33%
+NewWorld    New World Clubcard      4622    3512     150     953        7    24%
+PaknSave    —                       7507    5796    1652       0       59    23%
+TOTAL                              15527   11598    2591    1165      173    25%
+```
+
+Reading it: `special` = public deals (feeds `/deals` — 2,591 total matches the endpoint exactly); NW's promos are
+~86% Clubcard-gated (953 member vs 150 public) while PAK'nSAVE runs **no loyalty program at all** (EDLP
+positioning — every deal is public, hence `—`); WW mixes all three mechanics and has the highest promo share.
+Baselines to eyeball against: NW `member` suddenly 0 → `cardDependencyFlag` broke; PAK `member` suddenly > 0 →
+either PAK launched a program or our flag reading broke; `special` ≠ `/deals` total → predicate drift.
 
 ### Remaining questions
 

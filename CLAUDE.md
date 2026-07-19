@@ -64,6 +64,7 @@ dotnet test                                            # run all tests
 dotnet run --project src/Zhua.Worker                   # scheduled mode (Quartz cron: crawl all + match; D4/D7)
 dotnet run --project src/Zhua.Worker -- crawl          # one-shot: ingest all active stores (headed Playwright)
 dotnet run --project src/Zhua.Worker -- match          # one-shot: offline item matching (D18)
+dotnet run --project src/Zhua.Worker -- report         # promo-distribution table per chain (also auto-logged at the end of every crawl run)
 dotnet run --project src/Zhua.Api                      # GET /health, /health/db
 ```
 

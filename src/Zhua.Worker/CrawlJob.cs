@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Quartz;
 using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
+using Zhua.Infrastructure.Crawling;
 using Zhua.Infrastructure.Persistence;
 
 namespace Zhua.Worker;
@@ -52,5 +53,10 @@ public sealed class CrawlJob(
         var cm = await categoryMapper.MapAsync(ct);
         log.LogInformation("[scheduled] categories: item={Item} mappedStoreCats={Mapped} categorizedProducts={Products}",
             cm.Categories, cm.MappedStoreCategories, cm.CategorizedProducts);
+
+        // Per-run promo-distribution report (docs/internals/promotions-model.md) — a mapping regression
+        // (e.g. a chain's promo signal renamed at the source) shows up here as a column collapsing to 0.
+        foreach (var line in await PromoReport.BuildAsync(db, ct))
+            log.LogInformation("[report] {Line}", line);
     }
 }
