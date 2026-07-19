@@ -100,6 +100,10 @@ internal static class TestData
             // wasPrice/saving come back null. Unmatched so it doesn't disturb item/category counts.
             Sp(StoreSeed.PaknSaveBotany, "pns-special-nowas", "Fresh Salmon Portions 1kg", 8.99m, itemId: null,
                 onSpecial: true),
+            // A Clubcard-only deal (promotions-model.md decision C): NOT a /deals item — the member price is a
+            // separate axis; Price stays the non-member shelf price. Unmatched to keep group counts stable.
+            Sp(StoreSeed.NewWorldMetro, "nw-club-eggs", "Otaika Valley Size 7 Eggs 12pk", 12.59m, itemId: null,
+                promoType: PromoType.MemberPrice, memberPrice: 11.29m),
             // Chicken breast only at New World
             Sp(StoreSeed.NewWorldMetro, "nw-chicken", "Tegel Chicken Breast 500g", 9.99m, ChickenBreast,
                 img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png"),
@@ -168,13 +172,17 @@ internal static class TestData
 
     private static Product Sp(
         Guid storeId, string sku, string name, decimal price, Guid? itemId,
-        bool onSpecial = false, decimal? wasPrice = null, string? img = null, Guid? id = null) =>
+        bool onSpecial = false, decimal? wasPrice = null, string? img = null, Guid? id = null,
+        PromoType? promoType = null, decimal? memberPrice = null) =>
         new()
         {
             Id = id ?? Guid.NewGuid(),
             StoreId = storeId, Sku = sku, RawName = name, RawBrand = null, RawSize = null,
             ItemId = itemId, ImageUrl = img,
             CurrentPrice = price, IsOnSpecial = onSpecial, CurrentNonSpecialPrice = wasPrice,
+            // Keep the invariant the entity enforces on real crawls: IsOnSpecial ⇔ PromoType == Special.
+            PromoType = promoType ?? (onSpecial ? PromoType.Special : PromoType.None),
+            MemberPrice = memberPrice,
             UnitPrice = price, UnitOfMeasure = "1kg",
             FirstSeenAt = Now, LastSeenAt = Now, PriceUpdatedAt = Now,
         };

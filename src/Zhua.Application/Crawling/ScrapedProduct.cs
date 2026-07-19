@@ -1,9 +1,13 @@
+using Zhua.Domain.Enums;
+
 namespace Zhua.Application.Crawling;
 
 /// <summary>
 /// A product as returned by a store crawler — raw, pre-persistence, pre-item-matching.
-/// Price semantics: <see cref="Price"/> is what you pay now; <see cref="NonSpecialPrice"/> is the
-/// regular ("was") price, set when on special so we can show the discount.
+/// Price semantics (docs/internals/promotions-model.md): <see cref="Price"/> is always the unit price a
+/// cardless shopper pays now; <see cref="NonSpecialPrice"/> is the regular ("was") price when on a public
+/// special; a loyalty-card price goes in <see cref="MemberPrice"/>; a multibuy ("N for $X") goes in the
+/// <see cref="MultibuyQuantity"/> + <see cref="MultibuyTotal"/> pair.
 /// </summary>
 public sealed record ScrapedProduct
 {
@@ -30,7 +34,17 @@ public sealed record ScrapedProduct
 
     public decimal? NonSpecialPrice { get; init; }
 
-    public bool IsOnSpecial { get; init; }
+    /// <summary>The primary promotion on this listing (decision D1; precedence MemberPrice &gt; Special &gt; Multibuy).</summary>
+    public PromoType PromoType { get; init; }
+
+    /// <summary>Loyalty-card price when <see cref="PromoType"/> is MemberPrice (per unit; null for a member multibuy).</summary>
+    public decimal? MemberPrice { get; init; }
+
+    /// <summary>Multibuy "N for $X": N. Set whenever the source publishes one, whatever the primary type.</summary>
+    public int? MultibuyQuantity { get; init; }
+
+    /// <summary>Multibuy "N for $X": the total $X.</summary>
+    public decimal? MultibuyTotal { get; init; }
 
     public decimal? UnitPrice { get; init; }
 

@@ -2,6 +2,7 @@ using Zhua.Application.Categories;
 using Zhua.Application.Common;
 using Zhua.Application.Pricing;
 using Zhua.Domain.Entities;
+using Zhua.Domain.Enums;
 using Zhua.Domain.Repositories;
 
 namespace Zhua.Application.Products;
@@ -66,7 +67,9 @@ public sealed class ProductService(
                 sp.Store.Name, sp.Store.Chain, sp.Store.Suburb,
                 Points = sp.PriceSnapshots
                     .OrderBy(ps => ps.CapturedAt)
-                    .Select(ps => new PriceHistoryPoint(ps.CapturedAt, ps.Price, ps.IsOnSpecial, ps.NonSpecialPrice, ps.UnitPrice))
+                    .Select(ps => new PriceHistoryPoint(
+                        ps.CapturedAt, ps.Price, ps.IsOnSpecial, ps.NonSpecialPrice,
+                        PromoTypeLabel(ps.PromoType), ps.MemberPrice, ps.UnitPrice))
                     .ToList(),
             })
             .Where(r => r.Points.Count > 0)
@@ -116,6 +119,7 @@ public sealed class ProductService(
                         return new ProductListing(
                             p.Id, p.Sku, p.Store.Name, p.Store.Chain.ToString(), p.Store.Suburb, p.RawName, p.RawBrand, p.RawSize,
                             p.ImageUrl, p.CurrentPrice, p.IsOnSpecial, p.CurrentNonSpecialPrice,
+                            PromoTypeLabel(p.PromoType), p.MemberPrice, p.MultibuyQuantity, p.MultibuyTotal,
                             norm is { } n ? decimal.Round(n.Price, 2) : null, norm?.Unit,
                             p.PriceUpdatedAt, p.LastSeenAt);
                     })
@@ -129,6 +133,9 @@ public sealed class ProductService(
     private const string SortPriceAsc = "priceAsc";
     private const string SortNameAsc = "nameAsc";
     private const string SortDiscountDesc = "discountDesc";
+
+    /// <summary>Enum → API label ("Special" | "MemberPrice" | "Multibuy"); None serialises as null.</summary>
+    internal static string? PromoTypeLabel(PromoType t) => t == PromoType.None ? null : t.ToString();
 
     /// <summary>Map the raw sort param to a supported key; unknown/blank/null ⇒ the default (echoed back).</summary>
     private static string NormalizeSort(string? sort) => sort?.Trim() switch

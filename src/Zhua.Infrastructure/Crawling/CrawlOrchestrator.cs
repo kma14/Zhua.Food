@@ -113,7 +113,8 @@ public sealed class CrawlOrchestrator(
 
     private static ProductObservation ToObservation(ScrapedProduct s) => new(
         s.Name, s.Brand, s.Size, s.Gtin, s.Url, s.ImageUrl,
-        s.Price, s.NonSpecialPrice, s.IsOnSpecial, s.UnitPrice, s.UnitOfMeasure);
+        s.Price, s.NonSpecialPrice, s.PromoType, s.MemberPrice, s.MultibuyQuantity, s.MultibuyTotal,
+        s.UnitPrice, s.UnitOfMeasure);
 
     /// <summary>Upserts the product's Department→Aisle→Shelf nodes and links them many-to-many (plan D11).</summary>
     private void LinkCategories(

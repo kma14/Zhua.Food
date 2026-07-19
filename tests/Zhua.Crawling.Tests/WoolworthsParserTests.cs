@@ -22,7 +22,7 @@ public class WoolworthsParserTests
     public void Skips_non_product_items()
     {
         var products = ParseFixture();
-        Assert.Equal(3, products.Count); // the PromotionalCarousel item is filtered out
+        Assert.Equal(5, products.Count); // the PromotionalCarousel item is filtered out
         Assert.DoesNotContain(products, p => p.Name.Contains("must be skipped"));
     }
 
@@ -37,11 +37,38 @@ public class WoolworthsParserTests
         Assert.Equal("https://img/big.jpg", p.ImageUrl);
         Assert.Equal("1-3 Pieces", p.Size);
         Assert.Equal(46.9m, p.Price);            // salePrice = price paid now
-        Assert.True(p.IsOnSpecial);
+        Assert.Equal(PromoType.Special, p.PromoType);
         Assert.Equal(52.4m, p.NonSpecialPrice);  // originalPrice = "was"
         Assert.Equal(46.9m, p.UnitPrice);
         Assert.Equal("1kg", p.UnitOfMeasure);
         Assert.Equal("Snapper", p.Category);     // last node of the path
+    }
+
+    [Fact]
+    public void Club_price_maps_to_member_price_with_the_shelf_price_as_price()
+    {
+        // isClubPrice ⊂ isSpecial at the source — the club product is ALSO flagged isSpecial, and must not
+        // come out as a public special (docs/internals/promotions-model.md).
+        var p = ParseFixture().Single(x => x.Sku == "6006733");
+
+        Assert.Equal(PromoType.MemberPrice, p.PromoType);
+        Assert.Equal(12.6m, p.Price);            // originalPrice = what a cardless shopper pays
+        Assert.Equal(11.95m, p.MemberPrice);     // salePrice = the club price
+        Assert.Null(p.NonSpecialPrice);          // shelf price isn't discounted → no "was"
+        Assert.Equal(84.0m, p.UnitPrice);        // cupListPrice matches the shelf price
+        Assert.Contains(p.Tags, t => t.Source == ProductTagSource.Primary && t.Code == "IsClubPrice");
+    }
+
+    [Fact]
+    public void Multibuy_captures_the_quantity_total_pair()
+    {
+        var p = ParseFixture().Single(x => x.Sku == "777777");
+
+        Assert.Equal(PromoType.Multibuy, p.PromoType);
+        Assert.Equal(9.0m, p.Price);             // unit shelf price unaffected by "3 for $20"
+        Assert.Equal(3, p.MultibuyQuantity);
+        Assert.Equal(20.0m, p.MultibuyTotal);
+        Assert.Null(p.MemberPrice);
     }
 
     [Fact]
@@ -56,7 +83,7 @@ public class WoolworthsParserTests
     {
         var lowPrice = ParseFixture().Single(x => x.Sku == "123456");
 
-        Assert.False(lowPrice.IsOnSpecial);      // no discount: salePrice == originalPrice
+        Assert.Equal(PromoType.None, lowPrice.PromoType); // no discount: salePrice == originalPrice
         Assert.Null(lowPrice.NonSpecialPrice);
         // …but the "Low Price" badge is still captured (the gap our schema previously missed).
         Assert.Contains(lowPrice.Tags, t => t.Source == ProductTagSource.Primary && t.Code == "IsGreatPrice");

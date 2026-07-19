@@ -1,3 +1,5 @@
+using Zhua.Domain.Enums;
+
 namespace Zhua.Domain.ValueObjects;
 
 /// <summary>
@@ -5,6 +7,9 @@ namespace Zhua.Domain.ValueObjects;
 /// <see cref="Entities.Product.ApplyObservation"/> consumes. Lives in Domain (not Application's
 /// <c>ScrapedProduct</c>) so the price-change invariant (D3) can be owned by the entity without Domain depending
 /// on Application; the orchestrator maps <c>ScrapedProduct</c> → this.
+/// Price semantics (docs/internals/promotions-model.md): <paramref name="Price"/> is always the unit price a
+/// cardless shopper pays now; a member/club price arrives separately in <paramref name="MemberPrice"/>; a
+/// multibuy ("N for $X") arrives as the <paramref name="MultibuyQuantity"/> + <paramref name="MultibuyTotal"/> pair.
 /// </summary>
 public sealed record ProductObservation(
     string Name,
@@ -15,6 +20,9 @@ public sealed record ProductObservation(
     string? ImageUrl,
     decimal Price,
     decimal? NonSpecialPrice,
-    bool IsOnSpecial,
+    PromoType PromoType,
+    decimal? MemberPrice,
+    int? MultibuyQuantity,
+    decimal? MultibuyTotal,
     decimal? UnitPrice,
     string? UnitOfMeasure);

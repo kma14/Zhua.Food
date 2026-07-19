@@ -230,15 +230,50 @@ public sealed class WoolworthsCrawler : IStoreCrawler
 
             var price = Obj(item, "price");
             var size = Obj(item, "size");
-            var sale = Dec(price, "salePrice") ?? Dec(price, "originalPrice");
+            var original = Dec(price, "originalPrice");
+            var sale = Dec(price, "salePrice") ?? original;
             if (sale is null) continue;
             var isSpecial = Bool(price, "isSpecial");
+            // isClubPrice ⊂ isSpecial at the source: a club deal is ALSO flagged isSpecial, so club must be
+            // split out FIRST or member prices masquerade as public specials (docs/internals/promotions-model.md).
+            var isClub = Bool(price, "isClubPrice");
+
+            var productTag = Obj(item, "productTag");
 
             // Promo tag (plan D13): the primary badge. "Other" means no real promo → skip.
             var tags = new List<ScrapedTag>();
-            var tagType = Str(Obj(item, "productTag"), "tagType");
+            var tagType = Str(productTag, "tagType");
             if (!string.IsNullOrWhiteSpace(tagType) && !tagType.Equals("Other", StringComparison.OrdinalIgnoreCase))
                 tags.Add(new ScrapedTag(ProductTagSource.Primary, tagType));
+
+            // Multibuy pair ("3 for $20") — published independently of special/club, kept whatever the primary type.
+            var multiBuy = Obj(productTag, "multiBuy");
+            var multiQty = Dec(multiBuy, "quantity") is { } q and > 1 ? (int?)q : null;
+            var multiTotal = multiQty is not null ? Dec(multiBuy, "value") : null;
+            if (multiTotal is null) multiQty = null;
+
+            var promoType = isClub ? PromoType.MemberPrice
+                : isSpecial ? PromoType.Special
+                : multiQty is not null ? PromoType.Multibuy
+                : PromoType.None;
+
+            // Price semantics (docs/internals/promotions-model.md): Price = what a cardless shopper pays.
+            // Club deal → salePrice is the MEMBER price and originalPrice the shelf price; cupListPrice is the
+            // unit price matching the shelf price. Otherwise salePrice IS the shelf price.
+            decimal shelfPrice;
+            decimal? memberPrice = null, wasPrice = null, unitPrice;
+            if (promoType == PromoType.MemberPrice && original is not null)
+            {
+                shelfPrice = original.Value;
+                memberPrice = sale.Value < original.Value ? sale : null;
+                unitPrice = Dec(size, "cupListPrice") ?? Dec(size, "cupPrice");
+            }
+            else
+            {
+                shelfPrice = sale.Value;
+                wasPrice = promoType == PromoType.Special ? original : null;
+                unitPrice = Dec(size, "cupPrice");
+            }
 
             into.Add(new ScrapedProduct
             {
@@ -251,10 +286,13 @@ public sealed class WoolworthsCrawler : IStoreCrawler
                 Category = path.Count > 0 ? path[^1].Name : null,
                 CategoryPath = path,
                 Tags = tags,
-                Price = sale.Value,
-                NonSpecialPrice = isSpecial ? Dec(price, "originalPrice") : null,
-                IsOnSpecial = isSpecial,
-                UnitPrice = Dec(size, "cupPrice"),
+                Price = shelfPrice,
+                NonSpecialPrice = wasPrice,
+                PromoType = promoType,
+                MemberPrice = memberPrice,
+                MultibuyQuantity = multiQty,
+                MultibuyTotal = multiTotal,
+                UnitPrice = unitPrice,
                 UnitOfMeasure = Str(size, "cupMeasure"),
             });
         }

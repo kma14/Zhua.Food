@@ -19,6 +19,8 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(x => x.UnitOfMeasure).HasMaxLength(20);
         b.Property(x => x.CurrentPrice).HasPrecision(10, 2);
         b.Property(x => x.CurrentNonSpecialPrice).HasPrecision(10, 2);
+        b.Property(x => x.MemberPrice).HasPrecision(10, 2);
+        b.Property(x => x.MultibuyTotal).HasPrecision(10, 2);
         b.Property(x => x.UnitPrice).HasPrecision(12, 4);
 
         b.HasOne(x => x.Store)
