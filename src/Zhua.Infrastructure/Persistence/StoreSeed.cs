@@ -21,4 +21,8 @@ public static class StoreSeed
     public static readonly Guid PaknSaveAlbany       = new("33333333-3333-3333-3333-333333333333");
     public static readonly Guid PaknSaveBotany       = new("33333333-3333-3333-3333-333333333334");
     public static readonly Guid PaknSaveHighlandPark = new("33333333-3333-3333-3333-333333333335");
+
+    // FreshChoice (MyFoodLink, D26 — independently priced per store). ExternalStoreId = the storefront SUBDOMAIN
+    // (hc → hc.store.freshchoice.co.nz), not a locator id — the crawler builds its base URL from it.
+    public static readonly Guid FreshChoiceHaurakiCorner = new("44444444-4444-4444-4444-444444444444");
 }

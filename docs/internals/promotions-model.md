@@ -94,10 +94,10 @@ but use it with opposite strategies. All numbers from the 2026-07-17 archive sca
 
 | | **Woolworths** | **New World** | **PAK'nSAVE** | **FreshChoice** |
 |---|---|---|---|---|
-| Loyalty scheme | Everyday Rewards | Clubcard | none seen | none seen |
+| Loyalty scheme | Everyday Rewards | New World Clubcard | none (EDLP) | **none** (censused 2026-07-20) |
 | **公开临时特价 → `Special`** | `isSpecial && !isClubPrice` (3,451) | `decal 3000`, `cardDependencyFlag=false` — only **7%** of NW promos | `decal 6000` — **100%** of PAK promos are public | `talker--Special` sticker + "was $X" |
 | **会员价 → `MemberPrice`** | `isClubPrice` (942 — always also `isSpecial`, so WW itself mixes them) | `cardDependencyFlag=true` (`decal 4000/5000`) — **93%** of NW promos | none (0/1,735) | none seen |
-| **Multibuy → `Multibuy`** | `productTag.multiBuy {quantity: 3, value: 20}` = "3 for $20" (869) | `threshold>1`, `rewardValue` = total for N; mostly Clubcard-gated (`decal 5000`) | `threshold>1` (145, public) | not seen yet |
+| **Multibuy → `Multibuy`** | `productTag.multiBuy {quantity: 3, value: 20}` = "3 for $20" (869) | `threshold>1`, `rewardValue` = total for N; mostly Clubcard-gated (`decal 5000`) | `threshold>1` (145, public) | `talker--Deal` sticker "N for $X" (10 seen, public) |
 | 常年低价 (not a promo type — D13 tag only) | "Low Price" = `tagType IsGreatPrice` | — | (the whole banner is EDLP-positioned) | "Every Day"? TBD |
 | Was-price | **published** (`originalPrice`) | club deals: both prices published (`singlePrice` shelf / `rewardValue` club); public specials: regular unpublished → D23 | **not published** → D23 reconstruction | **published** ("was $16.80") |
 | Promo dates | fields exist, **always null** | none | none | none |
@@ -158,10 +158,13 @@ cardDependencyFlag, bestPromotion, comparativePrice }` — **no date fields anyw
   3,159 · `IsClubPrice` 942 · `IsGreatPriceMultiBuy` 741 · `IsNew` 174 · `IsFreshDeal` 128 · `IsGreatPrice` 54.
 - Other flags seen (all rare/unused so far): `hasBonusPoints`, `isTargetedOffer`, `isBoostOffer`, `savePercentage`.
 
-### FreshChoice (MyFoodLink)
+### FreshChoice (MyFoodLink) — full census 2026-07-20 (crawler built)
 
-HTML stickers `talker__sticker--Special|Discount|Saving` + `talker--Special` card class + `was $X`. **No dates in
-HTML.** Only one page recon'd — member/everyday/multibuy sticker variants TBD when the crawler is built.
+Sticker census over 5 departments (`meat/seafood/fruit-vegetables/dairy-eggs/deli`): `Special` + `Discount`
+(always co-occur on a discounted card, with "was $X"), `Saving` ("save $X" badge), **`Deal` = multibuy** (sticker
+links to `/deals/<id>`, label "N for $X", pair also in `.talker__additional_unit_prices…--multibuy`), `Tag` = a
+marketing image (not a promo). **Zero member/everyday variants → FreshChoice runs no loyalty program.** No dates
+in HTML. First crawl: 312 specials (**all 312 with a published was-price** — no D23 needed), 10 multibuys.
 
 **Takeaway:** every chain has a clean, decodable type signal (member + multibuy included) — but **no source
 publishes promo dates** in any list/browse response. Start/end must come from our own observation history.

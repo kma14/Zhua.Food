@@ -28,8 +28,8 @@ public class HealthAndStoreTests(ApiFactory factory)
         var stores = await _client.GetFromJsonAsync<List<StoreView>>("/stores");
 
         Assert.NotNull(stores);
-        // 7 active (1 Woolworths + 3 New World + 3 PAK'nSAVE); the 2 extra Woolworths branches are inactive.
-        Assert.Equal(7, stores!.Count);
+        // 8 active (1 Woolworths + 3 New World + 3 PAK'nSAVE + 1 FreshChoice, D26); 2 extra WW branches inactive.
+        Assert.Equal(8, stores!.Count);
         Assert.DoesNotContain(stores, s => s.Name.Contains("Glenfield"));
 
         var pak = stores.Single(s => s.Name == "PAK'nSAVE Albany");
@@ -37,6 +37,10 @@ public class HealthAndStoreTests(ApiFactory factory)
         Assert.Equal("Albany", pak.Suburb);
         Assert.True(pak.ProductCount >= 1);
         Assert.NotNull(pak.LastCrawledAt); // it has a successful CrawlRun in the seed
+
+        var fc = stores.Single(s => s.Supermarket == "FreshChoice");
+        Assert.Equal("FreshChoice Hauraki Corner", fc.Name);
+        Assert.Equal("Hauraki", fc.Suburb);
     }
 
     [Fact]

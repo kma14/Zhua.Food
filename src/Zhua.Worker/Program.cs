@@ -7,6 +7,7 @@ using Quartz;
 using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
 using Zhua.Crawling.Foodstuffs;
+using Zhua.Crawling.FreshChoice;
 using Zhua.Crawling.Woolworths;
 using Zhua.Infrastructure;
 using Zhua.Infrastructure.Persistence;
@@ -22,6 +23,7 @@ builder.Services.AddPersistence(conn).AddCrawling().AddMatching();
 builder.Services.AddSingleton<IStoreCrawler, WoolworthsCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, NewWorldCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, PaknSaveCrawler>();
+builder.Services.AddSingleton<IStoreCrawler, FreshChoiceCrawler>();
 
 // No CLI command = scheduled mode (plan D4/D7): Quartz fires the crawling job on a cron (default twice-daily).
 var scheduled = args.Length == 0;
