@@ -77,6 +77,22 @@ public class Product
     /// <summary>Refreshed every crawl — liveness signal that distinguishes "unchanged" from "vanished" (plan D3).</summary>
     public DateTimeOffset LastSeenAt { get; set; }
 
+    // --- Availability reconciliation (plan D28): a listing that stops appearing in COMPLETE crawls of its store
+    // is retired instead of freezing at its last-seen state (the stale-special bug: a 2026-07-13 special served
+    // by /deals for a product Highland Park had delisted). Shopper-facing queries exclude unavailable listings.
+
+    /// <summary>False once the listing has been missing from <see cref="MissingRunsBeforeUnavailable"/> consecutive
+    /// complete crawls of its store. Reset to true the moment the product is observed again.</summary>
+    public bool IsAvailable { get; set; } = true;
+
+    /// <summary>When the current missing streak started (first complete crawl that didn't return the product);
+    /// null while the product is being seen.</summary>
+    public DateTimeOffset? MissingSince { get; set; }
+
+    /// <summary>Consecutive COMPLETE crawls of this store that did not return the product. Incomplete/failed runs
+    /// never touch it — a lost page must not look like a delisting.</summary>
+    public int ConsecutiveMissingRuns { get; set; }
+
     public DateTimeOffset? PriceUpdatedAt { get; set; }
 
     public ICollection<PriceSnapshot> PriceSnapshots { get; } = new List<PriceSnapshot>();
@@ -121,6 +137,11 @@ public class Product
         UnitOfMeasure = obs.UnitOfMeasure;
         LastSeenAt = now;
 
+        // Being observed ends any missing streak (D28) — a listing that returns is available again.
+        IsAvailable = true;
+        MissingSince = null;
+        ConsecutiveMissingRuns = 0;
+
         if (!priceChanged) return null;
 
         PriceUpdatedAt = now;
@@ -138,6 +159,35 @@ public class Product
         };
         PriceSnapshots.Add(snapshot);
         return snapshot;
+    }
+
+    /// <summary>Missing streaks this long (in complete crawls) mark the listing unavailable (plan D28). At the
+    /// twice-daily cadence (D7) that's about one day — one transient source hiccup never retires a product.</summary>
+    public const int MissingRunsBeforeUnavailable = 2;
+
+    /// <summary>
+    /// Records that a COMPLETE crawl of this store did not return this product (plan D28; the caller — the
+    /// orchestrator — only reconciles after a complete run). At <see cref="MissingRunsBeforeUnavailable"/>
+    /// consecutive misses the listing is retired: <see cref="IsAvailable"/> goes false and the promo state is
+    /// cleared so a stale special can't linger in /deals. <see cref="CurrentPrice"/> is kept as the last-known
+    /// price for history/display; deliberately NO synthetic <see cref="PriceSnapshot"/> is written — history
+    /// records only real observations (the vanishing shows as <see cref="LastSeenAt"/> going stale).
+    /// </summary>
+    public void RecordMissing(DateTimeOffset now)
+    {
+        MissingSince ??= now;
+        ConsecutiveMissingRuns++;
+
+        if (ConsecutiveMissingRuns < MissingRunsBeforeUnavailable || !IsAvailable)
+            return;
+
+        IsAvailable = false;
+        IsOnSpecial = false;
+        PromoType = PromoType.None;
+        CurrentNonSpecialPrice = null;
+        MemberPrice = null;
+        MultibuyQuantity = null;
+        MultibuyTotal = null;
     }
 
     /// <summary>

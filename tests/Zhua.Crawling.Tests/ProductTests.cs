@@ -18,6 +18,56 @@ public class ProductTests
             price, nonSpecial, onSpecial ? PromoType.Special : promo, memberPrice, multiQty, multiTotal,
             price / 2, "1L");
 
+    // ---- Availability reconciliation (plan D28) — pure entity behaviour ----------------------------------------
+
+    [Fact]
+    public void RecordMissing_below_threshold_only_tracks_the_streak()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m, onSpecial: true, nonSpecial: 4.00m), T0);
+
+        p.RecordMissing(T0.AddHours(12));
+
+        Assert.True(p.IsAvailable);
+        Assert.True(p.IsOnSpecial);                          // promo untouched below the threshold
+        Assert.Equal(1, p.ConsecutiveMissingRuns);
+        Assert.Equal(T0.AddHours(12), p.MissingSince);
+    }
+
+    [Fact]
+    public void RecordMissing_at_threshold_retires_the_listing_and_clears_every_promo_field()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(10.00m, promo: PromoType.MemberPrice, memberPrice: 8.50m, multiQty: 3, multiTotal: 25.00m), T0);
+
+        p.RecordMissing(T0.AddHours(12));
+        p.RecordMissing(T0.AddHours(24));
+
+        Assert.False(p.IsAvailable);
+        Assert.Equal(PromoType.None, p.PromoType);
+        Assert.Null(p.MemberPrice);
+        Assert.Null(p.MultibuyQuantity);
+        Assert.Null(p.MultibuyTotal);
+        Assert.Equal(10.00m, p.CurrentPrice);                // last-known price survives
+        Assert.Equal(T0.AddHours(12), p.MissingSince);       // streak start, not retirement time
+        Assert.Single(p.PriceSnapshots);                     // no synthetic "promo ended" snapshot
+    }
+
+    [Fact]
+    public void Observation_after_a_missing_streak_resets_availability()
+    {
+        var p = NewProduct();
+        p.ApplyObservation(Milk(3.50m), T0);
+        p.RecordMissing(T0.AddHours(12));
+        p.RecordMissing(T0.AddHours(24));
+
+        p.ApplyObservation(Milk(3.50m), T0.AddHours(36));
+
+        Assert.True(p.IsAvailable);
+        Assert.Equal(0, p.ConsecutiveMissingRuns);
+        Assert.Null(p.MissingSince);
+    }
+
     [Fact]
     public void First_observation_counts_as_a_change_and_sets_fields()
     {

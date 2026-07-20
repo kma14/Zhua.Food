@@ -19,6 +19,17 @@ public class FoodstuffsParserTests
     }
 
     [Fact]
+    public void FacetValues_lists_the_split_targets_for_a_truncated_scope()
+    {
+        // D28: a totalHits==1000 scope is Algolia-truncated; the crawler splits it by these facet values.
+        using var doc = JsonDocument.Parse(
+            """{"totalHits":1000,"algoliaSearchResult":{"facets":{"category1NI":{"Milk":320,"Cheese & Eggs":410}}}}""");
+
+        Assert.Equal(["Milk", "Cheese & Eggs"], FoodstuffsCrawler.FacetValues(doc.RootElement, "category1NI"));
+        Assert.Empty(FoodstuffsCrawler.FacetValues(doc.RootElement, "category2NI")); // absent facet → no split
+    }
+
+    [Fact]
     public void Converts_cents_to_dollars_and_maps_unit_price()
     {
         var p = ParseFixture().First(x => x.Sku == "5125914-KGM-000");

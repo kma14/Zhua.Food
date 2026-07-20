@@ -10,30 +10,34 @@ namespace Zhua.Domain.Repositories;
 /// </summary>
 public interface IProductRepository
 {
-    /// <summary>Active, priced listings matching the text/category/store filters — with Store + Item loaded for grouping.</summary>
+    /// <summary>Active, priced, available listings matching the text/category/store filters — with Store + Item
+    /// loaded for grouping. Unavailable listings (D28) are excluded: a delisted product isn't a price you can pay.</summary>
     Task<IReadOnlyList<Product>> FindListingsAsync(
         string? q, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds, CancellationToken ct = default);
 
     /// <summary>A single listing by id (no includes) — existence + its <see cref="Product.ItemId"/> + raw header.</summary>
     Task<Product?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>The priced listings of a group — the item's members if <paramref name="itemId"/> is set, else just
-    /// the single listing (an unmatched group of one). Store + Item loaded.</summary>
+    /// <summary>The priced, available listings of a group — the item's members if <paramref name="itemId"/> is set,
+    /// else just the single listing (an unmatched group of one). Store + Item loaded. Unavailable listings (D28)
+    /// are excluded from the compare (their snapshots still show in history).</summary>
     Task<IReadOnlyList<Product>> FindGroupAsync(Guid? itemId, Guid productId, CancellationToken ct = default);
 
     /// <summary>The group's listings with each one's price snapshots since <paramref name="since"/> + Store loaded.</summary>
     Task<IReadOnlyList<Product>> FindGroupWithHistoryAsync(
         Guid? itemId, Guid productId, DateTimeOffset since, CancellationToken ct = default);
 
-    /// <summary>Current specials matching the supermarket/category/store filters (saving first), paged, Store loaded.</summary>
+    /// <summary>Current specials matching the supermarket/category/store filters (saving first), paged, Store
+    /// loaded. Only available listings seen since <paramref name="seenSince"/> (D28 freshness guard — a special
+    /// no crawl has confirmed recently must not be sold as current).</summary>
     Task<IReadOnlyList<Product>> FindSpecialsAsync(
         Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,
-        int page, int size, CancellationToken ct = default);
+        DateTimeOffset seenSince, int page, int size, CancellationToken ct = default);
 
     /// <summary>Total specials matching the same filters (for the paged envelope's <c>total</c>).</summary>
     Task<int> CountSpecialsAsync(
         Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,
-        CancellationToken ct = default);
+        DateTimeOffset seenSince, CancellationToken ct = default);
 
     /// <summary>A single listing (tracked) for a link/unlink write.</summary>
     Task<Product?> GetForUpdateAsync(Guid id, CancellationToken ct = default);

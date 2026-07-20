@@ -267,6 +267,13 @@ as `/products`.
 >
 > Each deal also carries its listing `id` (drill in via `GET /products/{id}`) and `sku` (the supermarket/source
 > product id — tells apart look-alike specials that share brand/name/size).
+>
+> **Freshness & availability (D28, 2026-07-20):** a deal must have been **seen by a crawl within the last 48h**
+> (`lastSeenAt`/`priceAsOf` stays on every item so the UI can still show its age) — a special the crawler stopped
+> confirming ages out of `/deals` automatically instead of being served forever. Separately, listings a store has
+> **delisted** (missing from 2 consecutive complete crawls) are retired: they disappear from `/deals`, `/products`
+> search and the same-product compare (their price history stays queryable via `GET /products/{id}/price-history`).
+> No new response fields — retired/stale rows are simply excluded.
 
 ### Admin — match review (D18)
 
@@ -362,3 +369,4 @@ The whole flow is now backed end-to-end.
 - 2026-07-11 21:50 🧑‍⚖️ `/deals` now returns **any current promotion** (`isOnSpecial`), not just ones with a was-price — a deal no longer requires a recoverable regular price (was excluding most Foodstuffs specials until history accumulated). No-was deals come back with `wasPrice`/`saving` `null` and sort after the ones with a known saving. Front-end renders `saving`/`wasPrice` only when present.
 - 2026-07-11 22:02 🧑‍⚖️ `/deals` gains `category` + `storeId` filters aligned with `/products` (shared subtree resolver + repository predicate, so they can't drift; `supermarket`+`storeId` intersect; unknown category → 404), and now returns the `PagedResult<DealItem>` envelope (`sort: null`). Front-end reads `.items` (lockstep). Deal ordering is a fixed saving-first default; the client re-sorts.
 - 2026-07-17 21:30 🧑‍⚖️ **Promo-type model** (decisions A–E in [internals/promotions-model.md](internals/promotions-model.md)): listings + price-history points gain `promoType` (`"Special"`|`"MemberPrice"`|`"Multibuy"`|null), `memberPrice`, and listings the `multibuyQuantity`/`multibuyTotal` pair. **`price` is now always the cardless shelf price** (Woolworths club deals used to report the member price here). `isOnSpecial` narrowed to `promoType == "Special"` — so **`/deals` = public specials only**; member prices render beside the shelf price on listings, and Clubcard/multibuy promos no longer appear as deals. Front-end (Codex): render `memberPrice`/multibuy badges from the new fields.
+- 2026-07-20 15:45 🧑‍⚖️ **Stale-deal fix (D28)** (from the front-end bug report: a Highland Park special from 2026-07-13 was still served by `/deals` after the branch delisted the product): `/deals` now requires the listing to have been **seen by a crawl within 48h**, and listings missing from 2 consecutive complete crawls of their store are **retired** — excluded from `/deals`, `/products` search and the same-product compare (price history stays). No response-shape change; the front-end's price-date staleness hint stays useful but is no longer the only guard.

@@ -29,7 +29,7 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/131.0.0.0 Safari/537.36 zhua.food-price-tracker";
 
-    public async Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default)
+    public async Task<ScrapeResult> FetchAsync(Store store, CancellationToken ct = default)
     {
         using var pw = await Playwright.CreateAsync();
         await using var browser = await pw.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -60,6 +60,7 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         catch (Exception ex) when (ex is PlaywrightException or TimeoutException) { }
 
         var results = new List<ScrapedProduct>();
+        var gaps = new List<string>();
 
         foreach (var deptSlug in DepartmentSlugs)
         {
@@ -67,7 +68,11 @@ public sealed class WoolworthsCrawler : IStoreCrawler
 
             var deptFilters = new List<(CategoryKind Kind, string Slug)> { (CategoryKind.Department, deptSlug) };
             var deptJson = await FetchBrowseAsync(page, archive, deptFilters, 1, ct);
-            if (deptJson is null) continue;
+            if (deptJson is null)
+            {
+                gaps.Add($"{deptSlug}: department listing failed after retries — whole department skipped");
+                continue;
+            }
 
             string[] aisleNames;
             using (var doc = JsonDocument.Parse(deptJson))
@@ -78,7 +83,11 @@ public sealed class WoolworthsCrawler : IStoreCrawler
                 ct.ThrowIfCancellationRequested();
                 var aisleFilters = new List<(CategoryKind Kind, string Slug)>(deptFilters) { (CategoryKind.Aisle, Slugify(aisleName)) };
                 var aisleJson = await FetchBrowseAsync(page, archive, aisleFilters, 1, ct);
-                if (aisleJson is null) continue;
+                if (aisleJson is null)
+                {
+                    gaps.Add($"{deptSlug}/{Slugify(aisleName)}: aisle listing failed after retries — whole aisle skipped");
+                    continue;
+                }
 
                 string[] shelfNames;
                 using (var doc = JsonDocument.Parse(aisleJson))
@@ -86,7 +95,7 @@ public sealed class WoolworthsCrawler : IStoreCrawler
 
                 if (shelfNames.Length == 0)
                 {
-                    await CrawlLeafAsync(page, archive, aisleFilters, aisleJson, results, ct); // aisle is the leaf
+                    await CrawlLeafAsync(page, archive, aisleFilters, aisleJson, results, gaps, ct); // aisle is the leaf
                 }
                 else
                 {
@@ -94,21 +103,28 @@ public sealed class WoolworthsCrawler : IStoreCrawler
                     {
                         ct.ThrowIfCancellationRequested();
                         var shelfFilters = new List<(CategoryKind Kind, string Slug)>(aisleFilters) { (CategoryKind.Shelf, Slugify(shelfName)) };
-                        await CrawlLeafAsync(page, archive, shelfFilters, null, results, ct);
+                        await CrawlLeafAsync(page, archive, shelfFilters, null, results, gaps, ct);
                     }
                 }
             }
         }
 
-        return results;
+        return new ScrapeResult(results, gaps);
     }
 
-    /// <summary>Crawls one leaf category across all pages, appending products tagged with their full category path.</summary>
+    /// <summary>Crawls one leaf category across all pages, appending products tagged with their full category path.
+    /// Pages that stay missing after <see cref="FetchBrowseAsync"/>'s retries are recorded as gaps (plan D28).</summary>
     private static async Task CrawlLeafAsync(
-        IPage page, RawCrawlArchive archive, List<(CategoryKind Kind, string Slug)> filters, string? firstPageJson, List<ScrapedProduct> results, CancellationToken ct)
+        IPage page, RawCrawlArchive archive, List<(CategoryKind Kind, string Slug)> filters, string? firstPageJson,
+        List<ScrapedProduct> results, List<string> gaps, CancellationToken ct)
     {
+        var leafLabel = string.Join("/", filters.Select(f => f.Slug));
         var json = firstPageJson ?? await FetchBrowseAsync(page, archive, filters, 1, ct);
-        if (json is null) return;
+        if (json is null)
+        {
+            gaps.Add($"{leafLabel}: page 1 failed after retries");
+            return;
+        }
 
         int total;
         IReadOnlyList<ScrapedCategoryNode> path;
@@ -124,7 +140,11 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         {
             ct.ThrowIfCancellationRequested();
             var more = await FetchBrowseAsync(page, archive, filters, p, ct);
-            if (more is null) break;
+            if (more is null)
+            {
+                gaps.Add($"{leafLabel}: page {p} of {pages} failed after retries");
+                break;
+            }
             using var doc = JsonDocument.Parse(more);
             ParseProductsInto(doc.RootElement, path, results);
         }

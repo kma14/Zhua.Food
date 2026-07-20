@@ -53,6 +53,27 @@ public class DealAndAdminTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Deals_exclude_specials_not_seen_within_the_freshness_window()
+    {
+        // D28: nw-stale-special still says PromoType=Special in the row, but its LastSeenAt is 6 days old —
+        // no recent crawl has confirmed it, so it must not be served as a current deal (the stale-bean bug).
+        var deals = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals"))?.Items;
+        Assert.DoesNotContain(deals!, d => d.Sku == "nw-stale-special");
+    }
+
+    [Fact]
+    public async Task Deals_and_products_exclude_retired_listings()
+    {
+        // D28: pns-retired was marked unavailable by missing-product reconciliation. Not a deal…
+        var deals = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals"))?.Items;
+        Assert.DoesNotContain(deals!, d => d.Sku == "pns-retired");
+
+        // …and not a listing you can find or compare either.
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>("/products?q=Zz Retired"))?.Items;
+        Assert.Empty(groups!);
+    }
+
+    [Fact]
     public async Task Deals_filter_by_supermarket()
     {
         var nw = (await _client.GetFromJsonAsync<PagedResult<DealItem>>("/deals?supermarket=NewWorld"))?.Items;

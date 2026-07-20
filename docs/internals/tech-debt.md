@@ -15,6 +15,9 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
 - **2026-07-11 21:37** — 🧑‍⚖️ *(Kevin)* Track tech debt in this register (first-class, **linked from CLAUDE.md**).
   Seeded from two issues spotted while reading the crawl/deals code: TD-1 (CrawlOrchestrator not moved to Application)
   and TD-2 (the "what is a deal" definition hard-coded in an Infra query). Keep it current as debt is added/paid down.
+- **2026-07-20 15:50** — Added TD-3 (facet-split blind spot for products without a level1/level2 category) and TD-4
+  (`PromoReport`/matcher ignore `IsAvailable`) — both accepted while building D28; not user-instructed shortcuts,
+  logged so they aren't forgotten.
 
 ## Open items
 
@@ -68,6 +71,42 @@ paging / ordering stay at the database) **and** puts the definition in Domain �
 **Why deferred / priority:** The deal predicate is used in **exactly one place** today (`FindSpecialsAsync`); the saving
 in two. Inline is pragmatic for a single use. **Revisit when** "what is a deal" is needed in a 2nd/3rd place (deal
 counts, deal-filtered browse, notifications) — that's when the spec pays for itself and drift becomes a real risk.
+
+### TD-3 — Truncation facet-split can't see products with no `category1NI`/`category2NI`
+
+**Where:** [`src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs`](../../src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs) (`CrawlScopeAsync`, D28)
+
+**What:** When a department is Algolia-truncated (`totalHits` pinned at 1000) we re-crawl it as one query per
+`category1NI` facet value (then `category2NI` if an aisle is still capped). A product inside that department whose
+category tree has **no level1** (or no level2 under a capped aisle) matches none of the sub-queries and is
+unreachable — invisibly, since the capped parent gives us no true total to check against.
+
+**Why it's debt:** a small, silent coverage hole in exactly the departments big enough to be truncated. Likely tiny
+(Foodstuffs trees are consistently 3 levels) but unproven.
+
+**The fix:** after a split, one extra query per level filtered to "has no `category1NI`" is not expressible in the
+Algolia filter syntax we mirror — realistic options are comparing the parent's facet-count sum against child sums,
+or sampling the truncated parent's 1000 for SKUs the sub-scopes didn't return and flagging a gap if any exist.
+
+**Why deferred / priority:** Low. The failure mode is "a few uncategorised products never enter the catalog", not
+wrong prices; and reconciliation only retires products after **complete** runs, so at worst such a product flaps
+in/out of availability if it also sits in an un-truncated department (then it's reachable anyway).
+
+### TD-4 — `PromoReport` and admin/match surfaces ignore availability
+
+**Where:** `PromoReport` (Worker), `/match-candidates` + matcher inputs.
+
+**What:** D28 retires delisted listings from shopper queries, but the per-run promo-distribution report still counts
+unavailable products, and the matcher/review queue still processes them.
+
+**Why it's debt:** report percentages drift slightly from what shoppers can see; the matcher spends effort linking
+listings nobody is served. Harmless today (retired rows are a tiny fraction).
+
+**The fix:** filter `IsAvailable` in `PromoReport.BuildAsync`; decide whether the matcher should skip or keep
+retiring listings (keeping them linked is arguably right — history pages still group by item).
+
+**Why deferred / priority:** Low — cosmetic/efficiency, no user-visible wrongness; the matcher question deserves a
+deliberate decision rather than a drive-by filter.
 
 ## Paid-down items
 

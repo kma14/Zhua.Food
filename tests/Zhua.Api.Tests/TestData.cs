@@ -60,7 +60,9 @@ internal static class TestData
     public static readonly Guid MergeFromSp = new("dddd0000-0000-0000-0000-000000000020");
     public static readonly Guid MergeIntoSp = new("dddd0000-0000-0000-0000-000000000021");
 
-    private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-06-24T06:00:00Z");
+    /// <summary>The dataset's "wall clock". <see cref="ApiFactory"/> pins the app's <see cref="TimeProvider"/>
+    /// just after this so the D28 /deals freshness window judges the seeds as freshly crawled.</summary>
+    public static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-06-24T06:00:00Z");
 
     public static async Task SeedAsync(ZhuaDbContext db)
     {
@@ -107,6 +109,13 @@ internal static class TestData
             // Chicken breast only at New World
             Sp(StoreSeed.NewWorldMetro, "nw-chicken", "Tegel Chicken Breast 500g", 9.99m, ChickenBreast,
                 img: "https://a.fsimg.co.nz/product/retail/fan/image/400x400/5105651.png"),
+            // D28 guards — both "on special" in the row but NOT current deals:
+            // a special no crawl has confirmed within the freshness window (the Highland Park stale-bean shape)…
+            Sp(StoreSeed.NewWorldShoreCity, "nw-stale-special", "Zz Stale Special Beans 1kg", 4.99m, itemId: null,
+                onSpecial: true, wasPrice: 22.99m, lastSeen: Now.AddDays(-6)),
+            // …and a listing retired by missing-product reconciliation (still recently seen, but delisted).
+            Sp(StoreSeed.PaknSaveHighlandPark, "pns-retired", "Zz Retired Listing 1kg", 3.49m, itemId: null,
+                onSpecial: true, wasPrice: 5.99m, isAvailable: false),
             // Frozen product under ArchiveMeShelf (so archiving the shelf hides it from browse)
             Sp(StoreSeed.WoolworthsTakapuna, "frozen-1", "Tip Top Vanilla Ice Cream 2L", 7.50m, FrozenProduct,
                 img: "https://assets.woolworths.com.au/images/frozen.jpg"),
@@ -173,7 +182,8 @@ internal static class TestData
     private static Product Sp(
         Guid storeId, string sku, string name, decimal price, Guid? itemId,
         bool onSpecial = false, decimal? wasPrice = null, string? img = null, Guid? id = null,
-        PromoType? promoType = null, decimal? memberPrice = null) =>
+        PromoType? promoType = null, decimal? memberPrice = null,
+        DateTimeOffset? lastSeen = null, bool isAvailable = true) =>
         new()
         {
             Id = id ?? Guid.NewGuid(),
@@ -184,7 +194,8 @@ internal static class TestData
             PromoType = promoType ?? (onSpecial ? PromoType.Special : PromoType.None),
             MemberPrice = memberPrice,
             UnitPrice = price, UnitOfMeasure = "1kg",
-            FirstSeenAt = Now, LastSeenAt = Now, PriceUpdatedAt = Now,
+            FirstSeenAt = Now, LastSeenAt = lastSeen ?? Now, PriceUpdatedAt = Now,
+            IsAvailable = isAvailable,
         };
 
     private static PriceSnapshot Snap(Guid spId, Guid runId, decimal price, DateTimeOffset at) =>

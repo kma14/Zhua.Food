@@ -11,13 +11,22 @@ namespace Zhua.Application.Deals;
 /// deals filter identically. Loads the on-special listings via <see cref="IProductRepository"/> and shapes the
 /// <see cref="DealItem"/> DTO (incl. the saving) — no EF here.
 /// </summary>
-public sealed class DealQueries(IProductRepository products, ICategoryRepository categories) : IDealQueries
+public sealed class DealQueries(IProductRepository products, ICategoryRepository categories, TimeProvider clock) : IDealQueries
 {
+    /// <summary>
+    /// D28 freshness guard: a deal must have been seen by a crawl within this window, or it's treated as expired
+    /// even if the row still says Special (covers the worker being down — reconciliation can't run then). Four
+    /// missed twice-daily crawls (D7): generous enough that one skipped run doesn't empty /deals, tight enough
+    /// that a dead worker stops serving week-old specials.
+    /// </summary>
+    public static readonly TimeSpan FreshnessWindow = TimeSpan.FromHours(48);
+
     public async Task<PagedResult<DealItem>?> ListAsync(
         Chain? supermarket, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size)
     {
         size = Math.Clamp(size, 1, 100);
         page = Math.Max(page, 1);
+        var seenSince = clock.GetUtcNow() - FreshnessWindow;
 
         // Same category resolution as /products: an unknown/archived id → null → 404.
         IReadOnlyCollection<Guid>? subtree = null;
@@ -27,8 +36,8 @@ public sealed class DealQueries(IProductRepository products, ICategoryRepository
             if (subtree is null) return null;
         }
 
-        var total = await products.CountSpecialsAsync(supermarket, subtree, storeIds);
-        var specials = await products.FindSpecialsAsync(supermarket, subtree, storeIds, page, size);
+        var total = await products.CountSpecialsAsync(supermarket, subtree, storeIds, seenSince);
+        var specials = await products.FindSpecialsAsync(supermarket, subtree, storeIds, seenSince, page, size);
         var items = specials.Select(p => new DealItem(
                 p.Id, p.Sku,
                 p.RawName, p.RawBrand, p.ImageUrl, p.Store.Name, p.Store.Chain.ToString(),
