@@ -55,11 +55,12 @@ public sealed partial class RawCrawlArchive
     /// <summary>The folder this run writes to, or null when disabled.</summary>
     public string? RunDir => _runDir;
 
-    /// <summary>Writes one raw response. <paramref name="name"/> is sanitised into a safe file name.</summary>
-    public async Task SaveAsync(string name, string content, CancellationToken ct = default)
+    /// <summary>Writes one raw response. <paramref name="name"/> is sanitised into a safe file name.
+    /// <paramref name="extension"/> defaults to json (the API crawlers); FreshChoice archives HTML.</summary>
+    public async Task SaveAsync(string name, string content, CancellationToken ct = default, string extension = "json")
     {
         if (_runDir is null) return;
-        var file = Path.Combine(_runDir, Sanitize(name) + ".json");
+        var file = Path.Combine(_runDir, Sanitize(name) + "." + extension);
         await File.WriteAllTextAsync(file, content, ct);
     }
 

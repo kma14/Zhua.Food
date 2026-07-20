@@ -7,6 +7,7 @@ using Quartz;
 using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
 using Zhua.Crawling.Foodstuffs;
+using Zhua.Crawling.FreshChoice;
 using Zhua.Crawling.Woolworths;
 using Zhua.Infrastructure;
 using Zhua.Infrastructure.Persistence;
@@ -22,6 +23,7 @@ builder.Services.AddPersistence(conn).AddCrawling().AddMatching();
 builder.Services.AddSingleton<IStoreCrawler, WoolworthsCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, NewWorldCrawler>();
 builder.Services.AddSingleton<IStoreCrawler, PaknSaveCrawler>();
+builder.Services.AddSingleton<IStoreCrawler, FreshChoiceCrawler>();
 
 // No CLI command = scheduled mode (plan D4/D7): Quartz fires the crawling job on a cron (default twice-daily).
 var scheduled = args.Length == 0;
@@ -76,6 +78,10 @@ if (args.Length > 0 && args[0].Equals("crawl", StringComparison.OrdinalIgnoreCas
             + (r.Error is null ? "" : $"; error={r.Error}"));
     }
 
+    // Per-run promo-distribution report (docs/internals/promotions-model.md).
+    foreach (var line in await Zhua.Infrastructure.Crawling.PromoReport.BuildAsync(db))
+        Console.WriteLine($"[report] {line}");
+
     return;
 }
 
@@ -94,6 +100,17 @@ if (args.Length > 0 && args[0].Equals("match", StringComparison.OrdinalIgnoreCas
     var cm = await categoryMapper.MapAsync();
     Console.WriteLine($"[match] categories={cm.Categories}, "
         + $"mapped store-categories={cm.MappedStoreCategories}, categorized products={cm.CategorizedProducts}");
+    return;
+}
+
+// Ad-hoc promo-distribution report over the current DB (the same table every crawl run logs at its end).
+// Usage: Zhua.Worker report
+if (args.Length > 0 && args[0].Equals("report", StringComparison.OrdinalIgnoreCase))
+{
+    using var scope = host.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<ZhuaDbContext>();
+    foreach (var line in await Zhua.Infrastructure.Crawling.PromoReport.BuildAsync(db))
+        Console.WriteLine($"[report] {line}");
     return;
 }
 
@@ -158,4 +175,4 @@ if (scheduled)
     return;
 }
 
-Console.WriteLine("Usage: Zhua.Worker [<no args> = scheduled crawl+match | crawl [--store <chain>] | match | recon <url>]");
+Console.WriteLine("Usage: Zhua.Worker [<no args> = scheduled crawl+match | crawl [--store <chain>] | match | report | recon <url>]");
