@@ -176,20 +176,26 @@ public sealed class ItemMatcher(
             return item;
         }
 
-        // Try the leading 2 words then the leading 1 word of the name against the known-brand vocabulary
-        // (checked more-specific-first: "Meadow Fresh" must win over just "Meadow"). Null if neither is a
-        // real Foodstuffs brand — a guess that fails the hard filter costs nothing (plan D29).
+        // Try the leading 3, then 2, then 1 word(s) of the name against the known-brand vocabulary (longest/most-
+        // specific first: "Meadow Fresh" must win over just "Meadow"). A trailing lone "&" is never a valid
+        // phrase boundary — it's extended past rather than counted as one of the significant words, so a 3-word
+        // brand like "Beak & Sons" is tried whole instead of truncating to the meaningless "Beak &". Null if no
+        // length is a real Foodstuffs brand — a guess that fails the hard filter costs nothing (plan D29).
         static string? InferBrandFromName(string? name, HashSet<string> knownBrands)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
             var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length >= 2)
+
+            for (var take = 3; take >= 1; take--)
             {
-                var two = string.Join(' ', words[..2]);
-                if (ProductNormalizer.NormalizeBrand(two) is { } nb2 && knownBrands.Contains(nb2)) return two;
+                if (words.Length < take) continue;
+                var end = take;
+                while (end < words.Length && words[end - 1] == "&") end++;
+                if (end > words.Length) continue;
+
+                var phrase = string.Join(' ', words[..end]);
+                if (ProductNormalizer.NormalizeBrand(phrase) is { } nb && knownBrands.Contains(nb)) return phrase;
             }
-            if (words.Length >= 1 && ProductNormalizer.NormalizeBrand(words[0]) is { } nb1 && knownBrands.Contains(nb1))
-                return words[0];
             return null;
         }
 

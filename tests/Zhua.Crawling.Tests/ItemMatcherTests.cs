@@ -211,6 +211,30 @@ public class ItemMatcherTests
     }
 
     [Fact]
+    public async Task Freshchoice_ampersand_brand_is_tried_whole_not_truncated_at_the_ampersand()
+    {
+        // Regression: a naive "leading 2 words" guess turns "Beak & Sons Pork Belly" into "Beak &" (the "&" eats
+        // one of the two word slots), which matches nothing. The "&" must be skipped past, not counted.
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(NewWorld, "P1", "Smoky Maple Pork Belly", "Beak & Sons", "600g", 12.00m),
+                FcSp("fc-p1", "Beak & Sons Smoky Maple Pork Belly", "600g", 13.50m));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var item = await check.Items.SingleAsync(c => c.MatchKey == "foodstuffs:P1");
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-p1");
+        Assert.Equal(item.Id, fc.ItemId);
+    }
+
+    [Fact]
     public async Task Freshchoice_listing_with_no_recognisable_brand_prefix_stays_unmatched_with_no_candidates()
     {
         await using (var db = NewContext())

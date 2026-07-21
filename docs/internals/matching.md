@@ -89,9 +89,11 @@ match against an unrelated real brand risks a wrong candidate proposal). The can
 `brand '{X}' inferred from name` whenever the brand wasn't literally on the source listing, so reviewers can see
 when they're trusting a guess.
 
-**Measured coverage (2026-07-20 crawl, 1,241 FreshChoice listings):** ~50% get a brand guess (620); of those, most
-still need the size to line up before they can be scored at all — final run: 293 auto-linked, 186 queued for
-review, the rest genuinely unmatchable (no brand guess, or brand known but no shared size) same as the Woolworths
+**Measured coverage (1,241 FreshChoice listings):** ~50% get a brand guess; of those, most still need the size to
+line up before they can be scored at all — 306 auto-linked, 202 queued for review, 733 zero-candidate. Of the
+zero-candidate set, ~81% never get a brand guess at all — mostly generic meat/produce cut names ("Beef Short Rib",
+"Beef Roast Bolar") where the leading word is a category term, not a brand, so there's genuinely nothing to guess
+from; the rest have a guessed brand but no Foodstuffs item shares its exact size — same shape as the Woolworths
 zero-candidate cases below.
 
 ## Idempotency — why re-running is safe
@@ -183,6 +185,11 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   where the brand string comes from. Also fixed a mislabelled `MatchRunResult.AutoLinked`: it was
   `CountLinkedProductsAsync` — a DB-wide, all-time, all-stores count masquerading as "linked this run" (the report
   flagged this too) — now a before/after diff scoped to the run's active-store product set.
+- **2026-07-21 11:15** — 🧑‍⚖️ *(Kevin: "好" — approved after asking about a spotted bug)* **Ampersand edge case
+  fixed.** `InferBrandFromName` split on whitespace and capped at 2 words, so a 3-word brand containing "&" (e.g.
+  "Beak & Sons") truncated to the meaningless "Beak &" and never matched. Now tries 3/2/1 leading words
+  (longest-first) and extends past a trailing lone "&" instead of counting it as a significant word. Verified on
+  the live catalog: 293→306 auto-linked, 762→733 zero-candidate.
 
 ---
 
