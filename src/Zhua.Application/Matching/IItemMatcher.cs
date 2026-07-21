@@ -13,6 +13,6 @@ public interface IItemMatcher
 /// <summary>Summary of one matcher run.</summary>
 public sealed record MatchRunResult(
     int Items,   // total items after the run
-    int AutoLinked,          // Products auto-linked this run (Foodstuffs exact + Woolworths high-confidence)
+    int AutoLinked,          // Products auto-linked this run (Foodstuffs exact + Woolworths/FreshChoice high-confidence)
     int PendingReview,       // open candidates awaiting a human decision
     int AlreadyDecided);     // pairs skipped because a human already approved/rejected them

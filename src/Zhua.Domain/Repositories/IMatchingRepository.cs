@@ -27,7 +27,6 @@ public interface IMatchingRepository
     Task<IReadOnlyList<MatchCandidate>> GetResolvedPendingCandidatesAsync(CancellationToken ct = default);
 
     Task<int> CountActiveItemsAsync(CancellationToken ct = default);      // non-merged items
-    Task<int> CountLinkedProductsAsync(CancellationToken ct = default);
     Task<int> CountPendingCandidatesAsync(CancellationToken ct = default);
 
     // --- CategoryMapper ---

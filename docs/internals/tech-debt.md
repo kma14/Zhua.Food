@@ -18,6 +18,9 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
 - **2026-07-20 15:50** — Added TD-3 (facet-split blind spot for products without a level1/level2 category) and TD-4
   (`PromoReport`/matcher ignore `IsAvailable`) — both accepted while building D28; not user-instructed shortcuts,
   logged so they aren't forgotten.
+- **2026-07-21 10:30** — Added TD-5 (unmatched listings invisible to category-filtered browsing) — surfaced by the
+  front-end's matching-coverage report; explicitly out of scope for D29 (FreshChoice brand inference only), kept
+  separate because it's a bigger Item-semantics change (singleton items + auto-merge-on-match).
 
 ## Open items
 
@@ -107,6 +110,36 @@ retiring listings (keeping them linked is arguably right — history pages still
 
 **Why deferred / priority:** Low — cosmetic/efficiency, no user-visible wrongness; the matcher question deserves a
 deliberate decision rather than a drive-by filter.
+
+### TD-5 — Unmatched listings are invisible to category-filtered browsing
+
+**Where:** [`ProductRepository.FindListingsAsync`](../../src/Zhua.Infrastructure/Repositories/ProductRepository.cs)
+(and the identical predicate in `SpecialsQuery` for `/deals`) require `p.ItemId != null && p.Item!.CategoryId !=
+null` when a `category=` filter is present.
+
+**What:** A listing only gets a `Category` via its `Item.CategoryId`, and only matched listings have an `Item`.
+So every unmatched product — all of FreshChoice pre-D29, most of Woolworths, and anything the matcher can't place
+— is absent from `GET /categories/{id}/products` and `/deals?category=`, the primary browse path
+([api.md](../api.md)'s documented "typical UI flow"). It's still reachable via `q=` text search on `/products`
+(no category filter there requires `ItemId`).
+
+**Why it's debt:** flagged by the front-end's matching-coverage report (2026-07-20) and confirmed against the
+live DB. Not a correctness bug — nothing is mis-priced or mis-grouped — but a real gap in what's *browsable*: at
+the time of writing, 948 FreshChoice + ~2,800 Woolworths listings (about a quarter of the catalog) can only be
+found by search, never by clicking through categories.
+
+**The fix:** give every unmatched listing a **singleton item** at crawl/match time (one item, one product, `Name`
+seeded from the raw listing) so `CategoryMapper` can categorise it and it becomes browsable — then have the
+matcher **merge** the singleton into the real cross-store item the moment one is found (reusing the existing
+merge machinery, [matching.md](matching.md)#merge). Needs: (1) deciding whether `CategoryMapper` can categorise a
+non-Foodstuffs singleton at all (today only Foodstuffs categorises by identity; Woolworths/FreshChoice map by
+name, ~26% hit rate) — a singleton might still end up uncategorised, just differently uncategorised; (2) the merge
+step must trigger automatically inside `ItemMatcher`, not wait for a human, or singletons pile up permanently.
+
+**Why deferred / priority:** Medium — real user-facing gap (browse, not search, is the primary discovery path),
+but it's a second architectural change (Item semantics, auto-merge-on-match) beyond what D29 scoped (FreshChoice
+brand inference only). Do this next if the front-end confirms browse-completeness matters more than search
+coverage for the affected quarter of the catalog.
 
 ## Paid-down items
 

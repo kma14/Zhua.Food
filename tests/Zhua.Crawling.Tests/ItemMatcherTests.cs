@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Zhua.Application.Common;
 using Zhua.Application.Matching;
@@ -20,6 +21,7 @@ public class ItemMatcherTests
     private static readonly Guid Woolworths = Guid.Parse("11111111-0000-0000-0000-000000000001");
     private static readonly Guid NewWorld = Guid.Parse("22222222-0000-0000-0000-000000000002");
     private static readonly Guid PaknSave = Guid.Parse("33333333-0000-0000-0000-000000000003");
+    private static readonly Guid FreshChoice = Guid.Parse("44444444-0000-0000-0000-000000000004");
 
     // The matcher is now an Application use case over the matching repository port + the domain policy.
     private ItemMatcher Matcher(ZhuaDbContext db) =>
@@ -27,7 +29,11 @@ public class ItemMatcherTests
 
     private ZhuaDbContext NewContext() =>
         new(new DbContextOptionsBuilder<ZhuaDbContext>()
-            .UseInMemoryDatabase(nameof(ItemMatcherTests), _root).Options);
+            .UseInMemoryDatabase(nameof(ItemMatcherTests), _root)
+            // Each test method gets its own isolated InMemoryDatabaseRoot by design — the correct pattern for
+            // test isolation, not the production misuse this warning is meant to catch.
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options);
 
     private async Task SeedAsync()
     {
@@ -58,6 +64,19 @@ public class ItemMatcherTests
         Sku = sku,
         RawName = name,
         RawBrand = brand,
+        RawSize = size,
+        CurrentPrice = price,
+        FirstSeenAt = _clock.GetUtcNow(),
+        LastSeenAt = _clock.GetUtcNow(),
+    };
+
+    /// <summary>A FreshChoice listing — no RawBrand at the source (D26), mirroring the real crawler.</summary>
+    private Product FcSp(string sku, string name, string size, decimal price) => new()
+    {
+        StoreId = FreshChoice,
+        Sku = sku,
+        RawName = name,
+        RawBrand = null,
         RawSize = size,
         CurrentPrice = price,
         FirstSeenAt = _clock.GetUtcNow(),
@@ -163,6 +182,74 @@ public class ItemMatcherTests
         Assert.Equal(survivorId, tombstone.MergedIntoId);                     // stays a redirect tombstone
         Assert.Equal(0, await after.Products.CountAsync(p => p.ItemId == mergedId));
         Assert.Equal(2, await after.Items.CountAsync(c => c.MergedIntoId == null)); // Colby + the C2 survivor
+    }
+
+    // ---- FreshChoice: brand inferred from the name against the known-brand vocabulary (plan D29) --------------
+
+    [Fact]
+    public async Task Freshchoice_listing_gets_its_brand_inferred_from_the_name_and_autolinks()
+    {
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(NewWorld, "M1", "Original Milk", "Meadow Fresh", "1L", 3.80m),
+                // No RawBrand — the crawler never captures one for FreshChoice (D26). "Meadow Fresh" is the name's
+                // leading two words and IS a brand Tier 1 already knows (from the New World listing above).
+                FcSp("fc-m1", "Meadow Fresh Milk Original", "1L", 4.10m));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var item = await check.Items.SingleAsync(c => c.MatchKey == "foodstuffs:M1");
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-m1");
+        Assert.Equal(item.Id, fc.ItemId);
+    }
+
+    [Fact]
+    public async Task Freshchoice_listing_with_no_recognisable_brand_prefix_stays_unmatched_with_no_candidates()
+    {
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(NewWorld, "M1", "Original Milk", "Meadow Fresh", "1L", 3.80m),
+                // Generic produce naming — no leading-word(s) of this name is a known brand, so the hard filter
+                // must reject it cleanly rather than guess a garbage brand like "Fennel".
+                FcSp("fc-veg", "Fennel Bulbs", "1kg", 2.50m));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-veg");
+        Assert.Null(fc.ItemId);
+        Assert.Equal(0, await check.MatchCandidates.CountAsync(m => m.ProductId == fc.Id));
+    }
+
+    // ---- AutoLinked is run-scoped (plan D29 — was a DB-wide cumulative count) ------------------------------------
+
+    [Fact]
+    public async Task AutoLinked_counts_only_products_newly_linked_this_run()
+    {
+        await SeedAsync();
+
+        MatchRunResult first, second;
+        await using (var db = NewContext()) first = await Matcher(db).RunAsync();
+        // Tier 1 links every Foodstuffs listing (C1@NW, C1@PAK, C2@NW, C3@NW = 4) + Tier 2's W1 auto-link = 5.
+        // W2 stays pending, not linked.
+        Assert.Equal(5, first.AutoLinked);
+
+        await using (var db = NewContext()) second = await Matcher(db).RunAsync();
+        // Re-run over unchanged data: everything that's linked was ALREADY linked before this run started.
+        Assert.Equal(0, second.AutoLinked);
     }
 
     [Fact]

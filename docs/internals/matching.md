@@ -46,19 +46,22 @@ banners and across branches. So we just **group every Foodstuffs `Product` by `S
 - Representative fields come from the group's **longest name** (most descriptive).
 - `Category` (the denormalised leaf) = the listing's **finest store category** (Shelf > Aisle > Department).
 
-This is why every Foodstuffs listing is *always* already grouped, and the review queue is **Woolworths-only**.
+This is why every Foodstuffs listing is *always* already grouped, and the review queue only ever holds Tier 2's
+chains (Woolworths + FreshChoice).
 
-## Tier 2 — Woolworths: fuzzy, review-gated
+## Tier 2 — Woolworths & FreshChoice: fuzzy, review-gated
 
-Woolworths shares **no id and no GTIN** with Foodstuffs (D9 revised — see gotcha below), so a Woolworths listing is
-matched to a **Foodstuffs-derived item** in two stages:
+Woolworths and FreshChoice share **no id and no GTIN** with Foodstuffs (D9 revised — see gotcha below), so their
+listings are matched to a **Foodstuffs-derived item** in two stages:
 
 1. **Hard filter on `brand + size`** — both must normalise and be equal (via `ProductNormalizer`). No brand or a
    loose size (e.g. `"kg"`, `"ea"` with no number) → **unmatchable**, skip. This cheaply rules out almost everything.
+   **FreshChoice publishes no `RawBrand` at all (D26)** — see "Brand inference for FreshChoice" below for what
+   feeds the hard filter for that chain.
 2. **Score the survivors by name-token overlap** — `TokenOverlap(|A∩B| / min(|A|,|B|))` on significant name tokens
    (brand, stop-words, embedded sizes and bare numbers stripped out).
 
-Then, per Woolworths listing (the decision is [`HeuristicItemMatchingPolicy.Evaluate`](../../src/Zhua.Domain/Services/HeuristicItemMatchingPolicy.cs)):
+Then, per Tier 2 listing (the decision is [`HeuristicItemMatchingPolicy.Evaluate`](../../src/Zhua.Domain/Services/HeuristicItemMatchingPolicy.cs)):
 
 | Outcome | Condition |
 |---|---|
@@ -70,6 +73,27 @@ The knobs (`HeuristicItemMatchingPolicy`): `AutoLinkThreshold = 0.8`, `Candidate
 The text rules (`ProductNormalizer`): brand/size normalisation, the stop-word list, the size-token regex. **Those are
 the fragile bits** — tightening a threshold trades false-merges against more review-queue volume.
 
+### Brand inference for FreshChoice (D29)
+
+FreshChoice's SSR HTML carries no brand field, so `ItemMatcher` derives one before the hard filter above: try the
+listing name's **leading two words**, then its **leading one word**, against the vocabulary of brands Tier 1
+already knows (every normalised `Item.Brand` from the Foodstuffs pass — self-bootstrapping, no maintained list).
+The first hit wins ("Meadow Fresh Yoghurt…" → `Meadow Fresh` beats matching just `Meadow`); no hit → `null`, same
+as a Woolworths listing with no `RawBrand` — the hard filter skips it, same as any other unmatchable listing.
+
+**Why this design over a plain "always take the first word" heuristic:** a wrong guess must be *free*. A dictionary
+lookup can only ever produce a real Foodstuffs brand string, so a wrong guess (e.g. treating "Fennel" in "Fennel
+Bulbs" as a brand) simply won't be in the `(brand,size)` index and falls through — same zero-candidate outcome as
+if no guess had been made. A naive first-word-always heuristic can't make that guarantee (a coincidental token
+match against an unrelated real brand risks a wrong candidate proposal). The candidate `Reason` string is tagged
+`brand '{X}' inferred from name` whenever the brand wasn't literally on the source listing, so reviewers can see
+when they're trusting a guess.
+
+**Measured coverage (2026-07-20 crawl, 1,241 FreshChoice listings):** ~50% get a brand guess (620); of those, most
+still need the size to line up before they can be scored at all — final run: 293 auto-linked, 186 queued for
+review, the rest genuinely unmatchable (no brand guess, or brand known but no shared size) same as the Woolworths
+zero-candidate cases below.
+
 ## Idempotency — why re-running is safe
 
 Three mechanisms (in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs)):
@@ -78,7 +102,7 @@ Three mechanisms (in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMat
    reuses them, so re-runs don't duplicate. Merge tombstones are resolved to their survivor here (see Merge below),
    so a merged-away key relinks to the survivor instead of recreating the item.
 2. **Honour human decisions** — every `Approved` candidate is re-applied (sets the link); every `Rejected` pair is
-   never re-proposed; a Woolworths listing that's already linked is skipped.
+   never re-proposed; a Tier 2 listing that's already linked is skipped.
 3. **Drop resolved candidates** — at the end, Pending candidates whose product has since been linked are deleted.
 
 ## Human review (the queue → the Api)
@@ -128,17 +152,37 @@ Remaining edge:
 ## Gotchas
 
 - **No GTIN bridge (D9 revised).** The original plan was GTIN-first, but **Foodstuffs exposes no barcode**, so a
-  GTIN can't bridge Woolworths↔Foodstuffs. The bridge is `brand + size + name` (D18). We still capture Woolworths'
-  GTIN at crawl time for future use.
+  GTIN can't bridge Woolworths/FreshChoice↔Foodstuffs. The bridge is `brand + size + name` (D18). We still capture
+  Woolworths' GTIN at crawl time for future use.
 - **Fresh/unbranded produce won't group** — no brand/size to filter on, so loose items (whole chickens,
   bulk veg) stay unmatched and are compared by category + `$/kg` instead.
+- **A zero-candidate listing is usually correct, not a bug.** A breakdown of Woolworths' zero-candidate set
+  (2026-07-20, 2,452 listings) found ~83% genuinely have no possible match: loose/weight-sold (9%), Woolworths'
+  own private label (Woolworths/Macro — Foodstuffs' equivalent is Pams/Value, a different brand string, 19%), or
+  a brand Foodstuffs simply doesn't stock (53%). The remaining ~17% share a real Foodstuffs brand but not its
+  exact normalised size — the one bucket worth revisiting if size-normalisation is ever loosened.
+- **Unmatched listings never get their own item** — they're invisible to category-filtered browsing (`/products`
+  and `/deals`'s `category=` filter both require `ItemId != null`), only reachable via text search. Tracked as
+  TD-4-adjacent debt, not yet fixed — see [tech-debt.md](tech-debt.md).
 - **Cross-store category coverage is partial** — the category mapper maps Foodstuffs by identity (100%)
   but other banners by exact name (Woolworths ~26%); that's a *categorisation* gap, separate from product matching.
 
 ## Tests
 
 `ItemMatcherTests` and `ProductNormalizerTests` in `tests/Zhua.Crawling.Tests` (EF InMemory + pure unit tests)
-cover the tiers, the thresholds, idempotency, and the normalisation rules.
+cover the tiers, the thresholds, idempotency, the normalisation rules, and (D29) FreshChoice's brand inference.
+
+## Decision log
+
+Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then 🧑‍⚖️ if user-instructed.
+
+- **2026-07-21 10:30** — 🧑‍⚖️ *(Kevin: "Freshchoice 这个要补上" — the front-end's matching-coverage report,
+  verified first: every number checked out against the live DB except one unreproducible "81 missing size"
+  figure)* **FreshChoice brand inference (D29) built** — see "Brand inference for FreshChoice" above. Folded into
+  the existing Tier 2 loop (Woolworths ∪ FreshChoice) rather than a separate tier, since the only difference is
+  where the brand string comes from. Also fixed a mislabelled `MatchRunResult.AutoLinked`: it was
+  `CountLinkedProductsAsync` — a DB-wide, all-time, all-stores count masquerading as "linked this run" (the report
+  flagged this too) — now a before/after diff scoped to the run's active-store product set.
 
 ---
 

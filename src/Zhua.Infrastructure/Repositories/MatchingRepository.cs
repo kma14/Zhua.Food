@@ -35,9 +35,6 @@ public sealed class MatchingRepository(ZhuaDbContext db) : IMatchingRepository
     public Task<int> CountActiveItemsAsync(CancellationToken ct = default) =>
         db.Items.CountAsync(c => c.MergedIntoId == null, ct);
 
-    public Task<int> CountLinkedProductsAsync(CancellationToken ct = default) =>
-        db.Products.CountAsync(p => p.ItemId != null, ct);
-
     public Task<int> CountPendingCandidatesAsync(CancellationToken ct = default) =>
         db.MatchCandidates.CountAsync(m => m.Status == MatchStatus.Pending, ct);
 

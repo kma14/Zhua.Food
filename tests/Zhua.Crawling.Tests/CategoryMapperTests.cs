@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 using Zhua.Application.Matching;
@@ -17,6 +18,10 @@ public class CategoryMapperTests
     private DbContextOptions<ZhuaDbContext> Options() =>
         new DbContextOptionsBuilder<ZhuaDbContext>()
             .UseInMemoryDatabase(nameof(CategoryMapperTests), _root)
+            // Each test method gets its own isolated InMemoryDatabaseRoot by design — that's dozens of internal
+            // service providers across the suite, which is exactly what this warning flags in production but is
+            // the correct pattern for test isolation here.
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
     private ZhuaDbContext NewContext() => new(Options());

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 using Zhua.Application.Crawling;
@@ -19,6 +20,9 @@ public class CrawlOrchestratorTests
     private DbContextOptions<ZhuaDbContext> Options() =>
         new DbContextOptionsBuilder<ZhuaDbContext>()
             .UseInMemoryDatabase(nameof(CrawlOrchestratorTests), _root)
+            // Each test method gets its own isolated InMemoryDatabaseRoot by design — the correct pattern for
+            // test isolation, not the production misuse this warning is meant to catch.
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
     private ZhuaDbContext NewContext() => new(Options());
