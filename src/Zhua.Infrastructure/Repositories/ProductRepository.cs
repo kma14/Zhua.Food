@@ -97,4 +97,18 @@ public sealed class ProductRepository(ZhuaDbContext db) : IProductRepository
 
     public Task<bool> IsLinkableItemAsync(Guid itemId, CancellationToken ct = default) =>
         db.Items.AnyAsync(i => i.Id == itemId && i.MergedIntoId == null, ct);
+
+    public async Task<IReadOnlyList<MatchStatusCount>> CountByMatchStatusAsync(CancellationToken ct = default) =>
+        await db.Products
+            .Where(p => p.Store.IsActive)
+            .GroupBy(p => new
+            {
+                p.Store.Chain,
+                // Mechanical MatchKey prefix (e.g. "foodstuffs") — no chain-name semantics here; the Application
+                // report maps scheme → status. Null when the listing isn't linked to an item.
+                Scheme = p.Item == null ? null : p.Item.MatchKey!.Substring(0, p.Item.MatchKey.IndexOf(":")),
+                HasPending = db.MatchCandidates.Any(m => m.ProductId == p.Id && m.Status == MatchStatus.Pending),
+            })
+            .Select(g => new MatchStatusCount(g.Key.Chain, g.Key.Scheme, g.Key.HasPending, g.Count()))
+            .ToListAsync(ct);
 }

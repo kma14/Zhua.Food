@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Zhua.Application.Crawling;
 using Zhua.Application.Matching;
+using Zhua.Application.Reporting;
 using Zhua.Domain.Repositories;
 using Zhua.Domain.Services;
 using Zhua.Infrastructure.Crawling;
@@ -41,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<IDealQueries, DealQueries>();           // Application use case (over IProductRepository)
         services.AddScoped<IItemService, ItemService>();
         services.AddScoped<IMatchReview, MatchReview>();
+        services.AddScoped<IReportQueries, ReportQueries>();        // Application use case (over IProductRepository)
         services.AddScoped<IHealthQueries, HealthQueries>();        // Infrastructure liveness probe (no domain repo)
         return services;
     }

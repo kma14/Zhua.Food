@@ -47,4 +47,15 @@ public interface IProductRepository
 
     /// <summary>Whether <paramref name="itemId"/> is a valid manual link target: it exists and isn't merged away.</summary>
     Task<bool> IsLinkableItemAsync(Guid itemId, CancellationToken ct = default);
+
+    /// <summary>Active-store listings counted by (chain, anchor scheme, has-pending-candidate) — the raw signals the
+    /// product-status report classifies (D30.1). <see cref="MatchStatusCount.AnchorScheme"/> is the part of the linked
+    /// item's <c>MatchKey</c> before ':' (or null when the listing is unlinked); primitives only, the Application
+    /// service maps scheme → status. Counted at the DB (a GROUP BY, not a row load).</summary>
+    Task<IReadOnlyList<MatchStatusCount>> CountByMatchStatusAsync(CancellationToken ct = default);
 }
+
+/// <summary>One (chain, anchor scheme, has-pending-candidate) bucket + its product count (D30.1). Primitives only —
+/// <paramref name="AnchorScheme"/> is the mechanical MatchKey prefix (e.g. "foodstuffs"), null when unlinked; the
+/// Application report maps it to a shopper-free status (聚合归属 / 待审 / 悬空).</summary>
+public sealed record MatchStatusCount(Chain Chain, string? AnchorScheme, bool HasPendingCandidate, int Count);
