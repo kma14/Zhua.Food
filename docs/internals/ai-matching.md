@@ -5,6 +5,12 @@
 > into the **human review queue**, resolved via the admin endpoints (`approve` / `reject` / `link-item` /
 > `create-item`). This doc is the plan for when we *augment* that heuristic with an LLM. Surrounding model
 > (why items exist, `description`-as-anchor): [item-model.md](item-model.md).
+>
+> **Scope note:** this doc covers the LLM as a **review-queue judge** (Category D in
+> [orphan-matching.md](orphan-matching.md)). That research doc is the wider picture — it shows the review queue is
+> only one of four orphan buckets, that ~72% of Woolworths orphans have *no* match to find (so AI can't help them),
+> and that the real prerequisite is de-anchoring items from Foodstuffs. Read it before assuming "add AI" solves the
+> unmatched-listings problem.
 
 ## Why AI
 

@@ -12,6 +12,8 @@ Auckland grocery **price-intelligence** platform (information layer only — NOT
 
 📋 **Full background, all decisions (D1–D9) and the phased roadmap live in [plan-cc.md](plan-cc.md)** — that's the source of truth; read it before non-trivial work and keep it updated as decisions change. (Linked rather than `@import`-ed, to keep each session's context lean — ask if you'd prefer the whole plan auto-loaded every session.)
 
+📖 **Terminology has ONE fixed 中英对照 in [docs/internals/glossary.md](docs/internals/glossary.md)** (Kevin's instruction, 2026-07-22) — use those exact English + 中文 terms when talking to Kevin (门店商品/聚合商品/分类, 门店 vs 连锁, 锚/锚定/单店聚合/匹配级联…); don't invent synonyms. Add new terms there first.
+
 🧾 **Known tech debt is tracked in [docs/internals/tech-debt.md](docs/internals/tech-debt.md)** — deliberate shortcuts/layering inconsistencies we've accepted (not bugs), each with the fix + why it's deferred. Consult it before a refactor, and **add an entry (with a Decision-log line) whenever you take a shortcut** so it's tracked, not forgotten.
 
 ## Prior art
