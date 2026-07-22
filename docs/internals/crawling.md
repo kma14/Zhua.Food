@@ -309,4 +309,23 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   cleared, **no synthetic snapshot** (Kevin approved threshold 2 + no-snapshot). (4) Shopper queries exclude
   unavailable listings; /deals also requires `LastSeenAt` within 48h (`DealQueries.FreshnessWindow`).
 
+- **2026-07-23** — 🧑‍⚖️ *(Kevin: "A" — do the two contained fixes, from a front-end report that a colby cheese
+  showed under "Barn Eggs" and FreshChoice eggs were missing from category browse; both verified in code + live DB
+  first)* Two crawl/parse fixes:
+  1. **Category links now reset across crawls (complete runs only).** `CrawlOrchestrator` cleared a product's *tags*
+     each run but never its *category* links — so `Product.Categories` accumulated forever. A Woolworths product that
+     a WAF-cooldown response mis-attributed (or that got re-shelved) kept the stale link, and `CategoryMapper`'s
+     finest-first pick could then land on it (the colby `woolworths:281636` carried 8 shelves incl. Barn Eggs +
+     Haloumi + Block Cheese → categorised "Barn Eggs"). Now the set is cleared the first time the product is seen in
+     a run, **but only on a complete crawl** (a partial one didn't query every aisle — mirrors the D28 missing-product
+     guard). Existing pollution clears on the next complete crawl of the store.
+  2. **FreshChoice pack size recovered from the name.** The `.talker__name__size` span is empty for pack-sold lines
+     (eggs), so `RawSize` was null and the matcher's brand+size filter couldn't fire. `FreshChoiceParser` now falls
+     back to the pack count in the name ("... 12 Pack"/"...12pk" → `"12pk"`), normalised to Foodstuffs' egg format.
+     Companion matching fix: `ProductNormalizer.NormalizeSize` now canonicalises multipack units
+     (`12pack`≡`12pk`≡`12pkt`) so Woolworths' `"12pack"` matches Foodstuffs/FreshChoice `"12pk"`. Live result: Otaika
+     Valley eggs now match across FreshChoice ↔ Foodstuffs; auto-links 15→23. (Residual: Henergy eggs stay held — a
+     structural anchoring issue, "Henergy" is a Foodstuffs brand but Foodstuffs stocks no Henergy *egg* → the
+     de-anchoring/TD-5 work, not this.)
+
 *Keep this file in sync with the crawlers — it documents a contract owned by external sites, so it drifts silently.*

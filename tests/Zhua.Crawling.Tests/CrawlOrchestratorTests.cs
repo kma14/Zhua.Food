@@ -154,6 +154,54 @@ public class CrawlOrchestratorTests
         Assert.Equal(2, await db.ProductTags.CountAsync());      // both rows kept in the shared dimension
     }
 
+    // ---- Category links reset across crawls (the "colby cheese shows as Barn Eggs" bug) -------------------------
+
+    // A cheese under a Department + Shelf path (D11 many-to-many). ExternalId = name for a simple stable key.
+    private static ScrapedProduct Cheese(params (CategoryKind Kind, string Name)[] cats) => new()
+    {
+        Sku = "SKU-CHEESE",
+        Name = "Alpine Cheese Colby 500g",
+        Price = 8.00m,
+        PromoType = PromoType.None,
+        CategoryPath = cats.Select(c => new ScrapedCategoryNode(c.Kind, c.Name, c.Name, c.Name)).ToArray(),
+    };
+
+    [Fact]
+    public async Task Complete_run_drops_a_products_stale_category_links()
+    {
+        await SeedStoreAsync();
+        // First crawl mis-shelves the cheese under "Barn Eggs" (e.g. a WAF-cooldown response).
+        await RunAsync(Cheese((CategoryKind.Department, "Fridge & Deli"), (CategoryKind.Shelf, "Barn Eggs")));
+
+        _clock.Advance(TimeSpan.FromHours(12));
+        // A later COMPLETE crawl has it under the right shelf only.
+        await RunAsync(Cheese((CategoryKind.Department, "Fridge & Deli"), (CategoryKind.Shelf, "Block Cheese")));
+
+        await using var db = NewContext();
+        var sp = await db.Products.Include(p => p.Categories).SingleAsync();
+        var shelves = sp.Categories.Where(c => c.Kind == CategoryKind.Shelf).Select(c => c.Name).ToList();
+        Assert.Equal(["Block Cheese"], shelves);                      // stale "Barn Eggs" link gone
+        Assert.Contains(sp.Categories, c => c.Name == "Fridge & Deli");
+        // The category NODE isn't deleted — only this product's link to it — so it can be reused later.
+        Assert.True(await db.StoreCategories.AnyAsync(c => c.Name == "Barn Eggs"));
+    }
+
+    [Fact]
+    public async Task Partial_run_keeps_a_products_existing_category_links()
+    {
+        await SeedStoreAsync();
+        await RunAsync(Cheese((CategoryKind.Department, "Fridge & Deli"), (CategoryKind.Shelf, "Barn Eggs")));
+
+        _clock.Advance(TimeSpan.FromHours(12));
+        // A PARTIAL crawl didn't query every aisle — "not linked this run" proves nothing, so nothing is dropped.
+        await RunPartialAsync(Cheese((CategoryKind.Department, "Fridge & Deli"), (CategoryKind.Shelf, "Block Cheese")));
+
+        await using var db = NewContext();
+        var sp = await db.Products.Include(p => p.Categories).SingleAsync();
+        var shelves = sp.Categories.Where(c => c.Kind == CategoryKind.Shelf).Select(c => c.Name).OrderBy(n => n).ToList();
+        Assert.Equal(["Barn Eggs", "Block Cheese"], shelves);         // both kept — no reset on a partial run
+    }
+
     // ---- Missing-product reconciliation (plan D28) --------------------------------------------------------------
 
     private static ScrapedProduct Bread(decimal price = 2.00m) => new()

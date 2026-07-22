@@ -21,6 +21,11 @@ public class ProductNormalizerTests
     [InlineData("kg", null)]   // loose / by-weight → unmatchable on size
     [InlineData("ea", null)]
     [InlineData(null, null)]
+    [InlineData("12 Pack", "12pk")]   // Woolworths multipack form ≡ Foodstuffs/FreshChoice "12pk"
+    [InlineData("12pack", "12pk")]
+    [InlineData("12pk", "12pk")]
+    [InlineData("6packs", "6pk")]
+    [InlineData("10pkt", "10pk")]
     public void NormalizeSize_fixes_sizes_and_nulls_loose(string? input, string? expected)
         => Assert.Equal(expected, ProductNormalizer.NormalizeSize(input));
 
