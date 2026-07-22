@@ -55,6 +55,15 @@ public sealed class CrawlOrchestrator(
             // Tags are volatile → reset each product's set the first time we see it this run (D13).
             var tagsResetForSku = new HashSet<string>();
 
+            // Category links accumulate WITHIN a run (a product legitimately sits under several shelves — D11), but
+            // must NOT accumulate ACROSS runs: a product Woolworths re-shelves (or a WAF-cooldown response
+            // mis-attributes) would otherwise keep its stale links forever, and CategoryMapper's finest-first pick
+            // could then land on a wrong one (a colby cheese categorised as "Barn Eggs"). So reset the set the first
+            // time we see the product this run — but ONLY on a complete crawl: a partial one didn't query every
+            // aisle, so "not linked this run" says nothing, and clearing would drop legitimately-absent shelves
+            // (mirrors the D28 missing-product guard below). Partial run → null → no reset, links just accumulate.
+            var categoriesResetForSku = fetched.IsComplete ? new HashSet<string>() : null;
+
             var now = clock.GetUtcNow();
             var snapshotsWritten = 0;
 
@@ -81,6 +90,8 @@ public sealed class CrawlOrchestrator(
                     snapshotsWritten++;
                 }
 
+                if (categoriesResetForSku?.Add(s.Sku) == true)
+                    sp.Categories.Clear();               // drop last run's links; re-add this run's below (D11/D28)
                 LinkCategories(sp, s.CategoryPath, store.Id, categories);
 
                 if (tagsResetForSku.Add(s.Sku))

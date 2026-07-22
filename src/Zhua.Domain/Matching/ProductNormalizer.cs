@@ -32,7 +32,12 @@ public static partial class ProductNormalizer
     {
         if (string.IsNullOrWhiteSpace(size)) return null;
         var s = size.ToLowerInvariant().Replace(" ", "");
-        return s.Any(char.IsDigit) ? s : null; // no number = "kg"/"ea" (loose) → unmatchable by size
+        if (!s.Any(char.IsDigit)) return null; // no number = "kg"/"ea" (loose) → unmatchable by size
+        // Canonicalise multipack units so the same pack matches across chains: Woolworths writes "12pack",
+        // Foodstuffs (and our FreshChoice extraction) write "12pk", and packets appear as "pkt" — all mean the
+        // same count. Without this, an egg 12-pack at Woolworths ("12pack") never matched the same at
+        // FreshChoice/Foodstuffs ("12pk"). "pk" itself is already canonical.
+        return PackUnit().Replace(s, "pk");
     }
 
     /// <summary>Significant name tokens (lowercased), with the brand, stop-words, sizes and noise removed.</summary>
@@ -73,4 +78,7 @@ public static partial class ProductNormalizer
 
     [GeneratedRegex("^[0-9]+(\\.[0-9]+)?(g|kg|ml|l|pk|pack|ea|cm|mm|pc|pcs)$")]
     private static partial Regex SizeToken();
+
+    [GeneratedRegex("(packs?|pkts?)")]
+    private static partial Regex PackUnit();
 }

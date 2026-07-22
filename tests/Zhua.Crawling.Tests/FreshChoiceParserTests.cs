@@ -84,4 +84,36 @@ public class FreshChoiceParserTests
         var (_, next) = Parse();
         Assert.Equal("/category/meat?page=2", next);
     }
+
+    // ---- Pack size recovered from the name when the size span is empty (eggs, D26 follow-up) --------------------
+
+    private static ScrapedProduct Card(string name, string? sizeSpan = null)
+    {
+        var size = sizeSpan is null ? "" : $"<span class='talker__name__size'>{sizeSpan}</span>";
+        var html = $"<div class='talker' id='line_abc'>"
+            + $"<div class='talker__product-name'>{name}</div>{size}"
+            + "<strong class='price__sell'>$4.00</strong></div>";
+        return FreshChoiceParser.ParsePage(html, Path, BaseUrl).Products.Single();
+    }
+
+    [Theory]
+    [InlineData("Henergy Eggs Cage Free Barn Grade 6 12 Pack", "12pk")] // grade "6" not mistaken for the count
+    [InlineData("Hens Choice Cage Free Eggs Size 7 12pk", "12pk")]      // "12pk" glued form
+    [InlineData("Hens Choice Eggs Barn Mxd 6pack", "6pk")]              // "6pack" glued form
+    [InlineData("Natural SPCA Free Range Eggs Tray 20 Pack", "20pk")]
+    public void Pack_size_is_recovered_from_the_name_when_the_span_is_empty(string name, string expected) =>
+        Assert.Equal(expected, Card(name).Size);
+
+    [Fact]
+    public void An_explicit_size_span_still_wins_over_the_name()
+    {
+        // A card that has both a real size span and a "Pack" in the name → the span is authoritative.
+        Assert.Equal("250g", Card("Something 12 Pack", sizeSpan: "250g").Size);
+    }
+
+    [Fact]
+    public void A_name_with_no_pack_quantity_leaves_size_null()
+    {
+        Assert.Null(Card("Blue Cod Skinned & Boned").Size);
+    }
 }

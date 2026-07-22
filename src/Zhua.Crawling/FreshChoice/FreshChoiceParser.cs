@@ -89,7 +89,10 @@ internal static partial class FreshChoiceParser
                 Sku = sku,
                 Name = name,
                 Brand = null,                            // not published separately (leading word(s) of the name)
-                Size = Text(card, ".talker__name__size"),
+                // The size span is empty for pack-sold lines (eggs, etc.) — the count lives only in the name
+                // ("... 12 Pack"/"...12pk"). Fall back to it, normalised to "{n}pk" to match Foodstuffs' egg size
+                // format ("12pk"), so the matcher's brand+size hard filter can fire (plan D26 follow-up).
+                Size = Text(card, ".talker__name__size") ?? PackSizeFromName(name),
                 Gtin = null,                             // not published
                 Url = href is null ? null : baseUrl + href,
                 ImageUrl = card.QuerySelector(".talker__section--image img")?.GetAttribute("src"),
@@ -138,6 +141,12 @@ internal static partial class FreshChoiceParser
         };
     }
 
+    /// <summary>The pack count in a name ("... Grade 6 12 Pack" → "12pk", "...6pack" → "6pk"), normalised to the
+    /// "{n}pk" form Foodstuffs uses for eggs. Anchored on the pack keyword so a leading grade/size number
+    /// ("Grade 6", "Size 7") is never mistaken for the count. Null if the name has no pack quantity.</summary>
+    private static string? PackSizeFromName(string name) =>
+        PackPattern().Match(name) is { Success: true } m ? $"{m.Groups[1].Value}pk" : null;
+
     private static string? Squash(string? text) =>
         text is null ? null : Whitespace().Replace(text, " ").Trim();
 
@@ -149,6 +158,9 @@ internal static partial class FreshChoiceParser
 
     [GeneratedRegex(@"per\s+([a-z0-9]+)", RegexOptions.IgnoreCase)]
     private static partial Regex PerUnitPattern();
+
+    [GeneratedRegex(@"(\d+)\s*(?:pack|pk)s?\b", RegexOptions.IgnoreCase)]
+    private static partial Regex PackPattern();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
