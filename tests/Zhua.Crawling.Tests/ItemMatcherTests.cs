@@ -416,6 +416,47 @@ public class ItemMatcherTests
         Assert.False(await check.Items.AnyAsync(i => i.MatchKey == "freshchoice:fc-colby"));
     }
 
+    [Fact]
+    public async Task Frozen_freshchoice_singleton_is_reclaimed_and_reattaches_when_a_woolworths_anchor_appears()
+    {
+        // Run 1: FreshChoice-only "WW Cheese Colby" → a freshchoice: singleton (no WW anchor exists yet, so nothing
+        // to attach to; "WW" isn't a Foodstuffs brand). This is the frozen state the generic guard alone can't undo.
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.Add(FcSp("fc-colby", "WW Cheese Colby", "500g", 8.5m));
+            await db.SaveChangesAsync();
+        }
+        await using (var db = NewContext())
+        {
+            Assert.Equal(1, (await Matcher(db).RunAsync()).Items);   // the lone freshchoice: singleton
+            Assert.True(await db.Items.AnyAsync(i => i.MatchKey == "freshchoice:fc-colby"));
+        }
+
+        // A Woolworths listing of the same private label arrives.
+        await using (var db = NewContext())
+        {
+            db.Products.Add(Sp(Woolworths, "ww-colby", "WW Cheese Colby", "WW", "500g", 8m));
+            await db.SaveChangesAsync();
+        }
+
+        // Run 2: WW becomes the woolworths: anchor; the frozen FC singleton is reclaimed and re-cascades → it now
+        // attaches to the WW anchor (a real 2-store compare), and the freshchoice: singleton is gone.
+        MatchRunResult second;
+        await using (var db = NewContext()) second = await Matcher(db).RunAsync();
+        Assert.Equal(1, second.Reclaimed);
+
+        await using var check = NewContext();
+        Assert.False(await check.Items.AnyAsync(i => i.MatchKey == "freshchoice:fc-colby"));   // torn down
+        var ww = await check.Products.SingleAsync(p => p.Sku == "ww-colby");
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-colby");
+        Assert.NotNull(ww.ItemId);
+        Assert.Equal(ww.ItemId, fc.ItemId);                                                    // grouped with WW
+        Assert.Equal("woolworths:ww-colby", (await check.Items.SingleAsync(i => i.Id == ww.ItemId)).MatchKey);
+    }
+
     // ---- AutoLinked is run-scoped (plan D29 — was a DB-wide cumulative count) ------------------------------------
 
     [Fact]

@@ -20,6 +20,11 @@ public interface IMatchingRepository
     Task<IReadOnlyList<MatchCandidate>> GetAllCandidatesAsync(CancellationToken ct = default);
 
     void AddItem(Item item);
+
+    /// <summary>Delete an item (a reclaimed singleton anchor whose product no longer deserves to anchor — D30.1/TD-6).
+    /// Caller must clear every <see cref="Product.ItemId"/> pointing at it first.</summary>
+    void RemoveItem(Item item);
+
     void AddCandidate(MatchCandidate candidate);
     void RemoveCandidates(IEnumerable<MatchCandidate> candidates);
 

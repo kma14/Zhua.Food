@@ -183,6 +183,33 @@ public sealed class ItemMatcher(
             list.Add((c.Id, ProductNormalizer.Tokenize(c.Name, c.Brand)));
         }
 
+        // The higher-tier brand vocabulary (Foodstuffs ∪ Woolworths anchors) — the GENERIC Tier-4 guard (D30) and the
+        // reclaim just below both test against it.
+        var higherTierBrands = new HashSet<string>(foodstuffsBrands);
+        higherTierBrands.UnionWith(wwBrands);
+
+        // --- Reclaim (D30.1 / TD-6): the Tier-4 guard was widened to the higher-tier vocab, but MatchKey identity is
+        //     stable and a re-run skips already-linked products, so freshchoice: singletons minted under the OLD
+        //     (Foodstuffs-only) guard stay frozen. Tear down any freshchoice: singleton whose product now looks like a
+        //     higher-tier brand so it re-cascades below — Tier 3b attaches it to the Woolworths anchor (a real WW+FC
+        //     compare that didn't exist), else the Tier-4 guard holds it. Idempotent: afterwards the product is either
+        //     attached (skipped) or itemless (no singleton left to tear down). Woolworths anchors need no reclaim —
+        //     their guard (Foodstuffs-only) never changed. ---
+        var reclaimed = 0;
+        foreach (var fc in products.Where(p => p.Store.Chain == Chain.FreshChoice && p.ItemId is not null))
+        {
+            if (!itemsById.TryGetValue(fc.ItemId!.Value, out var item)) continue;
+            if (item.MatchKey?.StartsWith("freshchoice:", StringComparison.Ordinal) != true) continue;
+            if (InferBrandFromName(fc.RawName, higherTierBrands) is null) continue; // still legitimately a singleton
+
+            fc.ItemId = null;
+            fc.Item = null;
+            canonByKey.Remove(item.MatchKey);
+            itemsById.Remove(item.Id);
+            repo.RemoveItem(item);
+            reclaimed++;
+        }
+
         // Tier 3b: attach still-unlinked FreshChoice listings to a Woolworths anchor (same brand+size+name policy).
         foreach (var fc in products.Where(p => p.Store.Chain == Chain.FreshChoice))
         {
@@ -212,8 +239,6 @@ public sealed class ItemMatcher(
         //     normalisation improves), so hold it for review rather than mint a duplicate that splits the compare.
         //     Checking foodstuffsBrands alone let ~89 FreshChoice listings that share a Woolworths private label
         //     ("WW"/"Macro"/"Essentials") wrongly become singletons. ---
-        var higherTierBrands = new HashSet<string>(foodstuffsBrands);
-        higherTierBrands.UnionWith(wwBrands);
         foreach (var fc in products.Where(p => p.Store.Chain == Chain.FreshChoice))
         {
             if (Linked(fc)) continue;
@@ -241,7 +266,7 @@ public sealed class ItemMatcher(
         // save), so p.ItemId is populated for every link made this run.
         var newlyLinked = products.Count(p => p.ItemId is not null && !alreadyLinkedIds.Contains(p.Id));
         var pending = await repo.CountPendingCandidatesAsync(ct);
-        return new MatchRunResult(totalCanon, newlyLinked - anchored, pending, alreadyDecided);
+        return new MatchRunResult(totalCanon, newlyLinked - anchored, pending, alreadyDecided, reclaimed);
 
         // Follow a merge-redirect chain (rework phase 4) to the live survivor; bounded against cycles.
         static Item ResolveLive(Item item, Dictionary<Guid, Item> byId)

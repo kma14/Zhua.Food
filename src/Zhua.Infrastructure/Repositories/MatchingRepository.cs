@@ -24,6 +24,7 @@ public sealed class MatchingRepository(ZhuaDbContext db) : IMatchingRepository
         await db.MatchCandidates.ToListAsync(ct);
 
     public void AddItem(Item item) => db.Items.Add(item);
+    public void RemoveItem(Item item) => db.Items.Remove(item);
     public void AddCandidate(MatchCandidate candidate) => db.MatchCandidates.Add(candidate);
     public void RemoveCandidates(IEnumerable<MatchCandidate> candidates) => db.MatchCandidates.RemoveRange(candidates);
 

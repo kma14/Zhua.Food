@@ -261,11 +261,16 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
 - **2026-07-22 — 🧑‍⚖️ (Kevin: "捎带着 generic guard")** **Tier-4 guard made generic.** It checked only the
   Foodstuffs brand vocab, so a FreshChoice product whose brand is a *Woolworths-anchor* private label ("WW"/
   "Macro"/"Essentials") that missed Tier 3b still minted a `freshchoice:` singleton — splitting a WW+FC compare.
-  Now checks `foodstuffsBrands ∪ wwBrands`. **Caveat — going-forward only:** `MatchKey` identity is stable, so a
-  re-run skips already-linked products (`Linked(fc)`) and does **not** re-evaluate the **89** pre-existing
-  singletons this would now hold (≈36 of them would attach to a WW anchor → real 2-store compares). Realising them
-  needs a one-time reclaim (un-link + delete those singletons so the next run re-cascades them) — deferred pending
-  Kevin's call, since it deletes items. Tracked as tech debt.
+  Now checks `foodstuffsBrands ∪ wwBrands`.
+- **2026-07-22 — 🧑‍⚖️ (Kevin: "先跑一遍")** **Reclaim of frozen singletons built** (a follow-up to the generic
+  guard; was TD-6). `MatchKey` identity is stable and a re-run skips already-linked products, so the generic guard
+  alone couldn't undo the singletons minted under the old guard. `ItemMatcher` now has a **reclaim** step (after the
+  WW-anchor vocab, before Tier 3b): any `freshchoice:` singleton whose product now looks like a higher-tier brand is
+  un-linked + deleted (`IMatchingRepository.RemoveItem`) so it re-cascades — Tier 3b/4 then re-place it. Idempotent
+  (afterwards the product is attached → skipped, or itemless → nothing to tear down). `MatchRunResult.Reclaimed`
+  reports the count. **Live run: 89 reclaimed** → items 6677→6588, FreshChoice singletons 529→440; the 89 re-cascaded
+  to **53 review-queue candidates** (now linkable to a Woolworths anchor by a human) + **36 held** — none auto-linked
+  (the name policy stays conservative on generic private-label names, by design), but none remain false singletons.
 
 ---
 
