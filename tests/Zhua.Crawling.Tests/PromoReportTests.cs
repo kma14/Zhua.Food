@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 using Zhua.Domain.Entities;
@@ -16,6 +17,9 @@ public class PromoReportTests
     private ZhuaDbContext NewContext() => new(
         new DbContextOptionsBuilder<ZhuaDbContext>()
             .UseInMemoryDatabase(nameof(PromoReportTests), _root)
+            // Each test method gets its own isolated InMemoryDatabaseRoot by design — the correct pattern for
+            // test isolation, not the production misuse this warning is meant to catch.
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options);
 
     private static Product P(Guid storeId, string sku, PromoType promo) => new()

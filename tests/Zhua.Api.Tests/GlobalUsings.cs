@@ -4,5 +4,6 @@ global using Zhua.Application.Categories;
 global using Zhua.Application.Deals;
 global using Zhua.Application.Health;
 global using Zhua.Application.Products;
+global using Zhua.Application.Reporting.Dtos;
 global using Zhua.Application.Review;
 global using Zhua.Application.Stores;

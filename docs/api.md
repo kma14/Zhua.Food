@@ -267,6 +267,13 @@ as `/products`.
 >
 > Each deal also carries its listing `id` (drill in via `GET /products/{id}`) and `sku` (the supermarket/source
 > product id — tells apart look-alike specials that share brand/name/size).
+>
+> **Freshness & availability (D28, 2026-07-20):** a deal must have been **seen by a crawl within the last 48h**
+> (`lastSeenAt`/`priceAsOf` stays on every item so the UI can still show its age) — a special the crawler stopped
+> confirming ages out of `/deals` automatically instead of being served forever. Separately, listings a store has
+> **delisted** (missing from 2 consecutive complete crawls) are retired: they disappear from `/deals`, `/products`
+> search and the same-product compare (their price history stays queryable via `GET /products/{id}/price-history`).
+> No new response fields — retired/stale rows are simply excluded.
 
 ### Admin — match review (D18)
 
@@ -318,6 +325,26 @@ task; open for now).
 > `404`), and the **mapper never un-archives them**, so a deliberately-removed node stays gone across crawls.
 > Products under an archived node bubble up to the nearest live ancestor on the next match run.
 
+### Internal — match-coverage report (D30.1)
+
+An **ops/diagnostics** view of how the matcher placed every listing — **not a shopper surface** (items are internal,
+D25). Useful for a dashboard tile or a coverage check per supermarket.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/reports/product-status` | every active-store listing counted per supermarket by match status, as one table + a grand-total row. No params. Returns `ProductStatusReport` |
+
+`ProductStatusReport`: `{ chains: ChainStatusRow[], total: ChainStatusRow }`.
+`ChainStatusRow`: `{ supermarket, foodstuffsItem, woolworthsItem, freshChoiceItem, manualItem, pendingReview, held, total }`.
+
+- The first four columns are **linked** listings, grouped by which chain **anchors** the item they joined
+  (`foodstuffs:`/`woolworths:`/`freshchoice:`/`manual:` — see [matching.md](internals/matching.md)); the shopper
+  never sees the item, this is just where the matcher put the listing.
+- `pendingReview` = **待审商品** (unlinked, has a review candidate); `held` = **悬空商品** (unlinked, no candidate —
+  guard-held / not yet matchable). Together they're the unmatched listings.
+- Every listing is in exactly one column, so each row's columns sum to its `total`, and `total` (the grand row) is the
+  column-wise sum of the `chains` rows. `chains` is always the four supermarkets in a fixed order (zero rows included).
+
 ---
 
 ## Front-end flow
@@ -362,3 +389,5 @@ The whole flow is now backed end-to-end.
 - 2026-07-11 21:50 🧑‍⚖️ `/deals` now returns **any current promotion** (`isOnSpecial`), not just ones with a was-price — a deal no longer requires a recoverable regular price (was excluding most Foodstuffs specials until history accumulated). No-was deals come back with `wasPrice`/`saving` `null` and sort after the ones with a known saving. Front-end renders `saving`/`wasPrice` only when present.
 - 2026-07-11 22:02 🧑‍⚖️ `/deals` gains `category` + `storeId` filters aligned with `/products` (shared subtree resolver + repository predicate, so they can't drift; `supermarket`+`storeId` intersect; unknown category → 404), and now returns the `PagedResult<DealItem>` envelope (`sort: null`). Front-end reads `.items` (lockstep). Deal ordering is a fixed saving-first default; the client re-sorts.
 - 2026-07-17 21:30 🧑‍⚖️ **Promo-type model** (decisions A–E in [internals/promotions-model.md](internals/promotions-model.md)): listings + price-history points gain `promoType` (`"Special"`|`"MemberPrice"`|`"Multibuy"`|null), `memberPrice`, and listings the `multibuyQuantity`/`multibuyTotal` pair. **`price` is now always the cardless shelf price** (Woolworths club deals used to report the member price here). `isOnSpecial` narrowed to `promoType == "Special"` — so **`/deals` = public specials only**; member prices render beside the shelf price on listings, and Clubcard/multibuy promos no longer appear as deals. Front-end (Codex): render `memberPrice`/multibuy badges from the new fields.
+- 2026-07-20 15:45 🧑‍⚖️ **Stale-deal fix (D28)** (from the front-end bug report: a Highland Park special from 2026-07-13 was still served by `/deals` after the branch delisted the product): `/deals` now requires the listing to have been **seen by a crawl within 48h**, and listings missing from 2 consecutive complete crawls of their store are **retired** — excluded from `/deals`, `/products` search and the same-product compare (price history stays). No response-shape change; the front-end's price-date staleness hint stays useful but is no longer the only guard.
+- 2026-07-23 🧑‍⚖️ **Match-coverage report (D30.1):** new `GET /reports/product-status` — an internal/ops table of every active listing counted per supermarket by match status (aggregated by anchoring chain / 待审 / 悬空) + a grand-total row. Not a shopper surface (items are internal, D25). Added because the front-end asked whether this distribution needed its own endpoint (yes — it can't be derived from the shopper reads). Shape: `ProductStatusReport { chains[], total }`.

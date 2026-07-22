@@ -12,6 +12,7 @@ public interface IStoreCrawler
     /// <summary>The chain this crawler handles; the orchestrator picks the crawler by store chain.</summary>
     Chain Chain { get; }
 
-    /// <summary>Fetch the current product list for a physical store (store context = its geolocation).</summary>
-    Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default);
+    /// <summary>Fetch the current product list for a physical store (store context = its geolocation),
+    /// reporting every coverage gap so the orchestrator can tell a complete scrape from a partial one (D28).</summary>
+    Task<ScrapeResult> FetchAsync(Store store, CancellationToken ct = default);
 }

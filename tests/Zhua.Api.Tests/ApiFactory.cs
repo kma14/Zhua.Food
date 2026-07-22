@@ -32,6 +32,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             foreach (var d in toRemove) services.Remove(d);
 
             services.AddDbContext<ZhuaDbContext>(o => o.UseNpgsql(_db.GetConnectionString()));
+
+            // Pin the app clock just after the fixed seed dates so the D28 /deals freshness window sees the
+            // seeded LastSeenAt values as "recently crawled" (with the real clock everything would be stale).
+            var clock = services.Single(d => d.ServiceType == typeof(TimeProvider));
+            services.Remove(clock);
+            services.AddSingleton<TimeProvider>(new FixedClock(TestData.Now.AddHours(6)));
         });
     }
 
@@ -55,4 +61,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 public sealed class ApiCollection : ICollectionFixture<ApiFactory>
 {
     public const string Name = "api";
+}
+
+/// <summary>A frozen <see cref="TimeProvider"/> — the tests' "now" matching the fixed TestData dates.</summary>
+internal sealed class FixedClock(DateTimeOffset now) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => now;
 }

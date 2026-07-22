@@ -42,7 +42,7 @@ public sealed class FreshChoiceCrawler : IStoreCrawler
         return http;
     }
 
-    public async Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default)
+    public async Task<ScrapeResult> FetchAsync(Store store, CancellationToken ct = default)
     {
         var subdomain = store.ExternalStoreId;
         if (string.IsNullOrWhiteSpace(subdomain))
@@ -52,6 +52,7 @@ public sealed class FreshChoiceCrawler : IStoreCrawler
         var baseUrl = $"https://{subdomain}.store.freshchoice.co.nz";
         var archive = RawCrawlArchive.FromEnvironment(Chain.ToString(), DateTimeOffset.UtcNow);
         var results = new List<ScrapedProduct>();
+        var gaps = new List<string>();
 
         foreach (var (slug, name) in Departments)
         {
@@ -62,15 +63,18 @@ public sealed class FreshChoiceCrawler : IStoreCrawler
             var pageNo = 1;
             while (pagePath is not null)
             {
-                using var resp = await Http.GetAsync(baseUrl + pagePath, ct);
-                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+                var html = await GetPageAsync(baseUrl + pagePath, ct);
+                if (html is null) // 404 — department linked in the sidebar but empty; by design, not a gap
                 {
                     Console.WriteLine($"  [freshchoice] {slug}: 404 — department empty/unavailable, skipping");
                     break;
                 }
-                resp.EnsureSuccessStatusCode();
+                if (html.Length == 0) // transient failure that survived the retries
+                {
+                    gaps.Add($"{slug}: page {pageNo} failed after retries");
+                    break;
+                }
 
-                var html = await resp.Content.ReadAsStringAsync(ct);
                 await archive.SaveAsync($"{slug}_p{pageNo}", html, ct, extension: "html"); // raw archive (D12)
 
                 var (products, next) = FreshChoiceParser.ParsePage(html, path, baseUrl);
@@ -82,6 +86,27 @@ public sealed class FreshChoiceCrawler : IStoreCrawler
             }
         }
 
-        return results;
+        return new ScrapeResult(results, gaps);
+    }
+
+    /// <summary>One page with retry (plan D28): null = 404 (permanently absent), "" = failed after retries.</summary>
+    private static async Task<string?> GetPageAsync(string url, CancellationToken ct)
+    {
+        var delays = new[] { TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(8) };
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var resp = await Http.GetAsync(url, ct);
+                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+                if (resp.IsSuccessStatusCode) return await resp.Content.ReadAsStringAsync(ct);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                // transient network/timeout — fall through to retry
+            }
+            if (attempt >= delays.Length) return "";
+            await Task.Delay(delays[attempt], ct);
+        }
     }
 }

@@ -34,7 +34,17 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
 
     private const int HitsPerPage = 50;
 
-    public async Task<IReadOnlyList<ScrapedProduct>> FetchAsync(Store store, CancellationToken ct = default)
+    /// <summary>
+    /// Algolia's default <c>paginationLimitedTo</c>: a query matching more products pins <c>totalHits</c> at
+    /// exactly 1000 and silently drops everything past page 20 (observed: fridge-deli-eggs at every PAK'nSAVE
+    /// store + NW Browns Bay). Treat totalHits at/over this as "truncated — split the query" (plan D28).
+    /// </summary>
+    private const int AlgoliaHitCap = 1000;
+
+    /// <summary>Per-page retry budget: one initial attempt + these backoff delays before declaring a gap.</summary>
+    private static readonly int[] RetryDelaysMs = [3_000, 8_000];
+
+    public async Task<ScrapeResult> FetchAsync(Store store, CancellationToken ct = default)
     {
         using var pw = await Playwright.CreateAsync();
         await using var browser = await pw.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -78,36 +88,74 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
         if (string.IsNullOrWhiteSpace(storeId))
             storeId = await ResolveStoreIdAsync(page, store, archive, ct);
         if (string.IsNullOrWhiteSpace(storeId))
-            return [];
+            return new ScrapeResult([], [$"store id for '{store.Name}' could not be resolved — nothing crawled"]);
 
         var results = new List<ScrapedProduct>();
+        var gaps = new List<string>();
         foreach (var dept in DepartmentNames)
         {
             ct.ThrowIfCancellationRequested();
-            await CrawlDepartmentAsync(page, archive, bearer, storeId!, dept, results, ct);
+            await CrawlScopeAsync(page, archive, bearer, storeId!,
+                filters: $"category0NI:\"{EscapeFilterValue(dept)}\"", label: dept, splitFacet: "category1NI",
+                results, gaps, ct);
         }
-        return results;
+        return new ScrapeResult(results, gaps);
     }
 
-    /// <summary>Crawls one department across all pages; products self-describe their category path(s).</summary>
-    private async Task CrawlDepartmentAsync(
-        IPage page, RawCrawlArchive archive, string? bearer, string storeId, string dept, List<ScrapedProduct> results, CancellationToken ct)
+    /// <summary>
+    /// Crawls one query scope (a department, or a category subtree it was split into) across all pages; products
+    /// self-describe their category path(s). If the scope is truncated at the Algolia hit cap it is NOT paged —
+    /// instead it recursively splits into per-<paramref name="splitFacet"/> sub-scopes (category1NI, then
+    /// category2NI), each small enough to page fully (plan D28; the sub-scopes re-fetch everything, and the
+    /// orchestrator's SKU dedup absorbs the overlap). Every page that stays missing after retries and every
+    /// unsplittable truncated scope is recorded in <paramref name="gaps"/>.
+    /// </summary>
+    private async Task CrawlScopeAsync(
+        IPage page, RawCrawlArchive archive, string? bearer, string storeId, string filters, string label,
+        string? splitFacet, List<ScrapedProduct> results, List<string> gaps, CancellationToken ct)
     {
-        var first = await FetchProductsAsync(page, archive, bearer, storeId, dept, 0, ct);
-        if (first is null) return;
+        var first = await FetchProductsAsync(page, archive, bearer, storeId, filters, label, 0, ct);
+        if (first is null)
+        {
+            gaps.Add($"{label}: page 0 failed after retries");
+            return;
+        }
 
         int totalPages;
         using (var doc = JsonDocument.Parse(first))
         {
             totalPages = Int(doc.RootElement, "totalPages") ?? 1;
+            var totalHits = Int(doc.RootElement, "totalHits") ?? 0;
+
+            if (totalHits >= AlgoliaHitCap)
+            {
+                IReadOnlyList<string> subScopes = splitFacet is null ? [] : FacetValues(doc.RootElement, splitFacet);
+                if (subScopes.Count > 0)
+                {
+                    foreach (var sub in subScopes)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        await CrawlScopeAsync(page, archive, bearer, storeId,
+                            $"{filters} AND {splitFacet}:\"{EscapeFilterValue(sub)}\"", $"{label} - {sub}",
+                            splitFacet == "category1NI" ? "category2NI" : null, results, gaps, ct);
+                    }
+                    return; // sub-scopes cover this scope in full — don't page the truncated view
+                }
+                gaps.Add($"{label}: truncated at the {AlgoliaHitCap}-hit cap and no {splitFacet ?? "deeper"} facet to split by");
+            }
+
             ParseProductsInto(doc.RootElement, results);
         }
 
         for (var p = 1; p < totalPages; p++)
         {
             ct.ThrowIfCancellationRequested();
-            var more = await FetchProductsAsync(page, archive, bearer, storeId, dept, p, ct);
-            if (more is null) break;
+            var more = await FetchProductsAsync(page, archive, bearer, storeId, filters, label, p, ct);
+            if (more is null)
+            {
+                gaps.Add($"{label}: page {p} of {totalPages} failed after retries");
+                break;
+            }
             using var doc = JsonDocument.Parse(more);
             ParseProductsInto(doc.RootElement, results);
         }
@@ -128,28 +176,38 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
         return Str(data, "id");
     }
 
+    /// <summary>One page of one query scope, with retry: transient failures (null body) back off and try again
+    /// (plan D28 — a lost page must surface as a gap, not silently truncate the department).</summary>
     private async Task<string?> FetchProductsAsync(
-        IPage page, RawCrawlArchive archive, string? bearer, string storeId, string dept, int pageNo, CancellationToken ct)
+        IPage page, RawCrawlArchive archive, string? bearer, string storeId, string filters, string label, int pageNo, CancellationToken ct)
     {
-        var body = BuildSearchBody(storeId, dept, pageNo);
-        var json = await PostAsync(page, $"{ApiBaseUrl}/v1/edge/search/paginated/products", body, bearer);
-        await page.WaitForTimeoutAsync(400); // polite spacing (plan D6)
-        if (json is null) return null;
-
-        await archive.SaveAsync($"{Slugify(dept)}_p{pageNo}", json, ct);
-        return json;
+        var body = BuildSearchBody(storeId, filters, pageNo);
+        for (var attempt = 0; ; attempt++)
+        {
+            var json = await PostAsync(page, $"{ApiBaseUrl}/v1/edge/search/paginated/products", body, bearer);
+            await page.WaitForTimeoutAsync(400); // polite spacing (plan D6)
+            if (json is not null)
+            {
+                await archive.SaveAsync($"{Slugify(label)}_p{pageNo}", json, ct);
+                return json;
+            }
+            if (attempt >= RetryDelaysMs.Length) return null;
+            await page.WaitForTimeoutAsync(RetryDelaysMs[attempt]);
+        }
     }
 
-    /// <summary>Mirrors the storefront's Algolia-backed request; filters products by department (category level0 name).</summary>
-    private static string BuildSearchBody(string storeId, string dept, int pageNo)
+    /// <summary>Mirrors the storefront's Algolia-backed request. <paramref name="filters"/> is the category part
+    /// (level0, plus level1/level2 when a truncated scope was split); the store filter is prepended here.</summary>
+    private static string BuildSearchBody(string storeId, string filters, int pageNo)
     {
         var query = new
         {
             algoliaQuery = new
             {
                 attributesToRetrieve = new[] { "productID", "Type", "sponsored", "category0NI", "category1NI", "category2NI" },
-                facets = new[] { "category2NI", "onPromotion" },
-                filters = $"stores:{storeId} AND category0NI:\"{dept}\"",
+                // category1NI feeds the truncation split (D28); category2NI is its second, finer split level.
+                facets = new[] { "category1NI", "category2NI", "onPromotion" },
+                filters = $"stores:{storeId} AND {filters}",
                 hitsPerPage = HitsPerPage,
                 maxValuesPerFacet = 100,
                 page = pageNo,
@@ -165,6 +223,18 @@ public abstract class FoodstuffsCrawler : IStoreCrawler
         };
         return JsonSerializer.Serialize(query);
     }
+
+    /// <summary>The facet's value names from <c>algoliaSearchResult.facets.{facetName}</c> — the split targets for
+    /// a truncated scope (facet counts are computed over the FULL result set, so they see past the hit cap). Testable.</summary>
+    internal static IReadOnlyList<string> FacetValues(JsonElement root, string facetName)
+    {
+        var facet = Obj(Obj(Obj(root, "algoliaSearchResult"), "facets"), facetName);
+        if (facet.ValueKind != JsonValueKind.Object) return [];
+        return facet.EnumerateObject().Select(p => p.Name).ToList();
+    }
+
+    /// <summary>Escapes a category name for use inside a double-quoted Algolia filter value.</summary>
+    private static string EscapeFilterValue(string name) => name.Replace("\"", "\\\"");
 
     /// <summary>Parses a Foodstuffs products response into <see cref="ScrapedProduct"/>s. One per category tree (the
     /// orchestrator dedups by SKU and accumulates categories, plan D11). Testable.</summary>

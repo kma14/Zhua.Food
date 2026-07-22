@@ -10,8 +10,9 @@ namespace Zhua.Infrastructure.Crawling;
 /// <summary>
 /// Runs one crawl for a store: open <see cref="CrawlRun"/> → fetch → for each product apply the observation
 /// (the change-only price rule, D3, lives on <see cref="Product.ApplyObservation"/>) → link categories
-/// (D11) → sync promo tags (D13) → close the run. This type is the use-case orchestration; the per-product
-/// invariant is owned by the entity (D19).
+/// (D11) → sync promo tags (D13) → reconcile products the crawl did NOT return (D28, complete runs only)
+/// → close the run. This type is the use-case orchestration; the per-product invariant is owned by the
+/// entity (D19).
 /// </summary>
 public sealed class CrawlOrchestrator(
     ZhuaDbContext db,
@@ -32,7 +33,8 @@ public sealed class CrawlOrchestrator(
             var crawler = crawlers.FirstOrDefault(c => c.Chain == store.Chain)
                 ?? throw new InvalidOperationException($"No crawler registered for chain {store.Chain}.");
 
-            var scraped = await crawler.FetchAsync(store, ct);
+            var fetched = await crawler.FetchAsync(store, ct);
+            var scraped = fetched.Products;
 
             var existing = await db.Products
                 .Include(p => p.Categories)
@@ -86,13 +88,25 @@ public sealed class CrawlOrchestrator(
                 SyncTags(sp, s.Tags, store.Chain, tags);
             }
 
+            // Missing-product reconciliation (plan D28) — ONLY when the crawler claims full coverage: after a
+            // partial scrape "not scraped" says nothing about the shelf, and counting it would let one lost
+            // page/department retire (and de-special) half a store.
+            if (fetched.IsComplete)
+            {
+                var seen = scraped.Select(s => s.Sku).ToHashSet();
+                foreach (var (sku, product) in existing)
+                    if (!seen.Contains(sku))
+                        product.RecordMissing(now);
+            }
+
             run.ProductsFound = scraped.Count;
             run.SnapshotsWritten = snapshotsWritten;
-            run.Status = CrawlRunStatus.Succeeded;
+            run.Status = fetched.IsComplete ? CrawlRunStatus.Succeeded : CrawlRunStatus.Partial;
+            run.ErrorMessage = fetched.IsComplete ? null : Truncate(string.Join(" | ", fetched.Gaps), MaxErrorLength);
             run.FinishedAt = clock.GetUtcNow();
             await db.SaveChangesAsync(ct);
 
-            return new CrawlRunResult(run.Id, run.Status, run.ProductsFound, run.SnapshotsWritten, null);
+            return new CrawlRunResult(run.Id, run.Status, run.ProductsFound, run.SnapshotsWritten, run.ErrorMessage);
         }
         catch (Exception ex)
         {

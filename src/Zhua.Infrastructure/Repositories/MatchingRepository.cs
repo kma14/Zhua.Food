@@ -24,6 +24,7 @@ public sealed class MatchingRepository(ZhuaDbContext db) : IMatchingRepository
         await db.MatchCandidates.ToListAsync(ct);
 
     public void AddItem(Item item) => db.Items.Add(item);
+    public void RemoveItem(Item item) => db.Items.Remove(item);
     public void AddCandidate(MatchCandidate candidate) => db.MatchCandidates.Add(candidate);
     public void RemoveCandidates(IEnumerable<MatchCandidate> candidates) => db.MatchCandidates.RemoveRange(candidates);
 
@@ -34,9 +35,6 @@ public sealed class MatchingRepository(ZhuaDbContext db) : IMatchingRepository
 
     public Task<int> CountActiveItemsAsync(CancellationToken ct = default) =>
         db.Items.CountAsync(c => c.MergedIntoId == null, ct);
-
-    public Task<int> CountLinkedProductsAsync(CancellationToken ct = default) =>
-        db.Products.CountAsync(p => p.ItemId != null, ct);
 
     public Task<int> CountPendingCandidatesAsync(CancellationToken ct = default) =>
         db.MatchCandidates.CountAsync(m => m.Status == MatchStatus.Pending, ct);
