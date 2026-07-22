@@ -33,6 +33,25 @@ linking them to one `Item`. `Product.ItemId` is **nullable** — matching is off
   `dotnet run --project src/Zhua.Worker -- match`.
 - **Re-runnable from scratch every time** and converges to the same result (idempotent — see below).
 
+## The anchor-priority cascade (D30)
+
+Matching is a cascade ordered by **source data quality — Foodstuffs > Woolworths > FreshChoice**. A product only
+becomes the *anchor* of a **new** item if it couldn't attach to one at a higher tier; a lower-quality source
+*attaches* to a higher-tier item whenever it can. The effect is a near-invariant: **every active product ends up
+with an `ItemId`.**
+
+| Tier | Anchor `MatchKey` | Who joins | Yields |
+|---|---|---|---|
+| 1 | `foodstuffs:{sku}` | Foodstuffs branches by shared `productId` | multi-branch groups |
+| 2 | *(attach to a Foodstuffs item)* | WW/FC by `brand+size+name` | cross-store compare |
+| 3 | `woolworths:{sku}` | a WW product whose brand ∉ Foodstuffs-vocab; FC then attaches | WW+FC compare + WW singletons |
+| 4 | `freshchoice:{sku}` | an FC product that attached to nothing above | FC singletons (1 store ⇒ always singleton) |
+
+**The one deliberate exception to the invariant:** a product whose brand *is* a Foodstuffs brand but that didn't
+attach at Tier 2 (a size-format / ambiguous miss) is **left unanchored** — anchoring it at Tier 3/4 would mint a
+duplicate of the Foodstuffs item it belongs to and *split* the cross-store compare. These stay in the review queue
+/ wait for better size-normalisation. Full analysis + the orphan decomposition: [orphan-matching.md](orphan-matching.md).
+
 ## Tier 1 — Foodstuffs (New World + PAK'nSAVE): free & exact
 
 NW and PAK'nSAVE share one platform, so the *same* product has the *same* `productId` (= our `Sku`) at both
@@ -96,15 +115,44 @@ zero-candidate set, ~81% never get a brand guess at all — mostly generic meat/
 from; the rest have a guessed brand but no Foodstuffs item shares its exact size — same shape as the Woolworths
 zero-candidate cases below.
 
+## Tier 3 — Woolworths-anchored items for what Foodstuffs doesn't carry (D30)
+
+After Tier 2, a Woolworths product still unlinked **and** whose brand is **not** in the Foodstuffs vocabulary
+(private label like `WW`/`Macro`, or a brand Foodstuffs simply doesn't stock) becomes its own item, keyed
+`woolworths:{sku}`. Then **FreshChoice attaches to these WW anchors** by the *same* `brand+size+name` policy — but
+the FC brand is inferred against the **Woolworths-anchor** brand vocabulary (which includes `WW`/`Macro`, absent
+from the Foodstuffs vocab), not the Foodstuffs one. This is the only path to comparing **Woolworths-family private
+label sold at both Woolworths and FreshChoice** — impossible while every item was Foodstuffs-anchored.
+
+- The Foodstuffs-vocab guard is the correctness crux: a WW product whose brand *is* a Foodstuffs brand is **not**
+  anchored here (it's a Tier-2 miss belonging to a Foodstuffs item — anchoring would duplicate + split the compare).
+- `Name`/`Description` seeded once from the WW listing (D25); `Brand`/`Size` refreshed each run.
+
+## Tier 4 — FreshChoice-anchored singletons (D30)
+
+Whatever FreshChoice listing still attached to nothing becomes `freshchoice:{sku}` — always a **singleton** (one
+FreshChoice store). Guard: if the name looks like a Foodstuffs brand it's a suspected Tier-2 miss and is **left
+unanchored** (same reason as Tier 3), not minted as a duplicate. The point of these singletons is the "every product
+has an `ItemId`" invariant + readiness to **merge** when a real cross-store match later appears — **not** browsability
+(a product reaches the shared category tree through its own `StoreCategory.CategoryId`, independent of matching).
+
+**Measured on the live catalogue (2026-07-22):** Tier 3 minted **1,956** Woolworths-anchored items, **61** of which
+gained a FreshChoice listing → genuine 2-store price compare that didn't exist before (e.g. Alpine Cheese Colby
+$13.90 WW vs $14.90 FC). Tier 4 minted **529** FreshChoice singletons. The invariant's deliberate exception —
+Woolworths products with a Foodstuffs brand that missed — is **861** listings, left for the review queue / size
+normalisation. Item categories for the new anchors come through the existing store-category name mapping (~26% for
+Woolworths); the rest stay `Uncategorized` until curated (does not affect browsability).
+
 ## Idempotency — why re-running is safe
 
 Three mechanisms (in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs)):
 
-1. **Upsert items by `MatchKey`** — it loads every item, keys the ones with a `MatchKey` into a dictionary, and
-   reuses them, so re-runs don't duplicate. Merge tombstones are resolved to their survivor here (see Merge below),
-   so a merged-away key relinks to the survivor instead of recreating the item.
+1. **Upsert items by `MatchKey`** — it loads every item, keys the ones with a `MatchKey`
+   (`foodstuffs:` / `woolworths:` / `freshchoice:` / `manual:`) into a dictionary, and reuses them, so re-runs
+   don't duplicate. Merge tombstones are resolved to their survivor here (see Merge below), so a merged-away key
+   relinks to the survivor instead of recreating the item.
 2. **Honour human decisions** — every `Approved` candidate is re-applied (sets the link); every `Rejected` pair is
-   never re-proposed; a Tier 2 listing that's already linked is skipped.
+   never re-proposed; a listing that's already linked (by DB `ItemId` or a link made earlier this run) is skipped.
 3. **Drop resolved candidates** — at the end, Pending candidates whose product has since been linked are deleted.
 
 ## Human review (the queue → the Api)
@@ -136,6 +184,10 @@ the survivor instead:
 - `PATCH /products/{id}` refuses to link to a merged-away item (it would be undone next run).
 - **Price history needs no special handling** — snapshots key on `ProductId`, so they follow the moved product.
 
+Merge is also the **reverse-edge repair for the D30 cascade**: if Foodstuffs later stocks a product that a
+Woolworths anchor already represents, both items exist for the same product — an admin merges the Woolworths item
+into the Foodstuffs one (higher tier wins). This isn't automatic today; it's the documented manual step.
+
 Merge is idempotent (re-merging into the same survivor is a no-op) and rejects self-merge / redirect cycles.
 
 ## Manual link/create vs. the matcher
@@ -163,16 +215,20 @@ Remaining edge:
   own private label (Woolworths/Macro — Foodstuffs' equivalent is Pams/Value, a different brand string, 19%), or
   a brand Foodstuffs simply doesn't stock (53%). The remaining ~17% share a real Foodstuffs brand but not its
   exact normalised size — the one bucket worth revisiting if size-normalisation is ever loosened.
-- **Unmatched listings never get their own item** — they're invisible to category-filtered browsing (`/products`
-  and `/deals`'s `category=` filter both require `ItemId != null`), only reachable via text search. Tracked as
-  TD-4-adjacent debt, not yet fixed — see [tech-debt.md](tech-debt.md).
+- **The cascade is Foodstuffs > Woolworths > FreshChoice (D30, above)** — before it, every item was born from a
+  Foodstuffs SKU, so a product sold only at Woolworths/FreshChoice was structurally unanchored. Now Tier 3/4 anchor
+  those on Woolworths (then FreshChoice), so nearly every active product has an item. The remaining itemless set is
+  the deliberate exception (Foodstuffs-brand Tier-2 misses). Category-browse never depended on items anyway (a
+  product reaches the tree via `StoreCategory.CategoryId`); the fuller orphan analysis is [orphan-matching.md](orphan-matching.md).
 - **Cross-store category coverage is partial** — the category mapper maps Foodstuffs by identity (100%)
   but other banners by exact name (Woolworths ~26%); that's a *categorisation* gap, separate from product matching.
+  It's also why Tier-3/4 anchor items are mostly `Uncategorized` (their products carry no Foodstuffs category).
 
 ## Tests
 
 `ItemMatcherTests` and `ProductNormalizerTests` in `tests/Zhua.Crawling.Tests` (EF InMemory + pure unit tests)
-cover the tiers, the thresholds, idempotency, the normalisation rules, and (D29) FreshChoice's brand inference.
+cover the tiers, the thresholds, idempotency, the normalisation rules, (D29) FreshChoice's brand inference, and
+(D30) the Woolworths/FreshChoice anchor cascade + its Foodstuffs-brand guard.
 
 ## Decision log
 
@@ -190,6 +246,15 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   "Beak & Sons") truncated to the meaningless "Beak &" and never matched. Now tries 3/2/1 leading words
   (longest-first) and extends past a trailing lone "&" instead of counting it as a significant word. Verified on
   the live catalog: 293→306 auto-linked, 762→733 zero-candidate.
+- **2026-07-22 — 🧑‍⚖️ (Kevin)** **Anchor-priority cascade (D30) built** (Foodstuffs > Woolworths > FreshChoice —
+  see "The anchor-priority cascade" + Tier 3/4 above). Extends the Tier-2 loop with two anchor tiers so nearly
+  every active product gets an item; guarded so Foodstuffs-brand Tier-2 misses never mint duplicates. Design +
+  the four-bucket orphan decomposition it came out of: [orphan-matching.md](orphan-matching.md). Live result:
+  +1,956 Woolworths-anchored (61 real WW+FC 2-store groups), +529 FreshChoice singletons, 861 guarded-out. Along
+  the way we established (verified in code) that **category-browse does not depend on items** — a product reaches
+  the shared tree via `StoreCategory.CategoryId` — so the singletons are justified by the "every product has an
+  `ItemId`" invariant + future merges, not browsability. Category label for the new anchors left on the free
+  ~26% name-mapping (option A); manual curation deferred.
 
 ---
 

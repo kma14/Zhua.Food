@@ -235,8 +235,10 @@ public class ItemMatcherTests
     }
 
     [Fact]
-    public async Task Freshchoice_listing_with_no_recognisable_brand_prefix_stays_unmatched_with_no_candidates()
+    public async Task Freshchoice_produce_with_no_foodstuffs_brand_becomes_a_freshchoice_singleton_no_candidates()
     {
+        // D30 Tier 4: no leading word is a Foodstuffs brand, so it can't be a Foodstuffs miss — it becomes its own
+        // FreshChoice-anchored singleton item (browsable, ready to merge later), not a wrong candidate.
         await using (var db = NewContext())
         {
             db.Stores.AddRange(
@@ -244,8 +246,6 @@ public class ItemMatcherTests
                 new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
             db.Products.AddRange(
                 Sp(NewWorld, "M1", "Original Milk", "Meadow Fresh", "1L", 3.80m),
-                // Generic produce naming — no leading-word(s) of this name is a known brand, so the hard filter
-                // must reject it cleanly rather than guess a garbage brand like "Fennel".
                 FcSp("fc-veg", "Fennel Bulbs", "1kg", 2.50m));
             await db.SaveChangesAsync();
         }
@@ -253,9 +253,141 @@ public class ItemMatcherTests
         await using (var db = NewContext()) await Matcher(db).RunAsync();
 
         await using var check = NewContext();
-        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-veg");
-        Assert.Null(fc.ItemId);
+        var fc = await check.Products.Include(p => p.Item).SingleAsync(p => p.Sku == "fc-veg");
+        Assert.NotNull(fc.ItemId);
+        Assert.Equal("freshchoice:fc-veg", fc.Item!.MatchKey);
         Assert.Equal(0, await check.MatchCandidates.CountAsync(m => m.ProductId == fc.Id));
+    }
+
+    [Fact]
+    public async Task Freshchoice_listing_that_looks_like_a_foodstuffs_brand_but_misses_stays_unanchored()
+    {
+        // D30 guard: "Meadow Fresh …" infers a Foodstuffs brand but the size doesn't line up with the NW item, so
+        // it's a suspected Tier-2 miss — it must NOT mint a freshchoice: singleton (that would duplicate the item it
+        // belongs to and split the compare). Stays unanchored for review / size-normalisation.
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(NewWorld, "M9", "Original Milk", "Meadow Fresh", "1L", 3.80m),
+                FcSp("fc-odd", "Meadow Fresh Milk Original", "750mL", 4.10m)); // brand known, size differs → miss
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-odd");
+        Assert.Null(fc.ItemId);
+        Assert.False(await check.Items.AnyAsync(i => i.MatchKey == "freshchoice:fc-odd"));
+    }
+
+    // ---- Tier 3/4: the Woolworths → FreshChoice anchor cascade for products Foodstuffs lacks (plan D30) ---------
+
+    [Fact]
+    public async Task Woolworths_product_foodstuffs_lacks_becomes_its_own_anchor_item()
+    {
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(NewWorld, "N1", "Colby Cheese", "Mainland", "500g", 10m),   // seeds the Foodstuffs brand vocab
+                Sp(Woolworths, "ww-strk", "Streaky Bacon", "Hellers", "250g", 6m)); // Hellers ∉ Foodstuffs vocab here
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var ww = await check.Products.Include(p => p.Item).SingleAsync(p => p.Sku == "ww-strk");
+        Assert.Equal("woolworths:ww-strk", ww.Item!.MatchKey);
+        Assert.Equal("Streaky Bacon", ww.Item.Description);      // seeded from the listing (D25)
+    }
+
+    [Fact]
+    public async Task Woolworths_product_with_a_foodstuffs_brand_that_misses_is_not_anchored()
+    {
+        // Guard: brand IS a Foodstuffs brand but the size doesn't line up → a Tier-2 miss, not a Tier-3 anchor.
+        // Anchoring it would duplicate the Foodstuffs item it belongs to and split the compare.
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(NewWorld, "N2", "Colby Cheese", "Mainland", "500g", 10m),
+                Sp(Woolworths, "ww-miss", "Colby Cheese Block", "Mainland", "1kg", 15m)); // Mainland ∈ vocab, size differs
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var ww = await check.Products.SingleAsync(p => p.Sku == "ww-miss");
+        Assert.Null(ww.ItemId);
+        Assert.False(await check.Items.AnyAsync(i => i.MatchKey == "woolworths:ww-miss"));
+    }
+
+    [Fact]
+    public async Task Freshchoice_attaches_to_a_woolworths_anchor_for_shared_private_label()
+    {
+        // The payoff: Woolworths-family private label sold at BOTH Woolworths and FreshChoice — impossible to
+        // compare while items were Foodstuffs-anchored (neither carries a Foodstuffs brand). "WW" isn't in the
+        // Foodstuffs vocab, so FC infers it against the Woolworths-anchor vocab and attaches (D30 Tier 3b).
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(Woolworths, "ww-colby", "WW Cheese Colby", "WW", "500g", 8m),
+                FcSp("fc-colby", "WW Cheese Colby", "500g", 8.5m));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var ww = await check.Products.SingleAsync(p => p.Sku == "ww-colby");
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-colby");
+        Assert.NotNull(ww.ItemId);
+        Assert.Equal(ww.ItemId, fc.ItemId);                     // same Woolworths-anchored item → a real 2-store group
+        var item = await check.Items.SingleAsync(i => i.Id == ww.ItemId);
+        Assert.Equal("woolworths:ww-colby", item.MatchKey);
+    }
+
+    [Fact]
+    public async Task Tier3_and_tier4_anchors_are_idempotent_on_rerun()
+    {
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(Woolworths, "ww-bac", "Streaky Bacon", "Hellers", "250g", 6m),
+                FcSp("fc-bac", "Hellers Streaky Bacon", "250g", 6.5m),   // attaches to the WW anchor (Tier 3b)
+                FcSp("fc-kiwi", "Kiwifruit Gold Punnet", "1kg", 4m));    // FC-only → Tier 4 singleton
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+        int itemsAfterFirst;
+        await using (var check = NewContext()) itemsAfterFirst = await check.Items.CountAsync();
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var after = NewContext();
+        Assert.Equal(itemsAfterFirst, await after.Items.CountAsync());   // no duplicates on re-run
+        var wwItem = await after.Products.Where(p => p.Sku == "ww-bac").Select(p => p.ItemId).SingleAsync();
+        var fcBacItem = await after.Products.Where(p => p.Sku == "fc-bac").Select(p => p.ItemId).SingleAsync();
+        Assert.Equal(wwItem, fcBacItem);                                 // FC still grouped with WW
+        var kiwi = await after.Products.Include(p => p.Item).SingleAsync(p => p.Sku == "fc-kiwi");
+        Assert.Equal("freshchoice:fc-kiwi", kiwi.Item!.MatchKey);        // FC singleton stable
     }
 
     // ---- AutoLinked is run-scoped (plan D29 — was a DB-wide cumulative count) ------------------------------------
