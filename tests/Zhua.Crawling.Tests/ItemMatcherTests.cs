@@ -390,6 +390,32 @@ public class ItemMatcherTests
         Assert.Equal("freshchoice:fc-kiwi", kiwi.Item!.MatchKey);        // FC singleton stable
     }
 
+    [Fact]
+    public async Task Freshchoice_that_looks_like_a_woolworths_brand_but_misses_is_held_not_a_singleton()
+    {
+        // Generic guard (D30): "WW" is a Woolworths-anchor brand, not a Foodstuffs brand. This FC listing infers
+        // "WW" but its size doesn't line up with the WW anchor, so it can't attach (Tier 3b) — and it must NOT then
+        // mint a freshchoice: singleton (that would split a WW+FC compare once size normalisation improves). The
+        // guard has to check the Woolworths-anchor vocab too, not just Foodstuffs.
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Sp(Woolworths, "ww-colby", "WW Cheese Colby", "WW", "500g", 8m),      // → woolworths: anchor, brand "WW"
+                FcSp("fc-colby", "WW Cheese Colby Block", "1kg", 9m));                 // infers "WW", size differs → miss
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-colby");
+        Assert.Null(fc.ItemId);                                                        // held, not anchored
+        Assert.False(await check.Items.AnyAsync(i => i.MatchKey == "freshchoice:fc-colby"));
+    }
+
     // ---- AutoLinked is run-scoped (plan D29 — was a DB-wide cumulative count) ------------------------------------
 
     [Fact]

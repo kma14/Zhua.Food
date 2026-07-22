@@ -131,8 +131,11 @@ label sold at both Woolworths and FreshChoice** — impossible while every item 
 ## Tier 4 — FreshChoice-anchored singletons (D30)
 
 Whatever FreshChoice listing still attached to nothing becomes `freshchoice:{sku}` — always a **singleton** (one
-FreshChoice store). Guard: if the name looks like a Foodstuffs brand it's a suspected Tier-2 miss and is **left
-unanchored** (same reason as Tier 3), not minted as a duplicate. The point of these singletons is the "every product
+FreshChoice store). Guard is **generic** (2026-07-22): if the name looks like a brand from *any* higher tier —
+Foodstuffs **or** the Woolworths anchors — it's a suspected Tier-2/3b miss and is **left unanchored** (held for the
+review queue / size normalisation), not minted as a duplicate. (Checking Foodstuffs brands alone let ~89 FreshChoice
+listings that share a Woolworths private label — "WW"/"Macro"/"Essentials" — wrongly become singletons, splitting a
+WW+FC compare.) The point of these singletons is the "every product
 has an `ItemId`" invariant + readiness to **merge** when a real cross-store match later appears — **not** browsability
 (a product reaches the shared category tree through its own `StoreCategory.CategoryId`, independent of matching).
 
@@ -255,6 +258,14 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   the shared tree via `StoreCategory.CategoryId` — so the singletons are justified by the "every product has an
   `ItemId`" invariant + future merges, not browsability. Category label for the new anchors left on the free
   ~26% name-mapping (option A); manual curation deferred.
+- **2026-07-22 — 🧑‍⚖️ (Kevin: "捎带着 generic guard")** **Tier-4 guard made generic.** It checked only the
+  Foodstuffs brand vocab, so a FreshChoice product whose brand is a *Woolworths-anchor* private label ("WW"/
+  "Macro"/"Essentials") that missed Tier 3b still minted a `freshchoice:` singleton — splitting a WW+FC compare.
+  Now checks `foodstuffsBrands ∪ wwBrands`. **Caveat — going-forward only:** `MatchKey` identity is stable, so a
+  re-run skips already-linked products (`Linked(fc)`) and does **not** re-evaluate the **89** pre-existing
+  singletons this would now hold (≈36 of them would attach to a WW anchor → real 2-store compares). Realising them
+  needs a one-time reclaim (un-link + delete those singletons so the next run re-cascades them) — deferred pending
+  Kevin's call, since it deletes items. Tracked as tech debt.
 
 ---
 

@@ -23,9 +23,11 @@ namespace Zhua.Application.Matching;
 /// <item>Tier 4 (D30) — FreshChoice listings that attached to nothing become <c>freshchoice:{sku}</c> singletons
 /// (one FreshChoice store ⇒ always singletons).</item>
 /// </list>
-/// The cascade makes "every active product has an <c>ItemId</c>" a near-invariant; the one deliberate exception is a
-/// product whose brand IS a Foodstuffs brand but that didn't attach (a Tier-2 miss) — it stays unanchored rather than
-/// mint a duplicate that would split the cross-store compare. Orchestration only — data access is
+/// The cascade makes "every active product has an <c>ItemId</c>" a near-invariant; the deliberate exception is a
+/// product whose brand belongs to a HIGHER tier but that didn't attach (a miss) — it stays unanchored rather than
+/// mint a duplicate that would split the cross-store compare. The guard is per-tier: a Woolworths product is held if
+/// its brand is a Foodstuffs brand; a FreshChoice product is held if its brand is a Foodstuffs OR Woolworths-anchor
+/// brand (D30). Orchestration only — data access is
 /// <see cref="IMatchingRepository"/>, the scoring rule is the domain policy, commits via <see cref="IUnitOfWork"/>.
 /// Idempotent: items upserted by <see cref="Item.MatchKey"/>, human decisions honoured, merge tombstones resolved.
 /// </summary>
@@ -205,12 +207,17 @@ public sealed class ItemMatcher(
         }
 
         // --- Tier 4: FreshChoice-anchored singletons for whatever still didn't attach (plan D30). One FreshChoice
-        //     store ⇒ always singletons. Guard: a name that looks like a Foodstuffs brand is a suspected Tier-2 miss
-        //     (should attach to a Foodstuffs item), so leave it for review rather than mint a duplicate. ---
+        //     store ⇒ always singletons. Guard is GENERIC (D30): a name that looks like a brand from ANY higher tier
+        //     — Foodstuffs OR the Woolworths anchors — is a suspected Tier-2/3b miss (should ATTACH once size
+        //     normalisation improves), so hold it for review rather than mint a duplicate that splits the compare.
+        //     Checking foodstuffsBrands alone let ~89 FreshChoice listings that share a Woolworths private label
+        //     ("WW"/"Macro"/"Essentials") wrongly become singletons. ---
+        var higherTierBrands = new HashSet<string>(foodstuffsBrands);
+        higherTierBrands.UnionWith(wwBrands);
         foreach (var fc in products.Where(p => p.Store.Chain == Chain.FreshChoice))
         {
             if (Linked(fc)) continue;
-            if (InferBrandFromName(fc.RawName, foodstuffsBrands) is not null) continue; // suspected Foodstuffs miss
+            if (InferBrandFromName(fc.RawName, higherTierBrands) is not null) continue; // suspected higher-tier miss
 
             var anchor = UpsertAnchor("freshchoice:" + fc.Sku, fc);
             fc.Item = anchor;

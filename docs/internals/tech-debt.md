@@ -21,6 +21,9 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
 - **2026-07-21 10:30** — Added TD-5 (unmatched listings invisible to category-filtered browsing) — surfaced by the
   front-end's matching-coverage report; explicitly out of scope for D29 (FreshChoice brand inference only), kept
   separate because it's a bigger Item-semantics change (singleton items + auto-merge-on-match).
+- **2026-07-22 —** Added TD-6 (89 pre-existing FreshChoice singletons the now-generic Tier-4 guard would hold are
+  frozen by stable `MatchKey`). Accepted while making the guard generic ("捎带着 generic guard"); the code fix is
+  correct going-forward, the retroactive reclaim deletes items so it waits on Kevin's call.
 
 ## Open items
 
@@ -136,10 +139,39 @@ non-Foodstuffs singleton at all (today only Foodstuffs categorises by identity; 
 name, ~26% hit rate) — a singleton might still end up uncategorised, just differently uncategorised; (2) the merge
 step must trigger automatically inside `ItemMatcher`, not wait for a human, or singletons pile up permanently.
 
+This is the same "de-anchor items from Foodstuffs" step that [orphan-matching.md](orphan-matching.md) identifies as
+the prerequisite for most orphan-matching work — see that research doc for the full decomposition (browsability is
+only one of the payoffs; it also unlocks cross-store matching of Woolworths-family private label sold at both
+Woolworths and FreshChoice).
+
 **Why deferred / priority:** Medium — real user-facing gap (browse, not search, is the primary discovery path),
 but it's a second architectural change (Item semantics, auto-merge-on-match) beyond what D29 scoped (FreshChoice
 brand inference only). Do this next if the front-end confirms browse-completeness matters more than search
 coverage for the affected quarter of the catalog.
+
+### TD-6 — 89 pre-existing FreshChoice singletons the generic guard would now hold are frozen
+
+**Where:** [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs) Tier 4 — the generic guard
+(`foodstuffsBrands ∪ wwBrands`) plus the `Linked(fc)` skip at the top of the tier loop.
+
+**What:** The Tier-4 guard was made generic on 2026-07-22 (see [matching.md](matching.md) Decision log) so a
+FreshChoice product whose inferred brand is a Woolworths-anchor private label ("WW"/"Macro"/"Essentials") is held
+for review instead of minting a `freshchoice:` singleton. But items carry a **stable `MatchKey`** and the matcher
+only ever *sets* links, never tears them down; a re-run skips any already-linked product. So the **89** singletons
+that were minted under the old (Foodstuffs-only) guard stay singletons — the fix only prevents *new* leaks.
+
+**Why it's debt:** ≈36 of the 89 would attach to an existing Woolworths anchor → real WW+FC 2-store price compares
+(the moat) that currently don't exist; the other ≈53 would become 悬空商品 (held), correctly parked for size
+normalisation. Measured on the live catalogue 2026-07-22.
+
+**The fix:** a one-time (or self-healing) **reclaim** — for each `freshchoice:`/`woolworths:` singleton whose seed
+product now violates its tier's guard, un-link the product and delete the singleton item, then let the next
+`ItemMatcher` run re-cascade it (attach via Tier 3b, else held by the generic guard). Idempotent: after the rebuild
+a product is either linked (skip) or itemless (nothing to tear down). The clean form is a self-healing step inside
+`ItemMatcher` (aligns with D25's identity-stable merge/split), not a throwaway script.
+
+**Why deferred / priority:** Low-effort but it **deletes items**, so it waits on Kevin's go-ahead rather than
+shipping silently. Do it alongside the next matcher change.
 
 ## Paid-down items
 

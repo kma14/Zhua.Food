@@ -110,6 +110,54 @@ public class CategoryMapperTests
         }
     }
 
+    [Fact]
+    public async Task Department_alias_maps_a_woolworths_anchored_item_with_no_foodstuffs_member()
+    {
+        // Shared tree gets its "Meat, Poultry & Seafood" department from a Foodstuffs store category…
+        await using (var db = NewContext())
+        {
+            var nw = new Store { Chain = Chain.NewWorld, Name = "NW", Suburb = "X", Latitude = -36.8, Longitude = 174.7 };
+            var ww = new Store { Chain = Chain.Woolworths, Name = "WW", Suburb = "Y", Latitude = -36.8, Longitude = 174.7 };
+            db.Stores.AddRange(nw, ww);
+
+            var nwDept = new StoreCategory { Store = nw, Kind = CategoryKind.Department, ExternalId = "Meat, Poultry & Seafood", Slug = "meat", Name = "Meat, Poultry & Seafood" };
+            db.StoreCategories.Add(nwDept);
+            // A NW product just to seed the tree (its department node).
+            var nwCanon = new Item { Name = "Seed", Category = "Uncategorized" };
+            var nwP = new Product { Store = nw, Sku = "NW-1", RawName = "Seed", FirstSeenAt = DateTimeOffset.UtcNow, Item = nwCanon };
+            nwP.Categories.Add(nwDept);
+            db.Products.Add(nwP);
+
+            // …and a Woolworths-anchored item (D30) whose only store category is WW's differently-named
+            // "Meat & Poultry" department — no Foodstuffs member, so it can only be categorised via the alias.
+            var wwDept = new StoreCategory { Store = ww, Kind = CategoryKind.Department, ExternalId = "1", Slug = "meat-poultry", Name = "Meat & Poultry" };
+            db.StoreCategories.Add(wwDept);
+            var wwCanon = new Item { MatchKey = "woolworths:WW-9", Name = "Macro Free Range Beef", Category = "Uncategorized" };
+            var wwP = new Product { Store = ww, Sku = "WW-9", RawName = "Macro Free Range Beef", FirstSeenAt = DateTimeOffset.UtcNow, Item = wwCanon };
+            wwP.Categories.Add(wwDept);
+            db.Products.Add(wwP);
+
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Mapper(db).MapAsync();
+
+        await using (var check = NewContext())
+        {
+            var dept = await check.Categories.SingleAsync(c => c.Kind == CategoryKind.Department);
+            Assert.Equal("Meat, Poultry & Seafood", dept.Name);
+
+            // The WW department was aliased onto the shared department…
+            var wwDept = await check.StoreCategories.SingleAsync(c => c.Store.Chain == Chain.Woolworths);
+            Assert.Equal(dept.Id, wwDept.CategoryId);
+
+            // …so the Woolworths-anchored item is no longer Uncategorized.
+            var wwItem = await check.Items.SingleAsync(i => i.MatchKey == "woolworths:WW-9");
+            Assert.Equal(dept.Id, wwItem.CategoryId);
+            Assert.Equal("Meat, Poultry & Seafood", wwItem.Category);
+        }
+    }
+
     private async Task SeedAsync()
     {
         await using var db = NewContext();
