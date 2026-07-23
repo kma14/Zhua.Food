@@ -1,4 +1,4 @@
-export type Supermarket = "Woolworths" | "NewWorld" | "PaknSave";
+export type Supermarket = "Woolworths" | "NewWorld" | "PaknSave" | "FreshChoice";
 
 export type PromoType = "Special" | "MemberPrice" | "Multibuy";
 
@@ -11,6 +11,22 @@ export type StoreOption = {
   longitude: number;
   productCount: number;
   lastCrawledAt: string | null;
+};
+
+export type ChainStatusRow = {
+  supermarket: Supermarket | "Total";
+  foodstuffsItem: number;
+  woolworthsItem: number;
+  freshChoiceItem: number;
+  manualItem: number;
+  pendingReview: number;
+  held: number;
+  total: number;
+};
+
+export type ProductStatusReport = {
+  chains: ChainStatusRow[];
+  total: ChainStatusRow;
 };
 
 export type CategoryNode = {
@@ -52,6 +68,7 @@ export type ProductGroup = {
   itemId: string | null;
   description: string | null;
   category: string | null;
+  comparable?: boolean;
   products: ProductListing[];
 };
 
@@ -121,6 +138,7 @@ export type MatchCandidate = {
   price: number | null;
   candidateItemId: string;
   candidateItem: string;
+  candidateItemCategory?: string | null;
   score: number;
   reason: string | null;
 };
