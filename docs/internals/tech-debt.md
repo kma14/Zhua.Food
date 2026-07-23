@@ -31,6 +31,9 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   predicate + `CountGroupsByCategoryAsync`), the client distinguishes single-store cards via `ProductGroup.comparable`.
   Used the "browse doesn't need an item" route, not the singleton-item approach the entry originally sketched. Moved
   to Paid-down.
+- **2026-07-23 —** 🧑‍⚖️ *(Kevin: "这个写成一个新的TD")* Added **TD-7** — a follow-on gap TD-5 exposed: unmatched
+  FreshChoice listings are only Department-categorised (D26 source limit), so they show at the Department but vanish
+  when a shopper drills into a finer aisle/shelf. Bounded (FreshChoice = 1 store); fix is crawling FC's finer tree.
 
 ## Open items
 
@@ -120,6 +123,39 @@ retiring listings (keeping them linked is arguably right — history pages still
 
 **Why deferred / priority:** Low — cosmetic/efficiency, no user-visible wrongness; the matcher question deserves a
 deliberate decision rather than a drive-by filter.
+
+### TD-7 — FreshChoice listings are categorised only at Department level, so they vanish when you drill in
+
+**Where:** [`FreshChoiceCrawler`](../../src/Zhua.Crawling/FreshChoice/FreshChoiceCrawler.cs) (department-only category
+list, D26) → [`CategoryMapper`](../../src/Zhua.Application/Matching/CategoryMapper.cs) maps each FreshChoice department
+onto the shared **Department** node. The shared tree's finer nodes (Aisle/Shelf) come only from Foodstuffs.
+
+**What:** FreshChoice's MyFoodLink storefront sidebar exposes categories **only to Department granularity** (D26 — the
+finer tree lives in a store-parameterised CloudFront JSON we don't crawl). So an **unmatched** FreshChoice listing
+carries a store-category that maps to a Department and nothing finer. Category browse is **subtree-based** (a node
+returns itself + its descendants), so such a listing shows when browsing its Department but **disappears the moment the
+shopper drills into a finer aisle/shelf** under it. Concretely: the held Henergy/Farmer Brown eggs appear under
+`Fridge, Deli & Eggs` (Department) but **not** under its `Eggs` (Aisle) → `Free Range Eggs`/`Barn Eggs` (Shelf) — even
+though a shopper narrowing to "Eggs" is looking for exactly them. Side-effect: a Department's `totalProductCount` can
+exceed the sum of its shelf badges (some listings sit directly on the Department node).
+
+**Not affected:** *matched* FreshChoice listings (they inherit the item's fine category — e.g. Otaika eggs land on
+`Free Range Eggs`), and Woolworths listings (WW carries its own aisle/shelf store-categories, so they map fine).
+
+**Why it's debt:** surfaced right after TD-5 (2026-07-23). Not wrong data — nothing is mis-priced or mis-grouped — but
+coarse discovery: unmatched FreshChoice products are found only at the Department level, not the precise shelf a shopper
+drills to. FreshChoice is one store (~1,200 listings), so the blast radius is bounded.
+
+**The fix:** two independent routes, either helps —
+1. **Crawl FreshChoice's finer category tree** (the CloudFront sidebar JSON with store params, already flagged as
+   future work in [crawling.md](crawling.md) "FreshChoice — MyFoodLink (D26)") → FreshChoice listings get Aisle/Shelf
+   store-categories → they map onto the fine shared nodes and drill-down works. The real fix.
+2. **Better matching** (size-normalisation, de-anchoring) moves an unmatched FreshChoice listing to *matched*, at which
+   point it inherits the item's fine shelf category. Partial — only helps listings that have a cross-store counterpart.
+
+**Why deferred / priority:** Low–Medium — department-level visibility is already a strict improvement over TD-5's prior
+"invisible everywhere"; do route 1 when FreshChoice's category depth (or a second FreshChoice store) makes the
+drill-down miss worth the extra crawler work.
 
 ## Paid-down items
 
