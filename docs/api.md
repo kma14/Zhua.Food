@@ -145,6 +145,8 @@ the applied `sort`. `total` = number of **groups** after the `storeId` filter (n
   "itemId": "019ef1a2-880e-737b-a6e8-bc376177a9d3", // internal grouping id; null = an unmatched listing
   "description": "Beef Mince 1kg",                  // item caption (D25); client decides usage — see note
   "category": "Beef Mince",                         // item category leaf (denormalized); null if unmatched
+  "comparable": true,                               // true = >1 store in this group → render a cross-store compare;
+                                                    //   false = single store, render a "no cross-store price yet" card
   "products": [                                     // THE payload — every store's listing; the client ranks them
     { "id": "dddd…00a3", "sku": "5125914-KGM-000",
       "store": "PAK'nSAVE Albany", "supermarket": "PaknSave", "suburb": "Albany",
@@ -163,8 +165,12 @@ the applied `sort`. `total` = number of **groups** after the `storeId` filter (n
   "page": 1, "size": 30, "total": 408, "totalPages": 14, "hasMore": true, "sort": "unitPriceAsc"
 }
 ```
-> Root holds only **item metadata** (`itemId` + `description` + `category`); everything else is per-listing inside
-> `products[]`. `sku` is the supermarket/source product id from the crawler source (not our internal GUID).
+> Root holds only **item metadata** (`itemId` + `description` + `category` + `comparable`); everything else is
+> per-listing inside `products[]`. **`comparable`** is a convenience flag = `products.length > 1` (a real
+> cross-store comparison): `false` means a single store's listing — either unmatched (`itemId: null`) or a product
+> only one store carries — so render it as a single-store card, **not** an empty compare table (and never as
+> "exclusive"; an unmatched listing may exist elsewhere, just not matched yet). `sku` is the supermarket/source
+> product id from the crawler source (not our internal GUID).
 > The listing **`name` is a real store name** — use it as the title; render `description` as a
 > *grouping caption*, never the title. `products[]` comes back cheapest-first as a neutral default — **re-sort it
 > however you like** (the group is ≤7 stores). Drill into one listing via its `id` → `GET /products/{id}`.
@@ -391,3 +397,4 @@ The whole flow is now backed end-to-end.
 - 2026-07-17 21:30 🧑‍⚖️ **Promo-type model** (decisions A–E in [internals/promotions-model.md](internals/promotions-model.md)): listings + price-history points gain `promoType` (`"Special"`|`"MemberPrice"`|`"Multibuy"`|null), `memberPrice`, and listings the `multibuyQuantity`/`multibuyTotal` pair. **`price` is now always the cardless shelf price** (Woolworths club deals used to report the member price here). `isOnSpecial` narrowed to `promoType == "Special"` — so **`/deals` = public specials only**; member prices render beside the shelf price on listings, and Clubcard/multibuy promos no longer appear as deals. Front-end (Codex): render `memberPrice`/multibuy badges from the new fields.
 - 2026-07-20 15:45 🧑‍⚖️ **Stale-deal fix (D28)** (from the front-end bug report: a Highland Park special from 2026-07-13 was still served by `/deals` after the branch delisted the product): `/deals` now requires the listing to have been **seen by a crawl within 48h**, and listings missing from 2 consecutive complete crawls of their store are **retired** — excluded from `/deals`, `/products` search and the same-product compare (price history stays). No response-shape change; the front-end's price-date staleness hint stays useful but is no longer the only guard.
 - 2026-07-23 🧑‍⚖️ **Match-coverage report (D30.1):** new `GET /reports/product-status` — an internal/ops table of every active listing counted per supermarket by match status (aggregated by anchoring chain / 待审 / 悬空) + a grand-total row. Not a shopper surface (items are internal, D25). Added because the front-end asked whether this distribution needed its own endpoint (yes — it can't be derived from the shopper reads). Shape: `ProductStatusReport { chains[], total }`.
+- 2026-07-23 🧑‍⚖️ **`ProductGroup.comparable`** added — a convenience boolean (= `products.length > 1`) so the client renders a real cross-store compare vs. a single-store "no cross-store price yet" card. Groundwork for surfacing unmatched listings in category browse (TD-5): a single listing is `comparable: false` (unmatched or one-store-only), never labelled "exclusive". Derived, so it can't drift from `products`; no other shape change.
