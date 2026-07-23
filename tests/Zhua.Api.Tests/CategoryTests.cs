@@ -81,6 +81,8 @@ public class CategoryTests(ApiFactory factory)
         Assert.Equal(TestData.BeefMince, groups![0].ItemId);
         Assert.Single(groups[0].Products);
         Assert.Equal("PAK'nSAVE Albany", groups[0].Products[0].Store);
+        // comparable is GLOBAL: the mince is at 3 stores, so it stays true even though the filter returns one listing.
+        Assert.True(groups[0].Comparable);
     }
 
     [Fact]

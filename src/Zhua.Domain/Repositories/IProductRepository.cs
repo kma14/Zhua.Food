@@ -48,6 +48,12 @@ public interface IProductRepository
     /// <summary>Whether <paramref name="itemId"/> is a valid manual link target: it exists and isn't merged away.</summary>
     Task<bool> IsLinkableItemAsync(Guid itemId, CancellationToken ct = default);
 
+    /// <summary>Global distinct-store count per item over available, priced listings (ignores any store filter) — so
+    /// `ProductGroup.Comparable` reflects the item's true cross-store span even when a <c>?storeId=</c> filter has
+    /// narrowed the returned listings. Only the given items; empty input → empty map.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountStoresByItemAsync(
+        IReadOnlyCollection<Guid> itemIds, CancellationToken ct = default);
+
     /// <summary>Active-store listings counted by (chain, anchor scheme, has-pending-candidate) — the raw signals the
     /// product-status report classifies (D30.1). <see cref="MatchStatusCount.AnchorScheme"/> is the part of the linked
     /// item's <c>MatchKey</c> before ':' (or null when the listing is unlinked); primitives only, the Application

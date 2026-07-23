@@ -10,13 +10,11 @@ public sealed record ProductGroup(
     Guid? ItemId,                 // internal grouping id; null = an unmatched listing (a group of one)
     string? Description,          // item grouping caption ("we think these are: X", D25); client decides usage
     string? Category,             // item category leaf name (denormalized); null if unmatched
-    IReadOnlyList<ProductListing> Products)
-{
-    /// <summary>
-    /// True when this group offers a real cross-store comparison — i.e. more than one store's listing. A single
-    /// store's listing is <c>false</c>, whether it's unmatched (<c>ItemId</c> null) or a product only one store
-    /// carries. Lets the client render a compare card vs. a "single store — no cross-store price yet" card without
-    /// re-deriving it or leaking the internal item. Computed from <see cref="Products"/>, never stored.
-    /// </summary>
-    public bool Comparable => Products.Count > 1;
-}
+    // True when the ITEM is carried by more than one store in the whole catalogue — i.e. a real cross-store
+    // comparison exists. **Global, independent of any ?storeId= filter**: a store-filtered response may return a
+    // single listing for a group yet still be Comparable, because the item has prices at other stores too. An
+    // unmatched listing (ItemId null) is never comparable. Lets the client render a compare card vs. a single-store
+    // card without leaking the internal item; the service sets it (Products.Count when unfiltered, the item's global
+    // store span when a store filter narrowed the listings).
+    bool Comparable,
+    IReadOnlyList<ProductListing> Products);

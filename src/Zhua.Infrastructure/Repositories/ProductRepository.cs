@@ -107,6 +107,18 @@ public sealed class ProductRepository(ZhuaDbContext db) : IProductRepository
     public Task<bool> IsLinkableItemAsync(Guid itemId, CancellationToken ct = default) =>
         db.Items.AnyAsync(i => i.Id == itemId && i.MergedIntoId == null, ct);
 
+    public async Task<IReadOnlyDictionary<Guid, int>> CountStoresByItemAsync(
+        IReadOnlyCollection<Guid> itemIds, CancellationToken ct = default) =>
+        itemIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : (await db.Products
+                .Where(p => p.ItemId != null && itemIds.Contains(p.ItemId.Value)
+                    && p.Store.IsActive && p.IsAvailable && p.CurrentPrice != null)
+                .GroupBy(p => p.ItemId!.Value)
+                .Select(g => new { Id = g.Key, Stores = g.Select(p => p.StoreId).Distinct().Count() })
+                .ToListAsync(ct))
+            .ToDictionary(x => x.Id, x => x.Stores);
+
     public async Task<IReadOnlyList<MatchStatusCount>> CountByMatchStatusAsync(CancellationToken ct = default) =>
         await db.Products
             .Where(p => p.Store.IsActive)
