@@ -22,6 +22,13 @@ internal static class TestData
     public static readonly Guid ShelfBeefMince = new("aaaa0000-0000-0000-0000-000000000003");
     public static readonly Guid AisleChicken = new("aaaa0000-0000-0000-0000-000000000004");
 
+    // Isolated "Browse Test" branch for the TD-5 case: an UNMATCHED listing must reach category browse via its own
+    // store-category (no item). Kept out of the Meat tree so it doesn't disturb those count assertions.
+    public static readonly Guid DeptBrowse = new("aaaa0000-0000-0000-0000-000000000040");
+    public static readonly Guid ShelfBrowse = new("aaaa0000-0000-0000-0000-000000000041");
+    public static readonly Guid BrowseMatched = new("bbbb0000-0000-0000-0000-000000000040");
+    public static readonly Guid BrowseUnmatchedSp = new("dddd0000-0000-0000-0000-000000000040");
+
     // Dedicated Frozen branch for category-CRUD tests — isolated so create/rename/archive don't touch the Meat tree.
     public static readonly Guid DeptFrozen = new("aaaa0000-0000-0000-0000-000000000010");
     public static readonly Guid AisleIceCream = new("aaaa0000-0000-0000-0000-000000000011");
@@ -75,7 +82,10 @@ internal static class TestData
             Cat(DeptFrozen, CategoryKind.Department, "Frozen", "frozen", "frozen", null),
             Cat(AisleIceCream, CategoryKind.Aisle, "Ice Cream & Desserts", "ice-cream-desserts", "frozen/ice-cream-desserts", DeptFrozen),
             Cat(RenameMeShelf, CategoryKind.Shelf, "Rename Me", "rename-me", "frozen/ice-cream-desserts/rename-me", AisleIceCream),
-            Cat(ArchiveMeShelf, CategoryKind.Shelf, "Archive Me", "archive-me", "frozen/ice-cream-desserts/archive-me", AisleIceCream));
+            Cat(ArchiveMeShelf, CategoryKind.Shelf, "Archive Me", "archive-me", "frozen/ice-cream-desserts/archive-me", AisleIceCream),
+            // Isolated Browse-Test branch (TD-5)
+            Cat(DeptBrowse, CategoryKind.Department, "Browse Test", "browse-test", "browse-test", null),
+            Cat(ShelfBrowse, CategoryKind.Shelf, "Browse Shelf", "browse-shelf", "browse-test/browse-shelf", DeptBrowse));
 
         db.Items.AddRange(
             Canon(BeefMince, "Beef Mince 1kg", "beef mince (grouped)", "Pams", "1kg", "Beef Mince", ShelfBeefMince),
@@ -85,6 +95,7 @@ internal static class TestData
             // Parked on the isolated Frozen branch so the merge listings don't disturb the Meat-tree count tests.
             Canon(MergeFromItem, "Mergeable From 1kg", "mergeable from", "Acme", "1kg", "Ice Cream & Desserts", AisleIceCream),
             Canon(MergeIntoItem, "Mergeable Into 1kg", "mergeable into", "Acme", "1kg", "Ice Cream & Desserts", AisleIceCream),
+            Canon(BrowseMatched, "Browse Matched 1kg", "browse matched", "Acme", "1kg", "Browse Shelf", ShelfBrowse),
             new Item { Id = MatchTarget, Name = "Generic Match Target", Category = "Uncategorised" });
 
         // Beef Mince across three stores — PAK'nSAVE Albany cheapest; Woolworths on special.
@@ -138,6 +149,23 @@ internal static class TestData
         db.PriceSnapshots.AddRange(
             Snap(pnsMince.Id, run.Id, 11.50m, Now.AddDays(-1)),
             Snap(pnsMince.Id, run.Id, 11.00m, Now));
+        await db.SaveChangesAsync();
+
+        // --- TD-5 browse fixture: a per-store category mapped to the shared "Browse Shelf", a matched item across
+        //     two stores (comparable), and an UNMATCHED listing that reaches browse ONLY via its store-category. ---
+        var browseStoreCat = new StoreCategory
+        {
+            StoreId = StoreSeed.WoolworthsTakapuna, Kind = CategoryKind.Shelf,
+            ExternalId = "browse-sc", Slug = "browse-shelf", Name = "Browse Shelf", CategoryId = ShelfBrowse,
+        };
+        db.StoreCategories.Add(browseStoreCat);
+        var browseUnmatched = Sp(StoreSeed.WoolworthsTakapuna, "browse-unmatched", "Browse Unmatched 1kg", 4.00m,
+            itemId: null, id: BrowseUnmatchedSp);
+        browseUnmatched.Categories.Add(browseStoreCat);
+        db.Products.AddRange(
+            Sp(StoreSeed.WoolworthsTakapuna, "browse-matched-ww", "Browse Matched WW 1kg", 5.00m, BrowseMatched),
+            Sp(StoreSeed.NewWorldMetro, "browse-matched-nw", "Browse Matched NW 1kg", 5.50m, BrowseMatched),
+            browseUnmatched);
         await db.SaveChangesAsync();
 
         // Three unmatched store products, each with one pending match candidate → BeefMince item.

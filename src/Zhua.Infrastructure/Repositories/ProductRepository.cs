@@ -25,8 +25,7 @@ public sealed class ProductRepository(ZhuaDbContext db) : IProductRepository
         }
 
         if (categoryIds is { Count: > 0 })
-            query = query.Where(p =>
-                p.ItemId != null && p.Item!.CategoryId != null && categoryIds.Contains(p.Item.CategoryId.Value));
+            query = WhereInCategory(query, categoryIds);
 
         return await query.Include(p => p.Store).Include(p => p.Item).ToListAsync(ct);
     }
@@ -69,10 +68,20 @@ public sealed class ProductRepository(ZhuaDbContext db) : IProductRepository
         if (storeIds is { Count: > 0 })
             query = query.Where(p => storeIds.Contains(p.StoreId));
         if (categoryIds is { Count: > 0 })
-            query = query.Where(p =>
-                p.ItemId != null && p.Item!.CategoryId != null && categoryIds.Contains(p.Item.CategoryId.Value));
+            query = WhereInCategory(query, categoryIds);
         return query;
     }
+
+    // The category-subtree filter, shared by the listings query, the specials query + its count so they can't drift.
+    // A listing is "in" a category two ways (TD-5): a MATCHED listing via its item's canonical CategoryId (the
+    // original behaviour — unchanged); an UNMATCHED listing (no item — 待审/悬空) via its OWN store-category → shared
+    // category, so pending/held listings show up in category browse too, not just search. `Categories.Any(...)`
+    // translates to an EXISTS, so a listing sitting under several matching shelves still counts once (no row blow-up).
+    private static IQueryable<Product> WhereInCategory(IQueryable<Product> query, IReadOnlyCollection<Guid> categoryIds) =>
+        query.Where(p =>
+            (p.ItemId != null && p.Item!.CategoryId != null && categoryIds.Contains(p.Item.CategoryId.Value))
+            || (p.ItemId == null && p.Categories.Any(sc =>
+                   sc.CategoryId != null && categoryIds.Contains(sc.CategoryId.Value))));
 
     public async Task<IReadOnlyList<Product>> FindSpecialsAsync(
         Chain? supermarket, IReadOnlyCollection<Guid>? categoryIds, IReadOnlyList<Guid>? storeIds,

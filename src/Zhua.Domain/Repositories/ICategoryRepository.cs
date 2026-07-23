@@ -17,8 +17,10 @@ public interface ICategoryRepository
     /// <summary>A single node (tracked, for rename / as a create-parent).</summary>
     Task<Category?> GetAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Item count per category id, optionally scoped to stores that have the item priced (DB-side GROUP BY).</summary>
-    Task<IReadOnlyDictionary<Guid, int>> CountItemsByCategoryAsync(
+    /// <summary>Browse-group count per category id, matching what category browse shows (TD-5): matched items via
+    /// their <c>Item.CategoryId</c> PLUS unmatched listings via their own <c>StoreCategory.CategoryId</c>, optionally
+    /// scoped to stores. DB-side GROUP BY; each unmatched listing counts once per category.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountGroupsByCategoryAsync(
         IReadOnlyList<Guid>? storeIds, CancellationToken ct = default);
 
     /// <summary>Whether any node already occupies <paramref name="path"/> (the stable identity key).</summary>
