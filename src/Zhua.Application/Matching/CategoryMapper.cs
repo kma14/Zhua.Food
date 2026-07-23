@@ -15,7 +15,7 @@ namespace Zhua.Application.Matching;
 /// non-blocking.</item>
 /// <item>Give each item the finest mapped category of its store products, preferring a Foodstuffs member.</item>
 /// </list>
-/// Idempotent: item nodes are upserted by <see cref="Category.Path"/>.
+/// Idempotent: category nodes are upserted by <see cref="Category.Path"/>.
 /// </summary>
 public sealed class CategoryMapper(IMatchingRepository repo, IUnitOfWork uow) : ICategoryMapper
 {
@@ -47,8 +47,8 @@ public sealed class CategoryMapper(IMatchingRepository repo, IUnitOfWork uow) : 
         var byId = storeCats.ToDictionary(c => c.Id);
         var canonByPath = (await repo.GetAllCategoriesAsync(ct)).ToDictionary(c => c.Path);
 
-        // --- 1) Build the item tree from the Foodstuffs taxonomy. Parents (Department) before children
-        //        (Aisle, Shelf) so each node's parent item already exists. ---
+        // --- 1) Build the shared category tree from the Foodstuffs taxonomy. Parents (Department) before children
+        //        (Aisle, Shelf) so each node's parent category already exists. ---
         var foodstuffs = storeCats.Where(c => c.Store.Chain is Chain.NewWorld or Chain.PaknSave).ToList();
         foreach (var kind in (ReadOnlySpan<CategoryKind>)[CategoryKind.Department, CategoryKind.Aisle, CategoryKind.Shelf])
         {
@@ -70,7 +70,7 @@ public sealed class CategoryMapper(IMatchingRepository repo, IUnitOfWork uow) : 
 
         // --- 2) Map other banners' store categories in by unambiguous (kind, slug), then by a curated alias table
         //        for the department names that don't slug-match (Woolworths/FreshChoice name their departments
-        //        differently from the Foodstuffs taxonomy). Unmatched stay null — item PRODUCTS are categorised from
+        //        differently from the Foodstuffs taxonomy). Unmatched stay null — the items are categorised from
         //        their Foodstuffs member below, so this isn't blocking; the aliases just recover the ~885 WW/FC-
         //        anchored items (plan D30) that have no Foodstuffs member, so were Uncategorized. ---
         var canonBySlugKind = canonByPath.Values

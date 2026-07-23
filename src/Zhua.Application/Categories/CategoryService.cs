@@ -15,7 +15,7 @@ public sealed class CategoryService(ICategoryRepository categories, IUnitOfWork 
     public async Task<IReadOnlyList<CategoryNode>> TreeAsync(string? kind, IReadOnlyList<Guid>? storeIds)
     {
         var cats = await categories.GetActiveAsync();
-        var counts = await categories.CountItemsByCategoryAsync(storeIds);
+        var counts = await categories.CountGroupsByCategoryAsync(storeIds);
 
         var nodes = cats.ToDictionary(c => c.Id, c => new MutableNode(
             c.Id, c.Kind.ToString(), c.Name, c.Slug, c.Path, c.ParentId, counts.GetValueOrDefault(c.Id)));

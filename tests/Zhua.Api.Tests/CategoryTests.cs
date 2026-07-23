@@ -81,6 +81,8 @@ public class CategoryTests(ApiFactory factory)
         Assert.Equal(TestData.BeefMince, groups![0].ItemId);
         Assert.Single(groups[0].Products);
         Assert.Equal("PAK'nSAVE Albany", groups[0].Products[0].Store);
+        // comparable is GLOBAL: the mince is at 3 stores, so it stays true even though the filter returns one listing.
+        Assert.True(groups[0].Comparable);
     }
 
     [Fact]
@@ -88,5 +90,29 @@ public class CategoryTests(ApiFactory factory)
     {
         var res = await _client.GetAsync($"/categories/{Guid.NewGuid()}/products");
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Category_browse_surfaces_unmatched_listings_via_their_store_category() // TD-5
+    {
+        // Browsing a category returns BOTH matched groups (via the item's category) and unmatched listings (via
+        // their own store-category → shared category), so pending/held listings aren't invisible to browse.
+        var groups = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.DeptBrowse}/products"))?.Items;
+
+        Assert.NotNull(groups);
+        Assert.Equal(2, groups!.Count);                          // the matched item + the unmatched listing
+
+        var matched = groups.Single(g => g.ItemId == TestData.BrowseMatched);
+        Assert.True(matched.Comparable);                         // 2 stores → a real cross-store compare
+
+        var unmatched = groups.Single(g => g.ItemId is null);    // reached browse only via its store-category
+        Assert.False(unmatched.Comparable);
+        Assert.Equal("Browse Unmatched 1kg", unmatched.Products.Single().Name);
+
+        // The tree badge count matches what browse shows: 1 matched item + 1 unmatched listing = 2 (TD-5).
+        var tree = await _client.GetFromJsonAsync<List<CategoryNode>>("/categories");
+        var dept = tree!.Single(n => n.Id == TestData.DeptBrowse);
+        Assert.Equal(2, dept.TotalProductCount);
     }
 }

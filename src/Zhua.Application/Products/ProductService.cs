@@ -37,7 +37,21 @@ public sealed class ProductService(
         // The storeId filter is applied to listings in the repository, so each built group already contains only the
         // visible listings and groups with none don't exist — total/sort/paging are all computed post-filter.
         var listings = await products.FindListingsAsync(q, subtree, storeIds);
-        var sorted = SortGroups(Build(listings), appliedSort);   // sort the whole set BEFORE paging → correct pages
+        var groups = Build(listings);
+
+        // A ?storeId= filter narrows each group's listings, so `Comparable` (default = listings-here > 1) would wrongly
+        // read false for an item that IS at several stores but only one of them is selected. Recompute it from the
+        // item's GLOBAL store span so it stays a true "cross-store comparison exists" signal regardless of the filter.
+        if (storeIds is { Count: > 0 })
+        {
+            var itemIds = groups.Where(g => g.ItemId is not null).Select(g => g.ItemId!.Value).Distinct().ToList();
+            var storeSpan = await products.CountStoresByItemAsync(itemIds);
+            groups = groups
+                .Select(g => g.ItemId is { } id ? g with { Comparable = storeSpan.GetValueOrDefault(id) > 1 } : g)
+                .ToList();
+        }
+
+        var sorted = SortGroups(groups, appliedSort);   // sort the whole set BEFORE paging → correct pages
 
         var total = sorted.Count;
         var totalPages = (int)Math.Ceiling(total / (double)size);
@@ -124,7 +138,9 @@ public sealed class ProductService(
                             p.PriceUpdatedAt, p.LastSeenAt);
                     })
                     .ToList();
-                return new ProductGroup(any.ItemId, any.Item?.Description, any.Item?.Category, products);
+                // Comparable defaults to "more than one listing here". That's already the item's global store span
+                // when nothing filtered the listings; ListAsync overrides it for a ?storeId=-narrowed response.
+                return new ProductGroup(any.ItemId, any.Item?.Description, any.Item?.Category, products.Count > 1, products);
             })
             .ToList();
 

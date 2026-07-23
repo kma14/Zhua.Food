@@ -18,14 +18,16 @@ public class ProductTests(ApiFactory factory)
         var mince = groups!.Single(g => g.ItemId == TestData.BeefMince);
         Assert.Equal("beef mince (grouped)", mince.Description);   // item caption (D25)
         Assert.Equal(3, mince.Products.Count);                     // all three store listings, no aggregation
+        Assert.True(mince.Comparable);                             // >1 store → a real cross-store comparison
         Assert.Equal(TestData.MincePak, mince.Products[0].Id);     // ordered cheapest-first by default
         Assert.Equal(11.00m, mince.Products[0].Price);
         var ww = mince.Products.Single(p => p.Supermarket == "Woolworths");
         Assert.True(ww.IsOnSpecial);
         Assert.Equal(15.00m, ww.WasPrice);
 
-        // Store-first search also surfaces UNMATCHED listings (a group of one).
-        Assert.Contains(groups!, g => g.ItemId is null && g.Products.Single().Name == "Beef Mince Premium 1kg");
+        // Store-first search also surfaces UNMATCHED listings (a group of one) — not comparable.
+        var premium = groups!.Single(g => g.ItemId is null && g.Products.Single().Name == "Beef Mince Premium 1kg");
+        Assert.False(premium.Comparable);
     }
 
     [Fact]

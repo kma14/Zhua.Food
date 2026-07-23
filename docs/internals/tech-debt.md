@@ -26,6 +26,14 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   correct going-forward, the retroactive reclaim deletes items so it waits on Kevin's call.
 - **2026-07-22 —** 🧑‍⚖️ *(Kevin: "先跑一遍")* **TD-6 paid down** — reclaim step built in `ItemMatcher` + ran on
   the live DB (89 reclaimed → 53 review-queue + 36 held). Moved to Paid-down.
+- **2026-07-23 —** 🧑‍⚖️ *(Kevin: "我们现在是否ready写td5" → confirmed hybrid + normal sort)* **TD-5 paid down** —
+  category browse + tree count now include unmatched listings via their own `StoreCategory.CategoryId` (hybrid
+  predicate + `CountGroupsByCategoryAsync`), the client distinguishes single-store cards via `ProductGroup.comparable`.
+  Used the "browse doesn't need an item" route, not the singleton-item approach the entry originally sketched. Moved
+  to Paid-down.
+- **2026-07-23 —** 🧑‍⚖️ *(Kevin: "这个写成一个新的TD")* Added **TD-7** — a follow-on gap TD-5 exposed: unmatched
+  FreshChoice listings are only Department-categorised (D26 source limit), so they show at the Department but vanish
+  when a shopper drills into a finer aisle/shelf. Bounded (FreshChoice = 1 store); fix is crawling FC's finer tree.
 
 ## Open items
 
@@ -116,42 +124,62 @@ retiring listings (keeping them linked is arguably right — history pages still
 **Why deferred / priority:** Low — cosmetic/efficiency, no user-visible wrongness; the matcher question deserves a
 deliberate decision rather than a drive-by filter.
 
-### TD-5 — Unmatched listings are invisible to category-filtered browsing
+### TD-7 — FreshChoice listings are categorised only at Department level, so they vanish when you drill in
 
-**Where:** [`ProductRepository.FindListingsAsync`](../../src/Zhua.Infrastructure/Repositories/ProductRepository.cs)
-(and the identical predicate in `SpecialsQuery` for `/deals`) require `p.ItemId != null && p.Item!.CategoryId !=
-null` when a `category=` filter is present.
+**Where:** [`FreshChoiceCrawler`](../../src/Zhua.Crawling/FreshChoice/FreshChoiceCrawler.cs) (department-only category
+list, D26) → [`CategoryMapper`](../../src/Zhua.Application/Matching/CategoryMapper.cs) maps each FreshChoice department
+onto the shared **Department** node. The shared tree's finer nodes (Aisle/Shelf) come only from Foodstuffs.
 
-**What:** A listing only gets a `Category` via its `Item.CategoryId`, and only matched listings have an `Item`.
-So every unmatched product — all of FreshChoice pre-D29, most of Woolworths, and anything the matcher can't place
-— is absent from `GET /categories/{id}/products` and `/deals?category=`, the primary browse path
-([api.md](../api.md)'s documented "typical UI flow"). It's still reachable via `q=` text search on `/products`
-(no category filter there requires `ItemId`).
+**What:** FreshChoice's MyFoodLink storefront sidebar exposes categories **only to Department granularity** (D26 — the
+finer tree lives in a store-parameterised CloudFront JSON we don't crawl). So an **unmatched** FreshChoice listing
+carries a store-category that maps to a Department and nothing finer. Category browse is **subtree-based** (a node
+returns itself + its descendants), so such a listing shows when browsing its Department but **disappears the moment the
+shopper drills into a finer aisle/shelf** under it. Concretely: the held Henergy/Farmer Brown eggs appear under
+`Fridge, Deli & Eggs` (Department) but **not** under its `Eggs` (Aisle) → `Free Range Eggs`/`Barn Eggs` (Shelf) — even
+though a shopper narrowing to "Eggs" is looking for exactly them. Side-effect: a Department's `totalProductCount` can
+exceed the sum of its shelf badges (some listings sit directly on the Department node).
 
-**Why it's debt:** flagged by the front-end's matching-coverage report (2026-07-20) and confirmed against the
-live DB. Not a correctness bug — nothing is mis-priced or mis-grouped — but a real gap in what's *browsable*: at
-the time of writing, 948 FreshChoice + ~2,800 Woolworths listings (about a quarter of the catalog) can only be
-found by search, never by clicking through categories.
+**Not affected:** *matched* FreshChoice listings (they inherit the item's fine category — e.g. Otaika eggs land on
+`Free Range Eggs`), and Woolworths listings (WW carries its own aisle/shelf store-categories, so they map fine).
 
-**The fix:** give every unmatched listing a **singleton item** at crawl/match time (one item, one product, `Name`
-seeded from the raw listing) so `CategoryMapper` can categorise it and it becomes browsable — then have the
-matcher **merge** the singleton into the real cross-store item the moment one is found (reusing the existing
-merge machinery, [matching.md](matching.md)#merge). Needs: (1) deciding whether `CategoryMapper` can categorise a
-non-Foodstuffs singleton at all (today only Foodstuffs categorises by identity; Woolworths/FreshChoice map by
-name, ~26% hit rate) — a singleton might still end up uncategorised, just differently uncategorised; (2) the merge
-step must trigger automatically inside `ItemMatcher`, not wait for a human, or singletons pile up permanently.
+**Why it's debt:** surfaced right after TD-5 (2026-07-23). Not wrong data — nothing is mis-priced or mis-grouped — but
+coarse discovery: unmatched FreshChoice products are found only at the Department level, not the precise shelf a shopper
+drills to. FreshChoice is one store (~1,200 listings), so the blast radius is bounded.
 
-This is the same "de-anchor items from Foodstuffs" step that [orphan-matching.md](orphan-matching.md) identifies as
-the prerequisite for most orphan-matching work — see that research doc for the full decomposition (browsability is
-only one of the payoffs; it also unlocks cross-store matching of Woolworths-family private label sold at both
-Woolworths and FreshChoice).
+**The fix:** two independent routes, either helps —
+1. **Crawl FreshChoice's finer category tree** (the CloudFront sidebar JSON with store params, already flagged as
+   future work in [crawling.md](crawling.md) "FreshChoice — MyFoodLink (D26)") → FreshChoice listings get Aisle/Shelf
+   store-categories → they map onto the fine shared nodes and drill-down works. The real fix.
+2. **Better matching** (size-normalisation, de-anchoring) moves an unmatched FreshChoice listing to *matched*, at which
+   point it inherits the item's fine shelf category. Partial — only helps listings that have a cross-store counterpart.
 
-**Why deferred / priority:** Medium — real user-facing gap (browse, not search, is the primary discovery path),
-but it's a second architectural change (Item semantics, auto-merge-on-match) beyond what D29 scoped (FreshChoice
-brand inference only). Do this next if the front-end confirms browse-completeness matters more than search
-coverage for the affected quarter of the catalog.
+**Why deferred / priority:** Low–Medium — department-level visibility is already a strict improvement over TD-5's prior
+"invisible everywhere"; do route 1 when FreshChoice's category depth (or a second FreshChoice store) makes the
+drill-down miss worth the extra crawler work.
 
 ## Paid-down items
+
+### TD-5 — unmatched listings invisible to category browse *(resolved 2026-07-23)*
+
+Category browse + the tree count required `p.ItemId != null && p.Item.CategoryId ∈ subtree`, so every unmatched
+listing (待审/悬空 — pending/held) was absent from `GET /categories/{id}/products`, `/deals?category=` and the tree
+badge counts; only text search reached them. Flagged by the front-end's category-browse report (2026-07-20/23).
+
+**Resolved NOT via the originally-sketched singleton-item approach**, but the cleaner route the D30 work established
+(*category browse doesn't need an item — a listing reaches the shared tree through its own `StoreCategory.CategoryId`*):
+- Browse predicate ([`ProductRepository.WhereInCategory`](../../src/Zhua.Infrastructure/Repositories/ProductRepository.cs))
+  is now a **hybrid** — matched listing via `Item.CategoryId` (unchanged, zero regression) **OR** unmatched listing
+  via its own `StoreCategory.CategoryId`. Shared by `FindListingsAsync` + `SpecialsQuery` so list/deals/count can't drift.
+- The tree count ([`CountGroupsByCategoryAsync`](../../src/Zhua.Infrastructure/Repositories/CategoryRepository.cs)) now
+  unions matched items + unmatched listings, so the badge matches what browse shows.
+- The client tells a single-store card from a compare card via [`ProductGroup.comparable`](../../src/Zhua.Application/Products/Dtos/ProductGroup.cs)
+  — no forced "comparable-first" sort (Kevin: colour-code it client-side instead).
+
+Live: the "Fridge, Deli & Eggs" department now surfaces the previously-invisible held eggs (Henergy/Farmer Brown).
+**Residual (not TD-5):** granularity is bounded by the source (FreshChoice is department-only, D26), and a listing
+whose store-categories are all *unmapped* (`CategoryId` null) still won't appear — that's `CategoryMapper` coverage,
+tracked separately. The de-anchoring/singleton path in [orphan-matching.md](orphan-matching.md) is still relevant for
+cross-store *matching* of WW-family private label, but is no longer needed for *browsability*.
 
 ### TD-6 — frozen FreshChoice singletons the generic guard couldn't undo *(resolved 2026-07-22)*
 
