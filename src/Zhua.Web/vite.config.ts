@@ -13,6 +13,7 @@ export default defineConfig({
       "/admin": apiTarget,
       "/match-candidates": apiTarget,
       "/items": apiTarget,
+      "/reports": apiTarget,
       "/openapi": apiTarget
     }
   },
@@ -26,6 +27,7 @@ export default defineConfig({
       "/admin": apiTarget,
       "/match-candidates": apiTarget,
       "/items": apiTarget,
+      "/reports": apiTarget,
       "/openapi": apiTarget
     }
   }

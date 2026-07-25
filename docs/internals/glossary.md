@@ -62,6 +62,20 @@
 | **Tier 3** | Woolworths（`woolworths:{sku}`） | Foodstuffs 没有的 WW 商品建锚；FreshChoice 再挂上来 | WW+FC 比价 + WW 单店聚合 |
 | **Tier 4** | FreshChoice（`freshchoice:{sku}`） | 前面都挂不上的 FC 商品 | FC 单店聚合 |
 
+### 生鲜匹配 / fresh-produce matching（2026-07-24）
+
+散装/称重生鲜没有品牌、尺寸也 loose，`品牌+尺寸`那套挂不上，于是同一根西兰花在各连锁各成一个聚合商品。生鲜走一条**按规范化名字匹配**的专门路径（在 Tier 2 之后、Tier 3 之前）。相关术语：
+
+| 英文（代码/概念名） | 中文 | 定义 |
+|---|---|---|
+| **produce-path eligibility** | 生鲜准入条件 | 一条 listing 要不要走生鲜匹配路径的入口判断：**在生鲜部门 且 loose size 且 品牌非真品牌**，三条同时满足才走。否则继续走 `品牌+尺寸`老路。代码 `ProductNormalizer.Produce*` / `ItemMatcher.Produce()`。 |
+| **real brand** | 真品牌 | 真实第三方厂商（Hellers、Anchor、Silver Fern Farms）。**有区分度** → 是打包货,不走生鲜路径。 |
+| **private label** | 私有品牌 | 零售商自有牌(Woolworths、Macro、Pams)。是真牌,但同一根生鲜换个店就换个私牌 → **生鲜里当噪声剥掉**;**生鲜之外仍当真品牌**(打包货靠它区分)。 |
+| **pseudo-brand** | 伪品牌 | 品牌字段里塞的品类词(`fresh vegetable`/`fresh fruit`/`produce`),压根不是牌子 → **哪里都当噪声**。 |
+| **canonical produce name** | 生鲜规范名 | 生鲜名字剥掉伪品牌/私牌/填充/尺寸、保留区分词(organic/premium/部位/品种)、单复数归一、排序后的 token 集合。**精确整套相等**才算同款(`broccoli` ≠ `broccoli head`)。代码 `NormalizeProduceName`。 |
+| **fresh department** | 生鲜部门 | 粗粒度跨连锁稳定的部门桶:Produce(果蔬)/ Protein(肉·禽·海鲜)。判定用门店自己的部门树,不用共享 Category(WW 只映射 ~26%)。 |
+| **produce re-home** | 生鲜改嫁 | 之前自锚成 `woolworths:`/`freshchoice:` 单店的生鲜,重跑时拆掉自锚、改挂到 Foodstuffs 聚合商品(reclaim 的一种)。 |
+
 ## 抓取 / crawling（常用几个）
 
 | 英文 | 中文 | 定义 |
@@ -76,6 +90,7 @@
 ## Decision log
 
 - **2026-07-22 — 🧑‍⚖️ (Kevin)** 建这个术语表，作为**唯一口径**。起因：讨论里「锚定 / 锚 / singleton / 跨店 / 跨连锁」等说法变来变去，需要固定中英文对照，以后统一。同时明确了 store（门店）vs chain（连锁）之前被混用。
+- **2026-07-24 — 🧑‍⚖️ (Kevin: "Regime gate 语义不明，换一个同义词" / "私有品牌呢")** 加入**生鲜匹配**一节：把 "regime gate" 正名为**生鲜准入条件**（produce-path eligibility），并固定 **真品牌 / 私有品牌 / 伪品牌** 三分（Kevin 逐个追问确认）。设计与实现见 [matching.md](matching.md#fresh-produce-matching-2026-07-24)。
 
 ---
 

@@ -16,4 +16,6 @@ public sealed record MatchRunResult(
     int AutoLinked,          // Products auto-linked this run (Foodstuffs exact + Woolworths/FreshChoice high-confidence)
     int PendingReview,       // open candidates awaiting a human decision
     int AlreadyDecided,      // pairs skipped because a human already approved/rejected them
-    int Reclaimed = 0);      // frozen FreshChoice singletons torn down to re-cascade (D30.1/TD-6)
+    int Reclaimed = 0,       // frozen FreshChoice singletons torn down to re-cascade (D30.1/TD-6)
+    int ProduceLinked = 0,   // fresh-produce lines auto-linked to a Foodstuffs item by canonical name (2026-07-24)
+    int ProduceReHomed = 0); // self-anchored produce singletons re-homed onto a Foodstuffs item (2026-07-24)

@@ -43,6 +43,10 @@ public sealed class ItemMatcher(
 
         var products = await repo.GetActiveProductsAsync(ct);
 
+        // Store-category tree (id → node) — the produce path (2026-07-24) resolves each listing's fresh department by
+        // walking its store-categories up to the Department node.
+        var scById = (await repo.GetStoreCategoriesAsync(ct)).ToDictionary(c => c.Id);
+
         // Snapshot for the run-scoped AutoLinked count below (plan D29 — was a DB-wide cumulative count).
         var alreadyLinkedIds = products.Where(p => p.ItemId is not null).Select(p => p.Id).ToHashSet();
 
@@ -146,6 +150,91 @@ public sealed class ItemMatcher(
                 QueueCandidates(w, outcome, brand, brandInferred); // ambiguous/weak → human review
         }
 
+        // --- Fresh produce (2026-07-24): unbranded / weight-sold produce & butcher cuts have no brand and a loose
+        //     size, so Tier 2's brand+size filter can't attach them and each chain self-anchors — the same broccoli
+        //     splits into 2-3 items. Match them by a canonical produce NAME within the same coarse fresh department
+        //     (ProductNormalizer.NormalizeProduceName): pseudo-brand/private-label/filler stripped, every
+        //     discriminating word kept, EXACT token-set equality. Foodstuffs is the anchor (highest quality); WW/FC
+        //     attach. Design + how the word lists were derived: docs/internals/matching.md § Fresh-produce matching. ---
+
+        // Index Foodstuffs produce items by (dept, canonical name). A key may map to several items — usually
+        // Foodstuffs-internal duplicates (two SKUs both "Braeburn Apples") — which makes any WW/FC match ambiguous.
+        var produceIndex = new Dictionary<(ProductNormalizer.FreshDept, string), HashSet<Guid>>();
+        foreach (var fp in products.Where(p => p.Store.Chain is Chain.NewWorld or Chain.PaknSave))
+        {
+            if (fp.Item is null) continue;
+            var (dept, key) = Produce(fp);
+            if (key is null) continue;
+            if (!produceIndex.TryGetValue((dept, key), out var set)) produceIndex[(dept, key)] = set = [];
+            set.Add(fp.Item.Id);
+        }
+
+        // Produce-reclaim: a WW/FC produce line that self-anchored on a PRIOR run (woolworths:/freshchoice:) is skipped
+        // by Tier 2 forever (already linked), so the produce path alone would never re-home it. Tear its anchor down
+        // (null every member so an attached listing re-cascades too, then delete the empty anchor) — but only when a
+        // Foodstuffs produce item actually exists to re-home onto; else leave the legitimate WW-only anchor be.
+        var membersByItem = products.Where(p => p.ItemId is not null)
+            .GroupBy(p => p.ItemId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+        var produceReHomed = 0;
+        foreach (var p in products.Where(x => x.Store.Chain is Chain.Woolworths or Chain.FreshChoice))
+        {
+            if (p.ItemId is not { } iid || !itemsById.TryGetValue(iid, out var item)) continue;
+            if (item.MatchKey is not { } mk
+                || !(mk.StartsWith("woolworths:", StringComparison.Ordinal) || mk.StartsWith("freshchoice:", StringComparison.Ordinal)))
+                continue;
+            var (dept, key) = Produce(p);
+            if (key is null || !produceIndex.ContainsKey((dept, key))) continue;
+
+            foreach (var member in membersByItem.GetValueOrDefault(iid, []))
+            {
+                member.ItemId = null;
+                member.Item = null;
+            }
+            canonByKey.Remove(mk);
+            itemsById.Remove(iid);
+            repo.RemoveItem(item);
+            produceReHomed++;
+        }
+
+        // Produce-attach: a still-unlinked WW/FC produce line → the Foodstuffs produce item with the same canonical
+        // name. A single winner auto-links; ≥2 (the duplicate case) go to review; none falls through to Tier 3/4.
+        // A line that matched Foodstuffs but stayed ambiguous is HELD (heldProduce): it belongs to a Foodstuffs item
+        // pending a human decision, so Tier 3/4 must not mint a lower-tier anchor that would duplicate + split it —
+        // mirrors D30's Foodstuffs-brand guard, but keyed on the produce-index hit rather than the brand.
+        var produceLinked = 0;
+        var heldProduce = new HashSet<Guid>();
+        foreach (var p in products.Where(x => x.Store.Chain is Chain.Woolworths or Chain.FreshChoice))
+        {
+            if (Linked(p)) continue;
+            var (dept, key) = Produce(p);
+            if (key is null || !produceIndex.TryGetValue((dept, key), out var itemIds)) continue;
+            var cands = itemIds.Where(id => !rejected.Contains((p.Id, id))).ToList();
+            if (cands.Count == 0) continue;
+
+            if (cands.Count == 1)
+            {
+                p.Item = itemsById[cands[0]];
+                produceLinked++;
+            }
+            else
+            {
+                heldProduce.Add(p.Id);
+                foreach (var id in cands)
+                {
+                    if (!known.Add((p.Id, id))) continue;
+                    repo.AddCandidate(new MatchCandidate
+                    {
+                        Product = p,
+                        Item = itemsById[id],
+                        Score = 1.0,
+                        Status = MatchStatus.Pending,
+                        CreatedAt = now,
+                        Reason = $"fresh-produce name match ('{key}', {dept}); {cands.Count} candidate items",
+                    });
+                }
+            }
+        }
+
         // --- Tier 3: Woolworths-anchored items for products Foodstuffs doesn't carry (plan D30). Anchor priority is
         //     Foodstuffs > Woolworths > FreshChoice (by data quality); a product becomes a NEW anchor only if it
         //     couldn't attach above AND its brand is NOT a Foodstuffs brand — else it's a Tier-2 miss that belongs to
@@ -153,7 +242,7 @@ public sealed class ItemMatcher(
         var anchored = 0;
         foreach (var w in products.Where(p => p.Store.Chain == Chain.Woolworths))
         {
-            if (Linked(w)) continue;
+            if (Linked(w) || heldProduce.Contains(w.Id)) continue;
             var nb = ProductNormalizer.NormalizeBrand(w.RawBrand);
             if (nb is null || foodstuffsBrands.Contains(nb)) continue; // no brand, or a Foodstuffs brand → not an anchor
 
@@ -213,7 +302,7 @@ public sealed class ItemMatcher(
         // Tier 3b: attach still-unlinked FreshChoice listings to a Woolworths anchor (same brand+size+name policy).
         foreach (var fc in products.Where(p => p.Store.Chain == Chain.FreshChoice))
         {
-            if (Linked(fc)) continue;
+            if (Linked(fc) || heldProduce.Contains(fc.Id)) continue;
             var brand = InferBrandFromName(fc.RawName, wwBrands);
             var nb = ProductNormalizer.NormalizeBrand(brand);
             var ns = ProductNormalizer.NormalizeSize(fc.RawSize);
@@ -241,7 +330,7 @@ public sealed class ItemMatcher(
         //     ("WW"/"Macro"/"Essentials") wrongly become singletons. ---
         foreach (var fc in products.Where(p => p.Store.Chain == Chain.FreshChoice))
         {
-            if (Linked(fc)) continue;
+            if (Linked(fc) || heldProduce.Contains(fc.Id)) continue;
             if (InferBrandFromName(fc.RawName, higherTierBrands) is not null) continue; // suspected higher-tier miss
 
             var anchor = UpsertAnchor("freshchoice:" + fc.Sku, fc);
@@ -266,7 +355,7 @@ public sealed class ItemMatcher(
         // save), so p.ItemId is populated for every link made this run.
         var newlyLinked = products.Count(p => p.ItemId is not null && !alreadyLinkedIds.Contains(p.Id));
         var pending = await repo.CountPendingCandidatesAsync(ct);
-        return new MatchRunResult(totalCanon, newlyLinked - anchored, pending, alreadyDecided, reclaimed);
+        return new MatchRunResult(totalCanon, newlyLinked - anchored, pending, alreadyDecided, reclaimed, produceLinked, produceReHomed);
 
         // Follow a merge-redirect chain (rework phase 4) to the live survivor; bounded against cycles.
         static Item ResolveLive(Item item, Dictionary<Guid, Item> byId)
@@ -279,6 +368,33 @@ public sealed class ItemMatcher(
         // Linked either in the DB (ItemId, loaded state) or by a link made earlier THIS run (Item navigation, before
         // EF fixup populates the FK). Tier 3/4 run after Tier 1/2, so both must be checked (plan D30).
         static bool Linked(Product p) => p.ItemId is not null || p.Item is not null;
+
+        // The fresh-produce identity of a listing (2026-07-24): its coarse fresh department + canonical produce name.
+        // key is null when the listing isn't an eligible fresh line (not a fresh department, a fixed pack size, a real
+        // third-party brand, or a name that reduces to nothing) — i.e. it should stay on the brand+size path.
+        (ProductNormalizer.FreshDept dept, string? key) Produce(Product p)
+        {
+            var dept = DeptOf(p);
+            if (dept == ProductNormalizer.FreshDept.None
+                || !ProductNormalizer.IsLooseSize(p.RawSize)
+                || !ProductNormalizer.IsProduceEligibleBrand(p.RawBrand))
+                return (ProductNormalizer.FreshDept.None, null);
+            return (dept, ProductNormalizer.NormalizeProduceName(p.RawName, dept));
+        }
+
+        // Resolve a listing's coarse fresh department by walking each of its store-categories up to the Department node.
+        ProductNormalizer.FreshDept DeptOf(Product p)
+        {
+            foreach (var c in p.Categories)
+            {
+                var node = c;
+                for (var g = 0; node is not null && node.Kind != CategoryKind.Department && g < 8; g++)
+                    node = node.ParentId is { } pid && scById.TryGetValue(pid, out var parent) ? parent : null;
+                var fd = ProductNormalizer.ClassifyFreshDept(node?.Name);
+                if (fd != ProductNormalizer.FreshDept.None) return fd;
+            }
+            return ProductNormalizer.FreshDept.None;
+        }
 
         // Upsert a lower-tier anchor item by its stable MatchKey (plan D30, mirrors Tier 1's foodstuffs: upsert).
         // Name/Description are owned — seeded once on creation, never re-minted (D25); Size/UoM refresh each run.

@@ -1,5 +1,6 @@
 import type {
   CategoryNode,
+  ProductStatusReport,
   DealItem,
   ItemView,
   MatchCandidate,
@@ -75,6 +76,25 @@ export function getCategoryProducts(
   }, apiBaseUrl);
 }
 
+export function getProducts(
+  page = 1,
+  size = 20,
+  sort: ProductSort = "unitPriceAsc",
+  storeIds: string[] = [],
+  apiBaseUrl?: string
+) {
+  return getJson<PagedResult<ProductGroup>>("/products", {
+    storeId: storeIds,
+    page,
+    size,
+    sort
+  }, apiBaseUrl);
+}
+
+export function getProductStatusReport(apiBaseUrl?: string) {
+  return getJson<ProductStatusReport>("/reports/product-status", undefined, apiBaseUrl);
+}
+
 export function getProductGroup(productId: string, apiBaseUrl?: string) {
   return getJson<ProductGroup>(`/products/${productId}`, undefined, apiBaseUrl);
 }
@@ -107,7 +127,7 @@ export function getMatchCandidates(page = 1, size = 100, apiBaseUrl?: string) {
 }
 
 export async function getAllMatchCandidates(apiBaseUrl?: string) {
-  const size = 500;
+  const size = 200;
   const maxPages = 50;
   const rows: MatchCandidate[] = [];
 
