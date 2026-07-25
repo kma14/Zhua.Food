@@ -70,6 +70,116 @@ public static partial class ProductNormalizer
         return (double)inter / Math.Min(a.Count, b.Count);
     }
 
+    // ---------------------------------------------------------------------------------------------------------------
+    // Fresh-produce matching (2026-07-24). Unbranded / weight-sold fresh produce + butcher cuts have no brand and a
+    // loose size, so the brand+size hard filter (Tier 2) drops them and each chain anchors its own item — the same
+    // broccoli splits into 2-3 items. For this "fresh regime" we match on a canonical produce NAME instead: strip the
+    // noise (the category word a retailer stuffs into the brand field, the private-label root, marketing filler,
+    // units) but KEEP every discriminating word (organic/premium/snacking/cut/variety), then require an EXACT
+    // token-set match within the same coarse fresh department. Design + how the word lists were derived (and how to
+    // extend them for a new chain): docs/internals/matching.md § Fresh-produce matching.
+
+    /// <summary>Pseudo-brands: a category word the retailer dumps in the brand field (Woolworths "fresh vegetable" =
+    /// "this is a vegetable", not a brand). Zero cross-store identity → dropped, same as an empty brand. "herb"/"herbs"
+    /// is a pseudo-brand ONLY in the produce department (a real descriptor in meat, e.g. "lamb leg with herb"), so it
+    /// is handled by <see cref="NormalizeProduceName"/> against the department, not listed here.</summary>
+    private static readonly HashSet<string> PseudoBrandWords = new(StringComparer.Ordinal)
+    {
+        "fresh", "vegetable", "vegetables", "fruit", "fruits", "produce", "instore", "deli",
+    };
+
+    /// <summary>Private-label roots: a retailer's own house brand. A real brand string, but the SAME raw produce
+    /// carries a different one at each chain ("Woolworths" broccoli vs "Pams" broccoli), so it has no cross-store
+    /// identity for fresh produce. Matched on the FIRST brand token so "woolworths nz" / "macro organic" both count.
+    /// Applies ONLY inside the fresh regime — for packaged goods a private label is a real discriminator.</summary>
+    private static readonly HashSet<string> PrivateLabelRoots = new(StringComparer.Ordinal)
+    {
+        "woolworths", "macro", "essentials", "ww", "pams", "value", "homebrand", "countdown", "signature",
+    };
+
+    /// <summary>Extra filler dropped from a produce name (on top of <see cref="StopWords"/> + embedded sizes):
+    /// pack-form and provenance words that carry no produce identity.</summary>
+    private static readonly HashSet<string> ProduceNoiseWords = new(StringComparer.Ordinal)
+    {
+        "new", "zealand", "each", "ea", "per", "min", "order", "approx", "approximately",
+        "loose", "prepacked", "prepack", "pack", "packed", "bag", "bagged", "pkt", "packet", "punnet",
+    };
+
+    /// <summary>How discriminating a listing's brand is for the fresh regime.</summary>
+    public enum FreshBrandKind { Real, Empty, Pseudo, PrivateLabel }
+
+    /// <summary>Coarse, cross-chain-stable fresh department (chains name it differently: "Meat, Poultry &amp; Seafood"
+    /// vs "Meat" + "Seafood"). Also decides the herb rule. <see cref="None"/> = not a fresh department.</summary>
+    public enum FreshDept { None, Produce, Protein }
+
+    /// <summary>Classify a listing's brand for the fresh regime — anything but <see cref="FreshBrandKind.Real"/> is
+    /// treated as noise (an eligible fresh line). A real third-party brand means it's a packaged good → brand+size.</summary>
+    public static FreshBrandKind ClassifyFreshBrand(string? brand)
+    {
+        var nb = NormalizeBrand(brand);
+        if (nb is null) return FreshBrandKind.Empty;
+        var tokens = nb.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length > 0 && PrivateLabelRoots.Contains(tokens[0])) return FreshBrandKind.PrivateLabel;
+        if (tokens.All(t => PseudoBrandWords.Contains(t) || t is "herb" or "herbs")) return FreshBrandKind.Pseudo;
+        return FreshBrandKind.Real;
+    }
+
+    /// <summary>Fresh-regime brand test: empty / pseudo / private-label brands carry no cross-store identity for
+    /// produce, so the line is eligible for name-based matching; a real brand keeps it on the brand+size path.</summary>
+    public static bool IsProduceEligibleBrand(string? brand) => ClassifyFreshBrand(brand) is not FreshBrandKind.Real;
+
+    /// <summary>A weight-sold / loose size (no fixed pack): null/blank, "kg"/"ea"/"per kg", or a "min order …" / "loose"
+    /// note. A real pack size (250g, 1.5L, 6pack) is a packaged good and stays on the brand+size path.</summary>
+    public static bool IsLooseSize(string? size)
+    {
+        if (string.IsNullOrWhiteSpace(size)) return true;
+        var s = size.ToLowerInvariant();
+        if (s.Contains("per kg") || s.Contains("min order") || s.Contains("loose") || s.Contains("each")) return true;
+        return NormalizeSize(size) is null; // no fixed number ⇒ "kg"/"ea" ⇒ loose
+    }
+
+    /// <summary>Map a store's department name to the coarse fresh bucket (or <see cref="FreshDept.None"/>).</summary>
+    public static FreshDept ClassifyFreshDept(string? departmentName)
+    {
+        if (string.IsNullOrWhiteSpace(departmentName)) return FreshDept.None;
+        var d = departmentName.ToLowerInvariant();
+        if (d.Contains("fruit") || d.Contains("veg")) return FreshDept.Produce;
+        if (d.Contains("meat") || d.Contains("poultry") || d.Contains("seafood") || d.Contains("fish")) return FreshDept.Protein;
+        return FreshDept.None;
+    }
+
+    /// <summary>
+    /// The canonical produce identity of a listing name within a fresh department: significant tokens with pseudo-brand
+    /// / private-label / filler / size words removed and the rest singularised + sorted, so word order and store wording
+    /// don't matter. Discriminating words (organic, premium, snacking, cut, variety) are KEPT — the match is EXACT
+    /// token-set equality, so "broccoli" ≠ "broccoli head" ≠ "organic broccoli" (those stay separate / go to review,
+    /// never auto-merge). "herb"/"herbs" is dropped only when <paramref name="dept"/> is <see cref="FreshDept.Produce"/>.
+    /// Returns null for a non-fresh department or a name that reduces to nothing.
+    /// </summary>
+    public static string? NormalizeProduceName(string? name, FreshDept dept)
+    {
+        if (dept == FreshDept.None || string.IsNullOrWhiteSpace(name)) return null;
+        var set = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var raw in NonAlnum().Split(name.ToLowerInvariant()))
+        {
+            var t = raw.Trim();
+            if (t.Length < 2) continue;
+            if (t.All(char.IsDigit)) continue;
+            if (SizeToken().IsMatch(t)) continue;
+            if (StopWords.Contains(t) || ProduceNoiseWords.Contains(t)) continue;
+            if (PseudoBrandWords.Contains(t) || PrivateLabelRoots.Contains(t)) continue;
+            if (t is "herb" or "herbs" && dept == FreshDept.Produce) continue; // pseudo-brand only in produce
+            set.Add(Singularize(t));
+        }
+        return set.Count == 0 ? null : string.Join(' ', set);
+    }
+
+    /// <summary>Conservative singularisation for produce tokens: drop a trailing "s" (carrots→carrot) but not "-ss"
+    /// (cress) and only when it leaves a real stem (len &gt; 3). Naive by design — rare mis-stems (greens→green) are
+    /// harmless under exact-set matching (both sides stem the same way).</summary>
+    private static string Singularize(string t) =>
+        t.Length > 3 && t[^1] == 's' && t[^2] != 's' ? t[..^1] : t;
+
     [GeneratedRegex("[^a-z0-9]+")]
     private static partial Regex NonAlnum();
 

@@ -34,6 +34,9 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
 - **2026-07-23 —** 🧑‍⚖️ *(Kevin: "这个写成一个新的TD")* Added **TD-7** — a follow-on gap TD-5 exposed: unmatched
   FreshChoice listings are only Department-categorised (D26 source limit), so they show at the Department but vanish
   when a shopper drills into a finer aisle/shelf. Bounded (FreshChoice = 1 store); fix is crawling FC's finer tree.
+- **2026-07-24 —** 🧑‍⚖️ *(Kevin: "直接开工吧")* Added **TD-8** — the deliberate v1 limits of fresh-produce matching
+  (exact-canonical only, strict loose-size, fuzzy-middle brands left `real`, Foodstuffs-anchored only). Chosen with
+  Kevin before building ("精确规范化,先量再说"); each is a bounded miss, not wrongness. See matching.md § Fresh-produce.
 
 ## Open items
 
@@ -156,6 +159,37 @@ drills to. FreshChoice is one store (~1,200 listings), so the blast radius is bo
 **Why deferred / priority:** Low–Medium — department-level visibility is already a strict improvement over TD-5's prior
 "invisible everywhere"; do route 1 when FreshChoice's category depth (or a second FreshChoice store) makes the
 drill-down miss worth the extra crawler work.
+
+### TD-8 — fresh-produce matching v1 leaves bounded coverage gaps
+
+**Where:** [`ProductNormalizer`](../../src/Zhua.Domain/Matching/ProductNormalizer.cs) (`NormalizeProduceName`,
+`PseudoBrandWords`/`PrivateLabelRoots`) + the produce block in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs).
+Design: [matching.md](matching.md) § Fresh-produce matching.
+
+**What:** The 2026-07-24 fresh-produce path (canonical name + exact token-set, size-agnostic) matches the confident
+core and routes ambiguity to review — but four deliberate v1 limits leave produce it *could* eventually match still
+split:
+1. **Exact-canonical only** — divergent wordings (`broccoli` vs `broccoli head`, "fresh vegetable broccoli head")
+   don't auto-merge; they wait for review / a future fuzzy or curated-lexicon step.
+2. **Strict loose-size** — produce sold in a fixed pack (`carrots 500g`, `banana 6pack`) is excluded (stays on
+   brand+size, so usually unmatched). Loosening to `loose OR (fresh dept AND non-real brand)` would recover it.
+3. **Fuzzy-middle brands left `real`** — retailer sub-brands / small produce brands (`the odd bunch`, `superb herb`,
+   `meadow fresh`) aren't treated as private label, so their produce doesn't take the path.
+4. **Foodstuffs-anchored only** — produce sold *only* at Woolworths↔FreshChoice (no Foodstuffs equivalent) isn't
+   cross-matched; it stays a `woolworths:`/`freshchoice:` anchor.
+
+**Why it's debt:** each is a **miss, not a wrong merge** (the exact-set + single-winner rules keep auto-links safe;
+the residual just stays split). Measured realised link/re-home was 189 vs a ~292 cross-chain-fragmented ceiling — the
+gap is mostly (1) + (2).
+
+**The fix:** (1) a curated produce/cut lexicon or the deferred AI matcher ([ai-roadmap.md](ai-roadmap.md)); (2) the
+size-gate loosening above; (3) extend `PrivateLabelRoots`; (4) a WW-produce-anchor index so FreshChoice produce can
+attach to a Woolworths produce anchor (mirrors D30 Tier 3b).
+
+**Why deferred / priority:** Low–Medium. v1 already clears the confident majority safely; each extension trades a
+bit more recall for a bit more over-merge risk, so they want their own measure-first pass (and (1) is the natural
+first real use of the AI-matching work). **Revisit when** the review queue is drained and the split-produce residual
+is the top complaint.
 
 ## Paid-down items
 

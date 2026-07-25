@@ -94,6 +94,7 @@ if (args.Length > 0 && args[0].Equals("match", StringComparison.OrdinalIgnoreCas
     var r = await matcher.RunAsync();
     Console.WriteLine($"[match] items={r.Items}, auto-linked store-products={r.AutoLinked}, "
         + $"pending review={r.PendingReview}, already decided={r.AlreadyDecided}, reclaimed singletons={r.Reclaimed}");
+    Console.WriteLine($"[match] fresh-produce: auto-linked={r.ProduceLinked}, re-homed singletons={r.ProduceReHomed}");
 
     var categoryMapper = scope.ServiceProvider.GetRequiredService<ICategoryMapper>();
     Console.WriteLine("[match] category mapping ...");

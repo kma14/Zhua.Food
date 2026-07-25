@@ -500,4 +500,196 @@ public class ItemMatcherTests
         Assert.Equal(manual.Id, wx.ItemId);              // auto-linked to the hand-made item via the (brand,size) index
         Assert.Equal(1, await check.Items.CountAsync()); // not duplicated/overwritten by the run
     }
+
+    // ---- Fresh-produce matching (2026-07-24): match unbranded/weight-sold produce by canonical name -------------
+
+    private StoreCategory Dept(Guid store, string name) => new()
+    {
+        StoreId = store, Kind = CategoryKind.Department, ExternalId = name, Slug = name.ToLowerInvariant(), Name = name,
+    };
+
+    /// <summary>A fresh listing linked to a store department (so the matcher can resolve its fresh regime).</summary>
+    private Product Fresh(Guid store, string sku, string name, string? brand, string size, decimal price, StoreCategory dept)
+    {
+        var p = new Product
+        {
+            StoreId = store, Sku = sku, RawName = name, RawBrand = brand, RawSize = size, CurrentPrice = price,
+            FirstSeenAt = _clock.GetUtcNow(), LastSeenAt = _clock.GetUtcNow(),
+        };
+        p.Categories.Add(dept);
+        return p;
+    }
+
+    [Fact]
+    public async Task Unbranded_produce_attaches_woolworths_and_freshchoice_to_the_foodstuffs_item()
+    {
+        MatchRunResult r;
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = PaknSave, Chain = Chain.PaknSave, Name = "PAK", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                // Foodstuffs "Broccoli" (shared SKU) → one item; pseudo/empty brand, loose size → produce-eligible.
+                Fresh(NewWorld, "veg-broc", "Broccoli", "Pams", "ea", 3.00m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(PaknSave, "veg-broc", "Broccoli", "Pams", "ea", 2.80m, Dept(PaknSave, "Fruit & Vegetables")),
+                // Woolworths: pseudo-brand in the brand field; different wording but same canonical "broccoli".
+                Fresh(Woolworths, "ww-broc", "Fresh Vegetable Broccoli", "fresh vegetable", "", 3.20m, Dept(Woolworths, "Fruit & Veg")),
+                // FreshChoice: no brand at all (D26).
+                Fresh(FreshChoice, "fc-broc", "Broccoli", null, "ea", 3.10m, Dept(FreshChoice, "Fruit & Vegetables")));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) r = await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        Assert.Equal(1, await check.Items.CountAsync());               // just the one Foodstuffs broccoli item
+        var item = await check.Items.SingleAsync();
+        Assert.Equal("foodstuffs:veg-broc", item.MatchKey);
+        Assert.Equal(4, await check.Products.CountAsync(p => p.ItemId == item.Id)); // NW+PAK+WW+FC all grouped
+        Assert.Equal(2, r.ProduceLinked);                             // WW + FC auto-linked by canonical name
+    }
+
+    [Fact]
+    public async Task Exact_canonical_keeps_distinct_produce_apart()
+    {
+        // "Broccoli Head" must NOT merge into "Broccoli" (exact token-set) — it self-anchors instead of over-merging.
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Fresh(NewWorld, "veg-broc", "Broccoli", "Pams", "ea", 3.00m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(Woolworths, "ww-broc", "Fresh Vegetable Broccoli Head", "fresh vegetable", "", 3.20m, Dept(Woolworths, "Fruit & Veg")));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var nw = await check.Products.SingleAsync(p => p.Sku == "veg-broc");
+        var ww = await check.Products.SingleAsync(p => p.Sku == "ww-broc");
+        Assert.NotEqual(nw.ItemId, ww.ItemId);                        // not merged
+        Assert.Equal("woolworths:ww-broc", (await check.Items.SingleAsync(i => i.Id == ww.ItemId)).MatchKey);
+    }
+
+    [Fact]
+    public async Task Self_anchored_produce_singleton_is_rehomed_when_a_foodstuffs_item_appears()
+    {
+        // Run 1: Woolworths-only produce → a woolworths: self-anchor (its pseudo-brand isn't a Foodstuffs brand).
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = PaknSave, Chain = Chain.PaknSave, Name = "PAK", Suburb = "x", IsActive = true });
+            db.Products.Add(Fresh(Woolworths, "ww-broc", "Fresh Vegetable Broccoli", "fresh vegetable", "", 3.20m, Dept(Woolworths, "Fruit & Veg")));
+            await db.SaveChangesAsync();
+        }
+        await using (var db = NewContext())
+        {
+            await Matcher(db).RunAsync();
+            Assert.True(await db.Items.AnyAsync(i => i.MatchKey == "woolworths:ww-broc"));
+        }
+
+        // Foodstuffs starts stocking the same broccoli.
+        await using (var db = NewContext())
+        {
+            db.Products.AddRange(
+                Fresh(NewWorld, "veg-broc", "Broccoli", "Pams", "ea", 3.00m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(PaknSave, "veg-broc", "Broccoli", "Pams", "ea", 2.80m, Dept(PaknSave, "Fruit & Vegetables")));
+            await db.SaveChangesAsync();
+        }
+
+        // Run 2: the WW self-anchor is reclaimed and re-homed onto the Foodstuffs item.
+        MatchRunResult second;
+        await using (var db = NewContext()) second = await Matcher(db).RunAsync();
+        Assert.Equal(1, second.ProduceReHomed);
+
+        await using var check = NewContext();
+        Assert.False(await check.Items.AnyAsync(i => i.MatchKey == "woolworths:ww-broc")); // torn down
+        var ww = await check.Products.SingleAsync(p => p.Sku == "ww-broc");
+        Assert.Equal("foodstuffs:veg-broc", (await check.Items.SingleAsync(i => i.Id == ww.ItemId)).MatchKey);
+    }
+
+    [Fact]
+    public async Task Produce_matching_two_foodstuffs_items_goes_to_review_not_auto_merge()
+    {
+        // Two DIFFERENT Foodstuffs SKUs both reduce to "broccoli" (the internal-duplicate case) → ambiguous → review.
+        MatchRunResult r;
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Fresh(NewWorld, "veg-b1", "Broccoli", "Pams", "ea", 3.00m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(NewWorld, "veg-b2", "Broccoli", "Value", "ea", 2.50m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(Woolworths, "ww-broc", "Fresh Vegetable Broccoli", "fresh vegetable", "", 3.20m, Dept(Woolworths, "Fruit & Veg")));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) r = await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var ww = await check.Products.SingleAsync(p => p.Sku == "ww-broc");
+        Assert.Null(ww.ItemId);                                       // not auto-linked
+        Assert.Equal(0, r.ProduceLinked);
+        Assert.Equal(2, await check.MatchCandidates.CountAsync(m => m.ProductId == ww.Id && m.Status == MatchStatus.Pending));
+    }
+
+    [Fact]
+    public async Task Herb_is_a_pseudo_brand_only_in_the_produce_department()
+    {
+        // "Fresh Herb Coriander" (produce) → "coriander" and matches; the herb word is dropped only here.
+        MatchRunResult r;
+        await using (var db = NewContext())
+        {
+            db.Stores.AddRange(
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true },
+                new Store { Id = FreshChoice, Chain = Chain.FreshChoice, Name = "FC", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Fresh(NewWorld, "veg-cor", "Coriander", null, "ea", 2.00m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(FreshChoice, "fc-cor", "Fresh Herb Coriander", null, "ea", 2.20m, Dept(FreshChoice, "Fruit & Vegetables")));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) r = await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        var fc = await check.Products.SingleAsync(p => p.Sku == "fc-cor");
+        Assert.Equal("foodstuffs:veg-cor", (await check.Items.SingleAsync(i => i.Id == fc.ItemId)).MatchKey);
+        Assert.Equal(1, r.ProduceLinked);
+    }
+
+    [Fact]
+    public async Task Produce_matching_is_idempotent()
+    {
+        async Task Seed(ZhuaDbContext db)
+        {
+            db.Stores.AddRange(
+                new Store { Id = Woolworths, Chain = Chain.Woolworths, Name = "WW", Suburb = "x", IsActive = true },
+                new Store { Id = NewWorld, Chain = Chain.NewWorld, Name = "NW", Suburb = "x", IsActive = true });
+            db.Products.AddRange(
+                Fresh(NewWorld, "veg-broc", "Broccoli", "Pams", "ea", 3.00m, Dept(NewWorld, "Fruit & Vegetables")),
+                Fresh(Woolworths, "ww-broc", "Fresh Vegetable Broccoli", "fresh vegetable", "", 3.20m, Dept(Woolworths, "Fruit & Veg")));
+            await db.SaveChangesAsync();
+        }
+        await using (var db = NewContext()) await Seed(db);
+
+        await using (var db = NewContext()) await Matcher(db).RunAsync();
+        int itemsAfterFirst;
+        await using (var db = NewContext()) itemsAfterFirst = await db.Items.CountAsync();
+
+        MatchRunResult second;
+        await using (var db = NewContext()) second = await Matcher(db).RunAsync();
+
+        await using var check = NewContext();
+        Assert.Equal(itemsAfterFirst, await check.Items.CountAsync()); // no new/duplicate items
+        Assert.Equal(0, second.ProduceLinked);                        // already linked last run
+        Assert.Equal(0, second.ProduceReHomed);
+    }
 }

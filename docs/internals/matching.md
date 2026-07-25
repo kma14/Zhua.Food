@@ -146,6 +146,97 @@ Woolworths products with a Foodstuffs brand that missed — is **861** listings,
 normalisation. Item categories for the new anchors come through the existing store-category name mapping (~26% for
 Woolworths); the rest stay `Uncategorized` until curated (does not affect browsability).
 
+## Fresh-produce matching (2026-07-24)
+
+Unbranded / weight-sold **fresh produce & butcher cuts** have no brand and a loose size, so Tier 2's `brand+size`
+hard filter drops them and each chain self-anchors (Tier 3/4) — the *same broccoli* splits into 2–3 items. For this
+**fresh regime** we match on a **canonical produce name** instead, keyed on the store department, not brand+size. It
+runs as an extra path **after Tier 2, before Tier 3**. Code: `ProductNormalizer` (the vocab + `NormalizeProduceName`)
++ the produce block in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs).
+
+### Produce-path eligibility (生鲜准入条件)
+
+A listing takes the produce path only if **all three** hold — else it stays on the brand+size path (so packaged goods
+that happen to sit in a fresh aisle, e.g. "Primo Flavoured Milk 1.5L", are untouched):
+
+1. **In a fresh department** — resolved from the listing's *own* store-category tree (walk up to the Department
+   node), bucketed coarse + cross-chain-stable: **Produce** (fruit/veg) or **Protein** (meat/poultry/seafood/fish).
+   Not the shared `Category` (Woolworths is only ~26% mapped); the store's own department is always present.
+2. **Loose size** — null / "kg" / "ea" / "per kg" / "min order …" / "loose". A real pack size (250g, 1.5L, 6pack)
+   ⇒ packaged ⇒ brand+size path. (`ProductNormalizer.IsLooseSize`.)
+3. **Brand carries no cross-store identity** — empty, a **pseudo-brand**, or a **private label** (below). A **real**
+   third-party brand ⇒ packaged ⇒ brand+size path. (`ProductNormalizer.IsProduceEligibleBrand`.)
+
+### The three brand kinds (`ClassifyFreshBrand`)
+
+| kind | 中文 | examples | in the fresh regime |
+|---|---|---|---|
+| **real** | 真品牌 | Hellers, Anchor, Silver Fern Farms | **excluded** — it's a packaged good, keep on brand+size |
+| **private label** | 私有品牌 | Woolworths, Woolworths NZ, Macro, Pams, Value | treated as **noise** (same veg, different house brand per chain); *outside* produce a private label is still a real discriminator |
+| **pseudo-brand** | 伪品牌 | fresh vegetable, fresh fruit, produce, instore deli | **noise everywhere** — a category word the retailer dumped in the brand field |
+
+### The canonical produce name (`NormalizeProduceName`)
+
+Tokenise the name; **drop** pseudo-brand words + private-label roots + filler/units + sizes; **keep** every
+discriminating word (organic, premium, snacking, cut, variety); singularise conservatively; **sort** (word order
+doesn't matter). Match is **EXACT token-set equality** within the same department bucket — the safety valve:
+`broccoli` ≠ `broccoli head` ≠ `organic broccoli`, `chicken wing` ≠ `chicken breast` (they never auto-merge; a
+close-but-not-equal pair simply doesn't match and stays separate / self-anchors). **`herb`/`herbs` is a pseudo-brand
+ONLY in the Produce department** ("fresh herb coriander" → `coriander`); in Protein it's a real descriptor and is
+kept ("lamb leg with herb" ≠ "lamb leg").
+
+### How it slots in (Foodstuffs is the anchor)
+
+1. **Index** every Foodstuffs produce item by `(dept, canonical name)`. A key can map to several items — usually
+   Foodstuffs-*internal* duplicates (two SKUs both "Braeburn Apples", or a branch naming a SKU differently).
+2. **Produce-reclaim** — a WW/FC produce line that self-anchored on a **prior** run (`woolworths:`/`freshchoice:`)
+   is skipped by Tier 2 forever (already linked), so the path alone would never re-home it. Tear its anchor down
+   (null every member so an attached listing re-cascades, then delete the empty anchor) — **only when a Foodstuffs
+   produce item exists to re-home onto**, else leave the legitimate WW-only anchor. Mirrors the D30 FreshChoice reclaim.
+3. **Produce-attach** — a still-unlinked WW/FC produce line → the Foodstuffs produce item with the same canonical
+   name: **single winner auto-links; ≥2 candidates → review queue** (never auto-merge an ambiguity); none falls
+   through to Tier 3/4. A line that matched but stayed ambiguous is **held** so Tier 3/4 can't mint a duplicate
+   anchor that would split it (same idea as the Foodstuffs-brand guard, keyed on the produce-index hit).
+
+`MatchRunResult` reports `ProduceLinked` (auto-linked) + `ProduceReHomed` (self-anchors torn down).
+
+### The word lists — and how they were derived (extend for new chains)
+
+The pseudo-brand + private-label sets live in [`ProductNormalizer`](../../src/Zhua.Domain/Matching/ProductNormalizer.cs)
+(`PseudoBrandWords`, `PrivateLabelRoots`) — the executable source of truth. They were **derived from the data**, not
+guessed: rank each chain's fresh-department brand strings by frequency and eyeball the non-brands. Re-run this when
+onboarding a chain and fold new pseudo/private strings in:
+
+```sql
+WITH RECURSIVE fresh_cat AS (
+  SELECT "Id" FROM "StoreCategories" WHERE "Kind"='Department' AND ("Name" ~* 'fruit|veg|meat|poultry|seafood|fish')
+  UNION ALL SELECT sc."Id" FROM "StoreCategories" sc JOIN fresh_cat f ON sc."ParentId"=f."Id")
+SELECT p."RawBrand", count(*) FROM "Products" p
+  JOIN "ProductStoreCategory" psc ON psc."ProductsId"=p."Id"
+  JOIN "Stores" s ON s."Id"=p."StoreId" JOIN fresh_cat fc ON fc."Id"=psc."CategoriesId"
+  WHERE s."Chain"='Woolworths' AND s."IsActive" AND p."IsAvailable" AND p."CurrentPrice" IS NOT NULL
+  GROUP BY 1 ORDER BY 2 DESC;   -- top rows: "fresh vegetable" (pseudo), "woolworths"/"macro" (private), "hellers" (real)
+```
+
+### Scope of v1 (deliberate limits — see [tech-debt.md](tech-debt.md) TD-8)
+
+- **Exact-canonical only** — `broccoli` vs `broccoli head` (measured ~divergent wordings) don't auto-merge; they
+  wait for review. No fuzzy/lexicon step yet.
+- **Strict loose-size** — produce sold in a fixed pack (`carrots 500g`, `banana 6pack`) is excluded (stays on the
+  brand+size path). A later loosening is `loose OR (fresh dept AND non-real brand)`.
+- **Fuzzy-middle brands left as `real`** — retailer sub-brands / small produce brands (`the odd bunch`, `superb herb`,
+  `meadow fresh`) aren't treated as private label in v1 (zero-risk miss); add them to `PrivateLabelRoots` when wanted.
+- **Foodstuffs-anchored only** — a produce line sold *only* at Woolworths↔FreshChoice (no Foodstuffs equivalent)
+  isn't cross-matched yet; it stays a `woolworths:`/`freshchoice:` anchor.
+
+### Live result (2026-07-24)
+
+**91 auto-linked + 98 self-anchored singletons re-homed** onto a Foodstuffs item (items 6651 → 6553); **14** ambiguous
+lines (loose `lemons`→2 "Lemons" SKUs; `Pork Mince`→"NZ Pork Mince"+"Pork Mince"; plain vs **marinated** drumsticks)
+correctly went to **review**, not auto-merge. Below the ~292 cross-chain-fragmented ceiling, as expected from the v1
+limits above. Verified the colour variants stay apart (`Capsicum Red`/`Yellow`/`Green` are 3 separate items; word-order
+flips like `Capsicum Red`↔`Red Capsicum` unified).
+
 ## Idempotency — why re-running is safe
 
 Three mechanisms (in [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs)):
@@ -211,8 +302,9 @@ Remaining edge:
 - **No GTIN bridge (D9 revised).** The original plan was GTIN-first, but **Foodstuffs exposes no barcode**, so a
   GTIN can't bridge Woolworths/FreshChoice↔Foodstuffs. The bridge is `brand + size + name` (D18). We still capture
   Woolworths' GTIN at crawl time for future use.
-- **Fresh/unbranded produce won't group** — no brand/size to filter on, so loose items (whole chickens,
-  bulk veg) stay unmatched and are compared by category + `$/kg` instead.
+- **Fresh/unbranded produce** — no brand/size to filter on Tier 2, so it used to stay unmatched and self-anchor.
+  Now handled by the dedicated canonical-name path (§ Fresh-produce matching, 2026-07-24); the residual (exact-only
+  misses, packed produce, WW↔FC-only produce) is [tech-debt.md](tech-debt.md) TD-8.
 - **A zero-candidate listing is usually correct, not a bug.** A breakdown of Woolworths' zero-candidate set
   (2026-07-20, 2,452 listings) found ~83% genuinely have no possible match: loose/weight-sold (9%), Woolworths'
   own private label (Woolworths/Macro — Foodstuffs' equivalent is Pams/Value, a different brand string, 19%), or
@@ -226,6 +318,15 @@ Remaining edge:
 - **Cross-store category coverage is partial** — the category mapper maps Foodstuffs by identity (100%)
   but other banners by exact name (Woolworths ~26%); that's a *categorisation* gap, separate from product matching.
   It's also why Tier-3/4 anchor items are mostly `Uncategorized` (their products carry no Foodstuffs category).
+- **FreshChoice multipack yoghurt can miss on size equivalence.** Example found 2026-07-23:
+  `Fresh n Fruity Yoghurt Fruit of the Forest 6 Pack`
+  (`ProductId=019f7a79-01b4-7932-b981-7164e4a7c25a`) has `RawSize=6pk`, no `ItemId`, and no `MatchCandidate`.
+  Foodstuffs carries the same product as `Fresh 'n Fruity / Fruit of the Forest Yoghurt / 6 x 125g`
+  (`foodstuffs:5274512-EA-000`), and Woolworths carries it as `750g`. Brand normalisation is not the blocker
+  (`Fresh n Fruity` ~= `Fresh 'n Fruity`); the hard `brand+size` filter fails because `6pk`, `6 x 125g`, and
+  `750g` are not equivalent today. Candidate fix: infer total pack weight for FreshChoice pack-sold lines when
+  `Price`, `UnitPrice`, and `UnitOfMeasure` are present (`4.50 / 0.60 per 100g = 750g`; with `6pk` => `6 x 125g`),
+  or teach `ProductNormalizer.NormalizeSize` a safe multipack-total equivalence.
 
 ## Tests
 
@@ -271,6 +372,16 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   reports the count. **Live run: 89 reclaimed** → items 6677→6588, FreshChoice singletons 529→440; the 89 re-cascaded
   to **53 review-queue candidates** (now linkable to a Woolworths anchor by a human) + **36 held** — none auto-linked
   (the name policy stays conservative on generic private-label names, by design), but none remain false singletons.
+- **2026-07-23 13:23** — Documented the FreshChoice multipack yoghurt size-equivalence miss found from the UI
+  single-store special case, with a concrete product/SKU example and suggested normalisation fix.
+- **2026-07-24 — 🧑‍⚖️ (Kevin: "直接开工吧")** **Fresh-produce matching built** (§ above). Non-AI fix for the
+  brand+size over-reliance the front-end flagged (chicken wings / veg splitting into separate items): a canonical
+  produce-name path (dept + exact token-set, size-agnostic) after Tier 2. Decisions taken with Kevin before coding —
+  eligibility = fresh dept + loose size + non-real brand; conservative stopwords (keep organic/premium/snacking,
+  `herb` pseudo only in Produce); auto-link exact single-winner, ambiguous → review; v1 limits in TD-8. Measured
+  first on two live crawls (stable ~292 cross-chain-fragmented ceiling, ~89% of unmatched WW+FC fresh); live run
+  linked/re-homed 189, 14 → review. Word lists derived from the brand-frequency query (kept in `ProductNormalizer`,
+  reproducible). Terms fixed in [glossary.md](glossary.md#生鲜匹配--fresh-produce-matching2026-07-24).
 
 ---
 
