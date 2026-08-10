@@ -199,16 +199,29 @@ public sealed class WoolworthsCrawler : IStoreCrawler
         return null;
     }
 
-    private static IReadOnlyList<ScrapedCategoryNode> BuildPath(JsonElement root, List<(CategoryKind Kind, string Slug)> filters)
+    /// <summary>
+    /// Department→Aisle→Shelf nodes for the leaf we just fetched. <b>ExternalId = the slug path we REQUESTED</b>
+    /// (<c>fruit-veg/vegetables/carrots-root-vegetables</c>), never the response's numeric breadcrumb id: Woolworths
+    /// recycles those ids, and a recycled id lands on an existing node of a *different* category — which is how milk
+    /// ended up under "Carrots &amp; Root Vegetables" (2026-07-26). The slug is ours (it's the `dasFilter` we send),
+    /// and the full path is needed because a bare slug is not unique — the same shelf name hangs under two aisles
+    /// (`carrots-root-vegetables` sits under both `vegetables` and `fresh-salad-herbs`, and Woolworths itself keeps
+    /// them as separate nodes). A renamed category still mints a new node (its slug changes), but a path can never
+    /// be reassigned to different products the way an id can. Name stays the source's display label.
+    /// </summary>
+    internal static IReadOnlyList<ScrapedCategoryNode> BuildPath(JsonElement root, List<(CategoryKind Kind, string Slug)> filters)
     {
         var bc = Obj(root, "breadcrumb");
         var nodes = new List<ScrapedCategoryNode>(filters.Count);
+        var path = new StringBuilder();
         foreach (var (kind, slug) in filters)
         {
+            if (path.Length > 0) path.Append('/');
+            path.Append(slug);
+
             var key = kind switch { CategoryKind.Department => "department", CategoryKind.Aisle => "aisle", _ => "shelf" };
             var el = Obj(bc, key);
-            var externalId = el.ValueKind == JsonValueKind.Object && el.TryGetProperty("value", out var v) ? v.ToString() : slug;
-            nodes.Add(new ScrapedCategoryNode(kind, externalId, slug, Str(el, "name") ?? slug));
+            nodes.Add(new ScrapedCategoryNode(kind, path.ToString(), slug, Str(el, "name") ?? slug));
         }
         return nodes;
     }

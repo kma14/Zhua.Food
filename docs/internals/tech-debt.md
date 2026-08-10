@@ -37,6 +37,12 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
 - **2026-07-24 —** 🧑‍⚖️ *(Kevin: "直接开工吧")* Added **TD-8** — the deliberate v1 limits of fresh-produce matching
   (exact-canonical only, strict loose-size, fuzzy-middle brands left `real`, Foodstuffs-anchored only). Chosen with
   Kevin before building ("精确规范化,先量再说"); each is a bounded miss, not wrongness. See matching.md § Fresh-produce.
+- **2026-07-27 —** 🧑‍⚖️ *(Kevin: "开工")* Added **TD-9** + **TD-10**, both residuals of the Woolworths category-identity
+  fix (`ExternalId` numeric id → slug path). TD-9: renames still mint a new node and orphan the old (102/425 rows were
+  already orphans) — invisible to shoppers, wants the D28 "missing for N complete runs" treatment. TD-10: Foodstuffs
+  keys categories on the bare name, so 13 same-named shelves under different parents collapse into one node — milder
+  than the Woolworths bug (the name is the identity, so nothing is mis-labelled; only tree structure is lost) and
+  fixing it means rebuilding 6 stores, so deferred rather than done in the same change.
 
 ## Open items
 
@@ -190,6 +196,50 @@ attach to a Woolworths produce anchor (mirrors D30 Tier 3b).
 bit more recall for a bit more over-merge risk, so they want their own measure-first pass (and (1) is the natural
 first real use of the AI-matching work). **Revisit when** the review queue is drained and the split-produce residual
 is the top complaint.
+
+### TD-9 — orphaned store-category rows are never pruned
+
+**Where:** [`CrawlOrchestrator.LinkCategories`](../../src/Zhua.Infrastructure/Crawling/CrawlOrchestrator.cs) —
+nodes are upserted, never retired. Background: [crawling.md](crawling.md) § Woolworths category identity.
+
+**What:** A `StoreCategory` row is created the first time we see a node and then lives forever. When a chain renames
+a category, the slug changes → a *new* node is minted and the old one keeps sitting there with zero product links
+(every complete crawl resets the links, so an orphan holds none). Measured on Woolworths before the 2026-07-27
+identity fix: **102 of 425** rows were orphans. The slug-path identity stops ids being *re-pointed*, but it does not
+stop renames from accumulating rows.
+
+**Why it's debt:** invisible to shoppers — an orphan carries no products, and the shared `Category` tree is seeded
+from the Foodstuffs taxonomy, so browse never reaches it. It's landfill, plus a slow drag on the mapper's full-table
+scan.
+
+**The fix:** mirror the D28 product rule — track "not seen in N consecutive **complete** crawls" per node and delete
+(children first: the self-FK is `Restrict`). Needs a `LastSeenAt`/`ConsecutiveMissingRuns` column on `StoreCategory`.
+
+**Why deferred / priority:** Low. Zero user-visible impact and the row counts are small (hundreds). **Revisit when**
+a chain does a big taxonomy reshuffle, or the mapper's runtime starts to matter.
+
+### TD-10 — Foodstuffs category identity is a bare name, so same-named shelves under different aisles collapse
+
+**Where:** [`FoodstuffsCrawler.BuildPath`](../../src/Zhua.Crawling/Foodstuffs/FoodstuffsCrawler.cs) — `ExternalId` =
+the `level0/1/2` name (the source exposes no category id).
+
+**What:** The same identity flaw the Woolworths fix addressed, one notch milder. Scanning the 2026-07-23 archive,
+**13 shelf/aisle names hang under more than one parent** (`Bacon` under both `Deli Meats` and `Deli Meats & Smoked
+Fish`; `Dairy Free Yoghurt` under `Dairy Free & Meat Free` and `Yoghurt`; `Sushi` under `Chilled Soups & Ready Meals`
+and `Ready to Eat`). Because the bare name is the key, they collapse into **one** node whose parent is whichever the
+crawl saw first.
+
+**Why it's debt, not the Woolworths bug:** for Foodstuffs the name *is* the identity, so a collapsed node is still
+**correctly named** — `CategoryMapper` maps it to the right shared category and no product is mis-labelled. What's
+lost is a branch of the tree structure (products from both parents pile into one node). No wrong data reaches the
+shopper, which is why it wasn't fixed alongside Woolworths.
+
+**The fix:** the same path-based `ExternalId` (`meat-poultry-seafood/deli-meats/bacon`), plus the equivalent
+delete-and-rebuild cleanup — but across **6 Foodstuffs stores**, so a much larger rebuild than the single Woolworths
+branch.
+
+**Why deferred / priority:** Low–Medium. **Revisit when** the tree structure itself starts mattering to browse (e.g.
+drill-down counts look wrong under Deli), or when another Foodstuffs-side category change forces a rebuild anyway.
 
 ## Paid-down items
 

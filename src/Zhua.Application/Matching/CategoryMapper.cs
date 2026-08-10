@@ -79,11 +79,16 @@ public sealed class CategoryMapper(IMatchingRepository repo, IUnitOfWork uow) : 
             .ToDictionary(g => g.Key, g => g.First());
         foreach (var sc in storeCats.Where(c => c.Store.Chain is not (Chain.NewWorld or Chain.PaknSave)))
         {
-            if (sc.Category is not null) continue;
-            var slug = Category.Slugify(sc.Name);
-            if (canonBySlugKind.TryGetValue((sc.Kind, slug), out var canon)
-                || (DepartmentAliases.TryGetValue(slug, out var targetPath) && canonByPath.TryGetValue(targetPath, out canon)))
-                sc.Category = canon;
+            // Recomputed every run, never frozen: a node that was mapped once used to keep that mapping forever, so
+            // a category the source renamed (or, before the slug-path fix, an id it recycled) stayed filed under its
+            // old shared node. This is derived data — deriving it fresh is what makes the mapper self-healing.
+            // Key on the crawler's own Slug (what it requested), not a re-slugified display Name: the two slugify
+            // rules differ on apostrophes, and the Name is the volatile half.
+            var slug = sc.Slug;
+            sc.Category = canonBySlugKind.TryGetValue((sc.Kind, slug), out var canon)
+                || (DepartmentAliases.TryGetValue(slug, out var targetPath) && canonByPath.TryGetValue(targetPath, out canon))
+                ? canon
+                : null;
         }
 
         // --- 3) Assign each item its finest mapped category (Foodstuffs member preferred). ---
@@ -92,11 +97,13 @@ public sealed class CategoryMapper(IMatchingRepository repo, IUnitOfWork uow) : 
         var categorized = 0;
         foreach (var cp in products)
         {
+            // Assign OR clear. Keeping the previous label when nothing maps preserves a label that is now known to
+            // be unsupported — after the Woolworths id-recycling fix that meant an item stayed advertised under a
+            // category it no longer belongs to. Derived data: an honest "Uncategorized" beats a stale answer.
             var best = FinestMappedCategory(cp);
-            if (best is null) continue;
             cp.CategoryNode = best;
-            cp.Category = best.Name;
-            categorized++;
+            cp.Category = best?.Name ?? Item.Uncategorized;
+            if (best is not null) categorized++;
         }
 
         await uow.SaveChangesAsync(ct);

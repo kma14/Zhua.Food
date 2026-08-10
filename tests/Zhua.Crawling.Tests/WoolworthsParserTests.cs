@@ -95,4 +95,57 @@ public class WoolworthsParserTests
         var regular = ParseFixture().Single(x => x.Sku == "999999");
         Assert.Empty(regular.Tags); // tagType "Other" = no real promo → no tag
     }
+
+    // ---- Category identity (2026-07-26: milk filed under "Carrots & Root Vegetables") ---------------------------
+
+    private static IReadOnlyList<ScrapedCategoryNode> BuildPath(string breadcrumbJson, params (CategoryKind Kind, string Slug)[] filters)
+    {
+        using var doc = JsonDocument.Parse($$"""{"breadcrumb":{{breadcrumbJson}}}""");
+        return WoolworthsCrawler.BuildPath(doc.RootElement, filters.ToList());
+    }
+
+    private const string MilkBreadcrumb = """
+        {"department":{"value":4,"name":"Fridge & Deli"},
+         "aisle":{"value":27,"name":"Milk"},
+         "shelf":{"value":666,"name":"Enriched Milk"}}
+        """;
+
+    [Fact]
+    public void Category_identity_is_the_requested_slug_path_not_the_sources_numeric_id()
+    {
+        // Woolworths RECYCLES its numeric breadcrumb ids: shelf 666 means "Enriched Milk" today and meant
+        // "Carrots & Root Vegetables" earlier, so keying on it re-filed milk under a vegetable node. The identity
+        // has to be the dasFilter slugs we send; the source's name is display only.
+        var path = BuildPath(MilkBreadcrumb,
+            (CategoryKind.Department, "fridge-deli"), (CategoryKind.Aisle, "milk"), (CategoryKind.Shelf, "enriched-milk"));
+
+        Assert.Equal(
+            ["fridge-deli", "fridge-deli/milk", "fridge-deli/milk/enriched-milk"],
+            path.Select(n => n.ExternalId));
+        Assert.Equal(["fridge-deli", "milk", "enriched-milk"], path.Select(n => n.Slug));
+        Assert.Equal(["Fridge & Deli", "Milk", "Enriched Milk"], path.Select(n => n.Name));
+    }
+
+    [Fact]
+    public void Same_shelf_slug_under_two_aisles_stays_two_identities()
+    {
+        // A bare slug is not unique — "carrots-root-vegetables" hangs under both aisles, and Woolworths itself
+        // keeps them as separate nodes (ids 674 and 243). Hence the full path, not just the leaf slug.
+        const string underVegetables = """
+            {"department":{"value":1,"name":"Fruit & Veg"},"aisle":{"value":117,"name":"Vegetables"},
+             "shelf":{"value":674,"name":"Carrots & Root Vegetables"}}
+            """;
+        const string underSalad = """
+            {"department":{"value":1,"name":"Fruit & Veg"},"aisle":{"value":119,"name":"Fresh Salad & Herbs"},
+             "shelf":{"value":243,"name":"Carrots & Root Vegetables"}}
+            """;
+
+        var a = BuildPath(underVegetables,
+            (CategoryKind.Department, "fruit-veg"), (CategoryKind.Aisle, "vegetables"), (CategoryKind.Shelf, "carrots-root-vegetables"));
+        var b = BuildPath(underSalad,
+            (CategoryKind.Department, "fruit-veg"), (CategoryKind.Aisle, "fresh-salad-herbs"), (CategoryKind.Shelf, "carrots-root-vegetables"));
+
+        Assert.Equal("fruit-veg/vegetables/carrots-root-vegetables", a[^1].ExternalId);
+        Assert.Equal("fruit-veg/fresh-salad-herbs/carrots-root-vegetables", b[^1].ExternalId);
+    }
 }
