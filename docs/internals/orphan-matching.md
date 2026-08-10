@@ -2,7 +2,7 @@
 
 > **Status: RESEARCH — nothing built.** This studies the listings the matcher leaves **unmatched** (no `ItemId`)
 > — the "orphans" — decomposes them by *why*, and asks what each bucket actually needs (which is **not** all "more
-> AI"). Read [matching.md](matching.md) (how the matcher works today), [ai-matching.md](ai-matching.md) (the LLM
+> AI"). Read [matching.md](matching.md) (how the matcher works today), [item-matching-judge.md](ai-work/item-matching-judge.md) (the LLM
 > plan for the *review queue*), [item-model.md](item-model.md) (why items exist, D25), and TD-5 in
 > [tech-debt.md](tech-debt.md) (browsability of unmatched listings) first. **No decision is recorded here** — the
 > "Open decisions" section is what needs Kevin's call before any of this is built.
@@ -87,7 +87,7 @@ an LLM judge** only for genuine variance. AI is overkill for most of C.
 
 ### D — Disambiguation: the existing review queue
 **567 pending (202 FC + 365 WW).** Already shortlisted to 2–7 candidates; just needs a *picker*. **Lowest-risk,
-cleanest AI use** — a bounded choice, not an open search. This is exactly what [ai-matching.md](ai-matching.md)
+cleanest AI use** — a bounded choice, not an open search. This is exactly what [item-matching-judge.md](ai-work/item-matching-judge.md)
 already designs (shortlist-then-pick, "none → new" escape, confidence thresholds).
 
 ## Where AI actually pays off (and where it doesn't)
@@ -98,7 +98,7 @@ AI is **not** a silver bullet for "the orphans." Grounded in the buckets above:
   hallucinate or (correctly) say "none" — a token bill for the answer "there isn't one." These need TD-5
   (browsability) and/or de-anchoring, **not** a matcher.
 - **Best *first* AI use = Category D** (judge the 567-item review queue): bounded, low-risk, already designed.
-  Turn ai-matching.md on here first; it replaces/augments human review without touching the search space.
+  Turn item-matching-judge.md on here first; it replaces/augments human review without touching the search space.
 - **Highest *new-value* AI use = Category B** (semantic fresh/produce matching): real capability token-overlap
   can't reach — but needs a different retrieval key (category + embeddings) and the de-anchoring prerequisite, so
   it's the biggest build.
@@ -115,7 +115,7 @@ genuinely dominate.**
    is the prerequisite for almost everything else and is pure plumbing (no AI).
 2. **Tighten size normalisation (Category C).** Deterministic, cheap, measurable — recovers a good slice of the
    ~486 true misses with zero AI cost.
-3. **Turn on the LLM review-queue judge (Category D, = ai-matching.md).** Bounded, low-risk, shrinks the 567
+3. **Turn on the LLM review-queue judge (Category D, = item-matching-judge.md).** Bounded, low-risk, shrinks the 567
    pending set and earns trust/eval data for anything more ambitious.
 4. **Semantic fresh/produce matching (Category B).** Category-scoped embedding retrieval + LLM judge, on the
    de-anchored item model. The big one; do it last, once 1–3 have de-risked it and produced an eval set.

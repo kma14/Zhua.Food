@@ -59,13 +59,31 @@ services:
     environment:
       REPO_URL: https://github.com/<owner>/Zhua.Food
       RUNNER_NAME: nas
-      RUNNER_TOKEN: <registration-token>     # from the "New self-hosted runner" page
+      RUNNER_TOKEN: <registration-token>     # from the "New self-hosted runner" page — first registration only
       LABELS: nas
       RUNNER_SCOPE: repo
+      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config  # reuse registration across restarts (see below)
+      DISABLE_AUTOMATIC_DEREGISTRATION: "true"                     # required with the dir above — see below
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock   # drive the host Docker (sibling containers)
       - /volume1/docker/Zhua/runner:/tmp/runner      # work dir on the NAS
+      - /volume1/docker/Zhua/runner-config:/actions-runner-config  # persisted registration (create folder first)
 ```
+
+> **Why `CONFIGURED_ACTIONS_RUNNER_FILES_DIR` (2026-07-19 incident):** without it, every container start
+> re-runs `config.sh`. A plain *restart* keeps the writable layer, so `config.sh` fails with "already
+> configured"; the entrypoint then tries to deregister, which ALSO fails because `RUNNER_TOKEN` is a
+> one-shot registration token that expired ~1 h after setup → `restart: unless-stopped` produces an
+> infinite crash loop, the runner drops off GitHub, and deploy jobs queue forever on
+> "Waiting for a runner". With the config dir persisted, a restart **reuses** the stored registration and
+> never needs a token again. The registration token is only needed once (or after deleting the runner in
+> GitHub → Settings → Actions → Runners). The runner is outbound-only, so NAS IP changes don't affect it.
+>
+> **`DISABLE_AUTOMATIC_DEREGISTRATION` is mandatory alongside the config dir** (the image logs a warning
+> if it's missing): without it, the entrypoint's exit trap deregisters the runner from GitHub on every
+> container stop while the persisted config survives — the next start then reuses credentials of a
+> deregistered runner and crash-loops. If that state is ever reached, the recovery is: stop the project,
+> **empty the runner-config folder**, remove the stale runner on GitHub, fresh token, redeploy.
 
 > The runner runs `docker compose` against the **host** daemon via the mounted socket, so the compose file's
 > bind-mount paths (`/volume1/docker/zhua/...`) and the resulting containers live on the NAS host, not inside the runner.
@@ -181,3 +199,7 @@ migrations apply on every deploy before api/worker start (D5).
 If a self-hosted runner feels heavy: run **Watchtower** on the NAS to poll GHCR and auto-pull/restart when `:latest`
 moves. Zero deploy job, but you lose per-deploy control + logs and it redeploys on any `latest` push. The runner is the
 recommended, more controllable path.
+
+## Decision log
+
+- 2026-07-19 21:00 🧑‍⚖️ Runner outage diagnosed (user report: deploy job stuck "Waiting for a runner", NAS runner container in a restart loop): a container restart with the long-expired one-shot `RUNNER_TOKEN` crash-loops on "already configured" → failed deregister. Fix: add `CONFIGURED_ACTIONS_RUNNER_FILES_DIR` + a `/volume1/docker/Zhua/runner-config` bind mount so the registration persists across restarts (token needed only for the first registration). Kept the no-PAT design (the `ACCESS_TOKEN` PAT alternative was considered and not taken). NAS IP changes were ruled out — the runner is outbound-only.

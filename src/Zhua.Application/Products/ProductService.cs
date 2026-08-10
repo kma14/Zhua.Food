@@ -19,7 +19,8 @@ public sealed class ProductService(
     IUnitOfWork uow) : IProductService
 {
     public async Task<PagedResult<ProductGroup>?> ListAsync(
-        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size, string? sort)
+        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size, string? sort,
+        bool directCategoryOnly = false)
     {
         size = Math.Clamp(size, 1, 100);
         page = Math.Max(page, 1);
@@ -30,7 +31,7 @@ public sealed class ProductService(
         IReadOnlyCollection<Guid>? subtree = null;
         if (categoryId is { } catId)
         {
-            subtree = CategorySubtree.Resolve(await categories.GetActiveAsync(), catId);
+            subtree = CategorySubtree.Resolve(await categories.GetActiveAsync(), catId, directCategoryOnly);
             if (subtree is null) return null;
         }
 

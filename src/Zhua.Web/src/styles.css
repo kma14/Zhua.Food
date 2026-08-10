@@ -1332,7 +1332,7 @@ button.coverage-metric:focus-visible {
   min-height: 88px;
   border: 1px solid #c7d9cc;
   border-radius: 8px;
-  background: #edf6f0;
+  background: #e9f4ec;
   color: #233128;
   padding: 16px;
   text-align: left;
@@ -1356,21 +1356,33 @@ button.coverage-metric:focus-visible {
   padding-top: 12px;
 }
 
+.one-line-tabs {
+  --tab-count: 1;
+  --tab-font-size: 0.88rem;
+  grid-template-columns: repeat(var(--tab-count), minmax(0, 1fr));
+  min-width: 0;
+}
+
 .category-tabs button {
   position: relative;
   display: grid;
   gap: 4px;
   border: 0;
   border-radius: 8px;
-  background: #f4f8f5;
+  background: #edf5fb;
   color: #25342b;
   padding: 12px 14px;
   text-align: left;
+  min-width: 0;
 }
 
 .category-tabs button strong {
-  font-size: 0.88rem;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--tab-font-size);
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .department-tabs button.active {
@@ -1380,9 +1392,23 @@ button.coverage-metric:focus-visible {
 }
 
 .category-tabs button.active {
-  background: #eaf7ed;
+  background: #dbeefa;
   color: #154626;
   box-shadow: none;
+}
+
+.category-tabs button.direct-bucket {
+  border: 2px dashed #c79a32;
+  background: inherit;
+}
+
+.category-tabs button.direct-bucket.active {
+  border-color: #d49221;
+  box-shadow: inset 0 0 0 1px #d49221;
+}
+
+.category-tabs button.direct-bucket strong {
+  font-weight: 800;
 }
 
 .category-tabs button.active::before {
@@ -1394,9 +1420,31 @@ button.coverage-metric:focus-visible {
   background: #1f6b3c;
 }
 
+.shelf-tabs {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  border-top-style: dashed;
+  margin-top: -4px;
+}
+
+.shelf-tabs button {
+  border: 1px solid #dce8e0;
+  background: #fff5df;
+  padding: 10px 12px;
+}
+
+.shelf-tabs button.active {
+  border-color: #d49221;
+  background: #ffefd0;
+  box-shadow: inset 0 0 0 1px #d49221;
+}
+
 .category-tabs span {
+  min-width: 0;
+  overflow: hidden;
   color: #637267;
   font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hint,
@@ -1867,6 +1915,32 @@ td .chain-badge {
   line-height: 1.35;
 }
 
+.detail-meta-stack {
+  display: grid;
+  gap: 2px;
+  color: #637267;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.detail-meta-stack > span {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 1.3em;
+}
+
+.detail-meta-stack strong {
+  color: #4d6f59;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.detail-meta-stack span span {
+  min-width: 0;
+}
+
 .compare-summary {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1888,9 +1962,7 @@ td .chain-badge {
 .price-row span,
 .price-row small,
 .deal-card p,
-.deal-card footer,
-.department-card span,
-.department-card small {
+.deal-card footer {
   color: #637267;
 }
 
@@ -2162,7 +2234,6 @@ td .chain-badge {
   white-space: nowrap;
 }
 
-.department-grid,
 .deals-grid,
 .search-results {
   display: grid;
@@ -2174,7 +2245,6 @@ td .chain-badge {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-.department-card,
 .search-result {
   display: grid;
   gap: 7px;
@@ -2303,12 +2373,6 @@ td .chain-badge {
 }
 
 .search-price-label > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.department-card small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2602,7 +2666,6 @@ td .chain-badge {
     max-height: 360px;
   }
 
-  .department-grid,
   .deals-grid,
   .search-results {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2649,7 +2712,6 @@ td .chain-badge {
   .review-card-grid,
   .review-summary,
   .compare-summary,
-  .department-grid,
   .deals-grid,
   .search-results {
     grid-template-columns: 1fr;

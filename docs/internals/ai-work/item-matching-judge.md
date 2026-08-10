@@ -1,13 +1,13 @@
 # zhua.food — AI-assisted matching (design, deferred)
 
 > **Status: NOT implemented — deferred.** **For now, matching is manual:** today's heuristic matcher
-> (`brand + size + name-overlap`, see [matching.md](matching.md)) auto-links the confident cases and drops the rest
+> (`brand + size + name-overlap`, see [matching.md](../matching.md)) auto-links the confident cases and drops the rest
 > into the **human review queue**, resolved via the admin endpoints (`approve` / `reject` / `link-item` /
 > `create-item`). This doc is the plan for when we *augment* that heuristic with an LLM. Surrounding model
-> (why items exist, `description`-as-anchor): [item-model.md](item-model.md).
+> (why items exist, `description`-as-anchor): [item-model.md](../item-model.md).
 >
 > **Scope note:** this doc covers the LLM as a **review-queue judge** (Category D in
-> [orphan-matching.md](orphan-matching.md)). That research doc is the wider picture — it shows the review queue is
+> [orphan-matching.md](../orphan-matching.md)). That research doc is the wider picture — it shows the review queue is
 > only one of four orphan buckets, that ~72% of Woolworths orphans have *no* match to find (so AI can't help them),
 > and that the real prerequisite is de-anchoring items from Foodstuffs. Read it before assuming "add AI" solves the
 > unmatched-listings problem.
@@ -21,7 +21,7 @@ the platform's core judgement: "are these the same item?"
 
 ## Where it slots in (the flow doesn't change)
 
-Per store product, every match run (from [item-model.md](item-model.md#matcher-direction-additive-ai-assisted)):
+Per store product, every match run (from [item-model.md](../item-model.md#matcher-direction-additive-ai-assisted)):
 
 1. **Already linked?** → leave it.
 2. **Deterministic key?** (Foodstuffs branches share `productId`) → link, no AI.

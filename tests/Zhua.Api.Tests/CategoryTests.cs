@@ -93,6 +93,42 @@ public class CategoryTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Category_products_direct_returns_only_what_sits_on_the_node_itself()
+    {
+        // Products land on the finest category that mapped, so an aisle holds the ones whose own shelf has no
+        // shared-tree counterpart — drilling into the child shelves never reaches them. ?direct= lists exactly those.
+        var direct = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.AisleBeef}/products?direct=true"))?.Items;
+
+        Assert.NotNull(direct);
+        Assert.Single(direct!);                                  // the eye fillet sits on the aisle…
+        Assert.Equal(TestData.EyeFillet, direct![0].ItemId);     // …the mince is under a shelf, so it's excluded
+
+        // The whole-subtree default is unchanged, and the two partition the subtree: 1 direct + 1 in the shelf = 2.
+        var subtree = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.AisleBeef}/products"))?.Items;
+        Assert.Equal(2, subtree!.Count);
+
+        // A leaf has no descendants, so direct and subtree agree there.
+        var shelf = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/categories/{TestData.ShelfBeefMince}/products?direct=true"))?.Items;
+        Assert.Single(shelf!);
+        Assert.Equal(TestData.BeefMince, shelf![0].ItemId);
+    }
+
+    [Fact]
+    public async Task Products_collection_honours_direct_too()
+    {
+        // /products?category=&direct= is the same filter by another URL — they must not drift.
+        var direct = (await _client.GetFromJsonAsync<PagedResult<ProductGroup>>(
+            $"/products?category={TestData.AisleBeef}&direct=true"))?.Items;
+
+        Assert.NotNull(direct);
+        Assert.Single(direct!);
+        Assert.Equal(TestData.EyeFillet, direct![0].ItemId);
+    }
+
+    [Fact]
     public async Task Category_browse_surfaces_unmatched_listings_via_their_store_category() // TD-5
     {
         // Browsing a category returns BOTH matched groups (via the item's category) and unmatched listings (via

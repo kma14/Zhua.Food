@@ -70,6 +70,8 @@ const copy = {
     departments: "当前覆盖",
     departmentMetric: "大类",
     aisleMetric: "小类",
+    shelfMetric: "细分类",
+    directCategory: "未细分",
     categories: "商品分类",
     allProducts: "全部商品",
     cheapest: "当前分类商品",
@@ -98,13 +100,15 @@ const copy = {
     selectedStoresShort: "已选",
     noDealsForStores: "当前门店暂时没有可展示的特价。",
     noStoreData: "当前门店没有这个商品的报价。",
-    coverageEyebrow: "分类覆盖",
     noHistory: "这个商品暂时还没有多次变价记录，之后每次抓取会慢慢积累。",
     noResults: "没有找到结果。",
     productCount: "个商品",
     listedStores: "家店有售",
     cheapestStore: "最低门店",
     priceStatus: "价格情况",
+    detailCategory: "分类",
+    detailBrand: "品牌",
+    detailSize: "规格",
     singleStoreStatus: "目前只看到这家在卖",
     samePriceStatus: "所有门店价格一样",
     gapStatusPrefix: "最高和最低相差",
@@ -203,6 +207,8 @@ const copy = {
     departments: "Coverage",
     departmentMetric: "Departments",
     aisleMetric: "Aisles",
+    shelfMetric: "Shelves",
+    directCategory: "Unsorted here",
     categories: "Categories",
     allProducts: "All products",
     cheapest: "Products in category",
@@ -231,13 +237,15 @@ const copy = {
     selectedStoresShort: "Selected",
     noDealsForStores: "No visible specials for the selected stores.",
     noStoreData: "No price row for this item in the selected stores.",
-    coverageEyebrow: "Category coverage",
     noHistory: "This item does not have many price-change points yet. History will deepen with twice-daily crawls.",
     noResults: "No results found.",
     productCount: "products",
     listedStores: "stores listing it",
     cheapestStore: "Cheapest store",
     priceStatus: "Price status",
+    detailCategory: "Category",
+    detailBrand: "Brand",
+    detailSize: "Size",
     singleStoreStatus: "Only one store currently lists it",
     samePriceStatus: "All stores have the same price",
     gapStatusPrefix: "Highest and lowest differ by",
@@ -410,6 +418,7 @@ export function App() {
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedCategoryDirectOnly, setSelectedCategoryDirectOnly] = useState(false);
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [categoryPage, setCategoryPage] = useState(1);
   const [categoryPageSize, setCategoryPageSize] = useState(defaultCategoryPageSize);
@@ -448,8 +457,7 @@ export function App() {
   const [collapsedSections, setCollapsedSections] = useState({
     deals: false,
     search: false,
-    category: false,
-    coverage: true
+    category: false
   });
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -464,12 +472,22 @@ export function App() {
 
   const flattenedCategories = useMemo(() => flattenCategories(categories), [categories]);
   const selectedCategory = flattenedCategories.find((category) => category.id === selectedCategoryId) ?? null;
+  const selectedCategoryTitle = selectedCategory
+    ? selectedCategoryDirectOnly
+      ? formatDirectCategoryLabel(selectedCategory, language, t.directCategory)
+      : translateCategoryName(selectedCategory.name, language)
+    : t.allProducts;
+  const selectedCategoryPath = useMemo(
+    () => (selectedCategoryId ? findCategoryPath(categories, selectedCategoryId) : []),
+    [categories, selectedCategoryId]
+  );
   const selectedDepartment = selectedDepartmentId || selectedCategoryId
     ? categories.find((department) => department.id === selectedDepartmentId) ??
-      categories.find((department) => department.id === selectedCategoryId || department.children.some((child) => child.id === selectedCategoryId)) ??
+      selectedCategoryPath.find((category) => category.kind === "Department") ??
       categories[0] ??
       null
     : null;
+  const selectedAisle = selectedCategoryPath.find((category) => category.kind === "Aisle") ?? null;
   const storeOptions = useMemo(() => sortStores(stores), [stores]);
   const selectedStores = useMemo(
     () => storeOptions.filter((store) => selectedStoreIds.includes(store.id)),
@@ -592,6 +610,7 @@ export function App() {
         if (selectedStoreIds.length > 0 && !hasCategorizedProducts) {
           setSelectedDepartmentId("");
           setSelectedCategoryId("");
+          setSelectedCategoryDirectOnly(false);
           return;
         }
         const defaultCategory =
@@ -599,7 +618,7 @@ export function App() {
           flat.find((category) => category.kind === "Aisle") ??
           flat[0];
         const defaultDepartment =
-          categoryTree.find((department) => department.id === defaultCategory?.id || department.children.some((child) => child.id === defaultCategory?.id)) ??
+          (defaultCategory ? findCategoryPath(categoryTree, defaultCategory.id).find((category) => category.kind === "Department") : null) ??
           categoryTree[0];
         setSelectedDepartmentId((current) =>
           categoryTree.some((department) => department.id === current) ? current : defaultDepartment?.id || ""
@@ -607,6 +626,7 @@ export function App() {
         setSelectedCategoryId((current) =>
           flat.some((category) => category.id === current) ? current : defaultCategory?.id || ""
         );
+        setSelectedCategoryDirectOnly(false);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : t.failed);
       } finally {
@@ -698,7 +718,8 @@ export function App() {
             selectedCategoryId || undefined,
             categorySort,
             selectedStoreIds,
-            apiBaseUrl
+            apiBaseUrl,
+            selectedCategoryDirectOnly
           );
           if (cancelled) return;
 
@@ -718,7 +739,15 @@ export function App() {
         }
 
         const result = selectedCategoryId
-          ? await getCategoryProducts(selectedCategoryId, categoryPage, categoryPageSize, categorySort, selectedStoreIds, apiBaseUrl)
+          ? await getCategoryProducts(
+              selectedCategoryId,
+              categoryPage,
+              categoryPageSize,
+              categorySort,
+              selectedStoreIds,
+              apiBaseUrl,
+              selectedCategoryDirectOnly
+            )
           : await getProducts(categoryPage, categoryPageSize, categorySort, selectedStoreIds, apiBaseUrl);
         if (cancelled) return;
         const prepared = prepareProductGroups(result.items, selectedStores);
@@ -748,10 +777,18 @@ export function App() {
     categoryRefreshKey,
     categorySort,
     selectedCategoryId,
+    selectedCategoryDirectOnly,
     selectedStoreIds,
     selectedStores,
     t.failed
   ]);
+
+  function selectCategory(categoryId: string, directOnly = false) {
+    setCategoryPage(1);
+    setDealPage(1);
+    setSelectedCategoryId(categoryId);
+    setSelectedCategoryDirectOnly(directOnly);
+  }
 
   function changeCategoryPage(nextPage: number) {
     if (isProductsLoading) return;
@@ -818,7 +855,7 @@ export function App() {
     setHasSearched(false);
     setSearchResults([]);
     setSearchTotal(0);
-  }, [selectedCategoryId, selectedStoreIds]);
+  }, [selectedCategoryId, selectedCategoryDirectOnly, selectedStoreIds]);
 
   useEffect(() => {
     if (isReviewMode) void loadMatchCandidates();
@@ -1254,7 +1291,7 @@ export function App() {
           <CollapsibleSection
             className="category-panel"
             eyebrow={t.categories}
-            title={selectedCategory ? translateCategoryName(selectedCategory.name, language) : t.allProducts}
+            title={selectedCategoryTitle}
             pill={`${categoryTotal.toLocaleString()} ${t.productCount} · ${selectedStoreScope}`}
             collapsed={collapsedSections.category}
             expandLabel={t.expand}
@@ -1269,6 +1306,7 @@ export function App() {
                   setCategoryPage(1);
                   setDealPage(1);
                   setSelectedDepartmentId("");
+                  setSelectedCategoryDirectOnly(false);
                   setSelectedCategoryId("");
                 }}
               >
@@ -1280,10 +1318,8 @@ export function App() {
                   key={department.id}
                   className={selectedDepartment?.id === department.id ? "active" : ""}
                   onClick={() => {
-                    setCategoryPage(1);
-                    setDealPage(1);
                     setSelectedDepartmentId(department.id);
-                    setSelectedCategoryId(department.children[0]?.id ?? department.id);
+                    selectCategory(department.id);
                   }}
                 >
                   <strong>{translateCategoryName(department.name, language)}</strong>
@@ -1293,25 +1329,66 @@ export function App() {
             </div>
 
             {selectedDepartment && (
-              <div className="category-tabs" aria-label={t.aisleMetric}>
+              <div
+                className="category-tabs aisle-tabs one-line-tabs"
+                aria-label={t.aisleMetric}
+                style={categoryTabsStyle(Math.max(1, selectedDepartment.children.length + (selectedDepartment.productCount > 0 ? 1 : 0) || 1))}
+              >
                 {(selectedDepartment.children.length > 0 ? selectedDepartment.children : [selectedDepartment]).map((category) => (
                   <button
                     key={category.id}
-                    className={selectedCategoryId === category.id ? "active" : ""}
+                    className={selectedAisle?.id === category.id || selectedCategoryId === category.id ? "active" : ""}
                     onClick={() => {
-                      setCategoryPage(1);
-                      setDealPage(1);
-                      setSelectedCategoryId(category.id);
+                      selectCategory(category.id);
                     }}
                   >
                     <strong>{translateCategoryName(category.name, language)}</strong>
                     <span>{category.totalProductCount}</span>
                   </button>
                 ))}
+                {selectedDepartment.productCount > 0 && (
+                  <button
+                    className={selectedCategoryDirectOnly && selectedCategoryId === selectedDepartment.id ? "active direct-bucket" : "direct-bucket"}
+                    onClick={() => selectCategory(selectedDepartment.id, true)}
+                  >
+                    <strong>{formatDirectCategoryLabel(selectedDepartment, language, t.directCategory)}</strong>
+                    <span>{selectedDepartment.productCount}</span>
+                  </button>
+                )}
               </div>
             )}
 
-            {selectedCategory && <p className="hint">{formatCategoryTrail(selectedCategory, categories, language)}</p>}
+            {selectedAisle && selectedAisle.children.length > 0 && (
+              <div
+                className="category-tabs shelf-tabs one-line-tabs"
+                aria-label={t.shelfMetric}
+                style={categoryTabsStyle(selectedAisle.children.length + (selectedAisle.productCount > 0 ? 1 : 0))}
+              >
+                {selectedAisle.children.map((category) => (
+                  <button
+                    key={category.id}
+                    className={!selectedCategoryDirectOnly && selectedCategoryId === category.id ? "active" : ""}
+                    onClick={() => {
+                      selectCategory(category.id);
+                    }}
+                  >
+                    <strong>{translateCategoryName(category.name, language)}</strong>
+                    <span>{category.totalProductCount}</span>
+                  </button>
+                ))}
+                {selectedAisle.productCount > 0 && (
+                  <button
+                    className={selectedCategoryDirectOnly && selectedCategoryId === selectedAisle.id ? "active direct-bucket" : "direct-bucket"}
+                    onClick={() => selectCategory(selectedAisle.id, true)}
+                  >
+                    <strong>{formatDirectCategoryLabel(selectedAisle, language, t.directCategory)}</strong>
+                    <span>{selectedAisle.productCount}</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {selectedCategory && <p className="hint">{formatCategoryTrail(selectedCategory, categories, language, selectedCategoryDirectOnly, t.directCategory)}</p>}
 
             <div className="main-grid">
               <section className="table-card">
@@ -1454,7 +1531,16 @@ export function App() {
                   <div>
                     <p className="eyebrow">{t.compare}</p>
                     <h3>{selectedListing?.name ?? "..."}</h3>
-                    {selectedListing && comparison && <p>{formatListingMeta(selectedListing, comparison, language)}</p>}
+                    {selectedListing && comparison && (
+                      <div className="detail-meta-stack">
+                        {formatDetailMetaRows(selectedListing, comparison, language, t).map((row) => (
+                          <span key={row.label}>
+                            <strong>{row.label}</strong>
+                            <span>{row.value}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1520,27 +1606,6 @@ export function App() {
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection
-            className="coverage-panel"
-            eyebrow={t.coverageEyebrow}
-            title={t.departments}
-            collapsed={collapsedSections.coverage}
-            expandLabel={t.expand}
-            collapseLabel={t.collapse}
-            onToggle={() => toggleSection("coverage")}
-          >
-            <div className="department-grid">
-              {categories.map((department) => (
-                <article key={department.id} className="department-card">
-                  <strong>{translateCategoryName(department.name, language)}</strong>
-                  <span>
-                    {department.totalProductCount.toLocaleString()} {t.productCount}
-                  </span>
-                  <small>{department.children.map((child) => translateCategoryName(child.name, language)).join(" · ")}</small>
-                </article>
-              ))}
-            </div>
-          </CollapsibleSection>
         </>
       )}
     </main>
@@ -2940,7 +3005,8 @@ async function getAllProductGroupsForFilter(
   categoryId: string | undefined,
   sort: ProductSort,
   storeIds: string[],
-  apiBaseUrl: string
+  apiBaseUrl: string,
+  directOnly = false
 ) {
   const size = 100;
   const maxPages = 100;
@@ -2948,7 +3014,7 @@ async function getAllProductGroupsForFilter(
 
   for (let page = 1; page <= maxPages; page += 1) {
     const result = categoryId
-      ? await getCategoryProducts(categoryId, page, size, sort, storeIds, apiBaseUrl)
+      ? await getCategoryProducts(categoryId, page, size, sort, storeIds, apiBaseUrl, directOnly)
       : await getProducts(page, size, sort, storeIds, apiBaseUrl);
     rows.push(...result.items);
     if (!result.hasMore) break;
@@ -3374,6 +3440,15 @@ function flattenCategories(categories: CategoryNode[]): CategoryNode[] {
   return categories.flatMap((category) => [category, ...flattenCategories(category.children)]);
 }
 
+function findCategoryPath(categories: CategoryNode[], id: string): CategoryNode[] {
+  for (const category of categories) {
+    if (category.id === id) return [category];
+    const childPath = findCategoryPath(category.children, id);
+    if (childPath.length > 0) return [category, ...childPath];
+  }
+  return [];
+}
+
 function countHistoryPoints(history: ProductPriceHistory, selectedStores: StoreOption[]) {
   return filterHistoryStores(history.stores, selectedStores).reduce((sum, store) => sum + store.points.length, 0);
 }
@@ -3393,10 +3468,31 @@ function chainSortOrder(chain: Supermarket) {
   return 4;
 }
 
-function formatCategoryTrail(category: CategoryNode, departments: CategoryNode[], language: Language) {
-  const parent = departments.find((department) => department.id === category.id || department.children.some((child) => child.id === category.id));
-  if (!parent || parent.id === category.id) return translateCategoryName(category.name, language);
-  return `${translateCategoryName(parent.name, language)} / ${translateCategoryName(category.name, language)}`;
+function formatCategoryTrail(
+  category: CategoryNode,
+  departments: CategoryNode[],
+  language: Language,
+  directOnly = false,
+  directLabel = ""
+) {
+  const path = findCategoryPath(departments, category.id);
+  const visiblePath = path.length > 0 ? path : [category];
+  const names = visiblePath.map((node) => translateCategoryName(node.name, language));
+  if (directOnly && directLabel) names.push(directLabel);
+  return names.join(" / ");
+}
+
+function formatDirectCategoryLabel(category: CategoryNode, language: Language, directLabel: string) {
+  return `${translateCategoryName(category.name, language)} · ${directLabel}`;
+}
+
+function categoryTabsStyle(count: number) {
+  const boundedCount = Math.max(1, count);
+  const fontSize = Math.max(0.68, Math.min(0.96, 1.02 - Math.max(0, boundedCount - 5) * 0.055));
+  return {
+    "--tab-count": String(boundedCount),
+    "--tab-font-size": `${fontSize.toFixed(2)}rem`
+  } as React.CSSProperties;
 }
 
 function latestHistoryPoint(store: ProductPriceHistory["stores"][number]) {
@@ -3557,6 +3653,19 @@ function formatListingMeta(listing: ProductListing, group: ProductGroup | null |
   const category = group?.category ? translateCategoryName(group.category, language) : null;
   const parts = [listing.brand, listing.size, category].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : group ? formatGroupCaption(group, language) : "";
+}
+
+function formatDetailMetaRows(
+  listing: ProductListing,
+  group: ProductGroup,
+  language: Language,
+  t: (typeof copy)[Language]
+) {
+  return [
+    { label: t.detailCategory, value: group.category ? translateCategoryName(group.category, language) : "" },
+    { label: t.detailBrand, value: listing.brand ?? "" },
+    { label: t.detailSize, value: listing.size ?? "" }
+  ];
 }
 
 function formatPriceFreshness(listing: ProductListing, t: (typeof copy)[Language]) {

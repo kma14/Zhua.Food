@@ -3,7 +3,7 @@
 Executes the target design in [item-model.md](item-model.md) (D25), **one phase at a time**. Each phase is
 independently shippable and tested. **Ordering rule:** additive/internal first, **breaking-for-Codex last and
 coordinated** (the front-end builds against the live API). AI matching is *not* in this plan — it's deferred
-([ai-matching.md](ai-matching.md)).
+([item-matching-judge.md](ai-work/item-matching-judge.md)).
 
 Legend: 🟢 additive/non-breaking · 🟡 coordinate with Codex · 🔴 breaking (do last).
 

@@ -105,7 +105,7 @@ Target shape (see [matching.md](matching.md) for today's implementation). **Per 
 3. **Otherwise → decide which item (or a new one).** **For now this is *manual*** — today's heuristic matcher
    auto-links the confident cases and the rest go to the **human review queue** (`approve`/`reject`/`link-item`/
    `create-item`). **Later** this step becomes **AI-assisted** (shortlist candidates → LLM picks) — a deferred
-   workstream with its own design + cost analysis: **[ai-matching.md](ai-matching.md)**.
+   workstream with its own design + cost analysis: **[item-matching-judge.md](ai-work/item-matching-judge.md)**.
 
 The item set only **grows by linking**; a `description` is never overwritten from store data.
 
@@ -132,7 +132,7 @@ The item set only **grows by linking**; a `description` is never overwritten fro
   singletons (and how the compare endpoint accepts either).
 - How the `description` is first generated — seeded-then-frozen from the listing, curated, or LLM-written.
   *(Resolved: one `description` field, no separate anchor name.)*
-- The AI-assisted step (model, thresholds, retrieval) is deferred — its own design lives in [ai-matching.md](ai-matching.md).
+- The AI-assisted step (model, thresholds, retrieval) is deferred — its own design lives in [item-matching-judge.md](ai-work/item-matching-judge.md).
 - Merge/split endpoint design + what happens to history when two items merge.
 - When AI matching comes in, and how its proposals flow through the existing review queue.
 
