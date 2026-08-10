@@ -8,7 +8,7 @@ Code: [`ItemMatcher`](../../src/Zhua.Application/Matching/ItemMatcher.cs) (Appli
 [`HeuristicItemMatchingPolicy`](../../src/Zhua.Domain/Services/HeuristicItemMatchingPolicy.cs) (the domain scoring rule) +
 [`ProductNormalizer`](../../src/Zhua.Domain/Matching/ProductNormalizer.cs) (the pure text helpers).
 Sibling docs: crawling/crawling → [crawling.md](crawling.md); the target redesign of the whole item layer →
-[item-model.md](item-model.md); the deferred LLM matcher → [ai-matching.md](ai-matching.md).
+[item-model.md](item-model.md); the deferred LLM matcher → [item-matching-judge.md](ai-work/item-matching-judge.md).
 
 ---
 

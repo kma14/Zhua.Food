@@ -188,7 +188,7 @@ split:
 the residual just stays split). Measured realised link/re-home was 189 vs a ~292 cross-chain-fragmented ceiling — the
 gap is mostly (1) + (2).
 
-**The fix:** (1) a curated produce/cut lexicon or the deferred AI matcher ([ai-roadmap.md](ai-roadmap.md)); (2) the
+**The fix:** (1) a curated produce/cut lexicon or the deferred AI matcher ([ai-roadmap.md](ai-work/ai-roadmap.md)); (2) the
 size-gate loosening above; (3) extend `PrivateLabelRoots`; (4) a WW-produce-anchor index so FreshChoice produce can
 attach to a Woolworths produce anchor (mirrors D30 Tier 3b).
 
@@ -236,7 +236,8 @@ shopper, which is why it wasn't fixed alongside Woolworths.
 
 **The fix:** the same path-based `ExternalId` (`meat-poultry-seafood/deli-meats/bacon`), plus the equivalent
 delete-and-rebuild cleanup — but across **6 Foodstuffs stores**, so a much larger rebuild than the single Woolworths
-branch.
+branch. Note this is *identity*, separate from *alignment* ([category-alignment.md](ai-work/category-alignment.md)) — Foodstuffs
+seeds the shared tree, so its nodes always map; what's lost here is only tree structure.
 
 **Why deferred / priority:** Low–Medium. **Revisit when** the tree structure itself starts mattering to browse (e.g.
 drill-down counts look wrong under Deli), or when another Foodstuffs-side category change forces a rebuild anyway.
