@@ -164,9 +164,15 @@ public sealed class CrawlOrchestrator(
                 db.StoreCategories.Add(cat);
                 categories[key] = cat;
             }
-            else if (cat.ParentId is null && cat.Parent is null && parent is not null)
+            else
             {
-                cat.Parent = parent;
+                // Keep the dimension row in sync with the source: a chain can rename a category it still identifies
+                // the same way (Woolworths renamed 4 nodes in a single day), and a stale Name silently mis-files
+                // everything under it — CategoryMapper maps to the shared tree by this label.
+                cat.Name = node.Name;
+                cat.Slug = node.Slug;
+                if (cat.ParentId is null && cat.Parent is null && parent is not null)
+                    cat.Parent = parent;
             }
 
             if (!sp.Categories.Any(c => c.Kind == cat.Kind && c.ExternalId == cat.ExternalId))

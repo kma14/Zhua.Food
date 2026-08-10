@@ -71,7 +71,7 @@ public sealed class ItemMatcher(
                 // never re-mint them from store data. Description doubles as the match anchor + grouping label.
                 // Assign the id up front: the (brand,size) index + auto-link resolve items by id, so a newly-created
                 // item must already have one before save.
-                canon = new Item { Id = Guid.NewGuid(), MatchKey = key, Name = rep.RawName, Description = rep.RawName, Category = "Uncategorized" };
+                canon = new Item { Id = Guid.NewGuid(), MatchKey = key, Name = rep.RawName, Description = rep.RawName, Category = Item.Uncategorized };
                 repo.AddItem(canon);
                 canonByKey[key] = canon;
                 itemsById[canon.Id] = canon;
@@ -403,7 +403,7 @@ public sealed class ItemMatcher(
         {
             if (!canonByKey.TryGetValue(key, out var item))
             {
-                item = new Item { Id = Guid.NewGuid(), MatchKey = key, Name = seed.RawName, Description = seed.RawName, Category = "Uncategorized" };
+                item = new Item { Id = Guid.NewGuid(), MatchKey = key, Name = seed.RawName, Description = seed.RawName, Category = Item.Uncategorized };
                 repo.AddItem(item);
                 canonByKey[key] = item;
                 itemsById[item.Id] = item;

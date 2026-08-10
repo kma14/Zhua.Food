@@ -6,6 +6,9 @@ namespace Zhua.Domain.Entities;
 /// </summary>
 public class Item
 {
+    /// <summary>Sentinel for <see cref="Category"/> when nothing maps — the column is non-nullable (D22).</summary>
+    public const string Uncategorized = "Uncategorized";
+
     public Guid Id { get; set; }
 
     /// <summary>

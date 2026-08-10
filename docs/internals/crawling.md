@@ -109,6 +109,23 @@ An aisle with no shelves is itself the leaf. This is ~**300 requests/store** (~1
 **empty body**. `FetchBrowseAsync` retries up to 4× with cooldown **12s / 24s / 36s** + a homepage reload to refresh
 the session. Without this, crawls die partway through a department.
 
+**⚠️ Category identity = the slug path we request, NOT the response's numeric id (2026-07-27).** `BuildPath` sets
+`StoreCategory.ExternalId` to the accumulated `dasFilter` slugs (`fruit-veg/vegetables/carrots-root-vegetables`).
+Woolworths **recycles** its numeric `breadcrumb.*.value` ids: shelf `666` means "Enriched Milk" today and meant
+"Carrots & Root Vegetables" earlier, so keying on it made a recycled id land on an existing node of a *different*
+category — the node kept its old name and milk was served under a vegetable shelf (145 of 285 live nodes were
+mis-named; 3,424 products, 633 items). Two rules follow:
+
+- **Don't key a Woolworths category on anything the response hands back.** The slug is ours (we send it, it's in the
+  storefront URL); the numeric id is an internal surrogate we never query by.
+- **The full path is required — a bare slug is not unique.** 28 shelf slugs hang under two aisles, and Woolworths
+  keeps them as separate nodes (`carrots-root-vegetables` = id 674 under `vegetables`, 243 under `fresh-salad-herbs`).
+
+A *rename* still mints a new node (the slug is derived from the display name) and orphans the old one — 102 of 425
+rows were already orphans. That's the residual, and it's benign: an orphan carries no product links after any
+complete crawl, so it's invisible to browse. Pruning them is [tech-debt.md](tech-debt.md) TD-9. What the path
+guarantees is that an id can never be re-pointed at a *different* set of products.
+
 **Field mapping** — `products.items[]` where `type == "Product"`:
 
 | Our field | Source | Notes |
@@ -308,6 +325,26 @@ Each entry starts with its timestamp (`YYYY-MM-DD HH:MM`, to the minute), then �
   reconciles missing products after complete runs only: 2 consecutive misses → `IsAvailable=false` + promo
   cleared, **no synthetic snapshot** (Kevin approved threshold 2 + no-snapshot). (4) Shopper queries exclude
   unavailable listings; /deals also requires `LastSeenAt` within 48h (`DealQueries.FreshnessWindow`).
+
+- **2026-07-27 02:30** — 🧑‍⚖️ *(Kevin: "开工", after a design review — from a front-end report that dairy shows up in
+  vegetable browse)* **Woolworths category identity: numeric id → slug path.** Diagnosed first against the raw archive
+  + live DB: the breadcrumb `value` ids are **recycled**, and `LinkCategories` only ever *created* nodes, so a recycled
+  id hit an existing row and kept its old name — 145 of 285 live nodes mis-named, 3,424 products, 633 items (milk under
+  "Carrots & Root Vegetables"; also the "colby under Barn Eggs" case, which the 2026-07-23 link-reset fix had
+  mis-attributed to stale link accumulation). Verified EF's `Categories.Clear()` was *not* at fault before changing
+  anything. Three changes + a data migration:
+  1. `WoolworthsCrawler.BuildPath` → `ExternalId` = the accumulated `dasFilter` slug path (see the ⚠️ above; a bare
+     slug was rejected because 28 slugs hang under two aisles).
+  2. `CrawlOrchestrator.LinkCategories` now **refreshes** an existing node's `Name`/`Slug` (a source rename used to
+     freeze the label — Woolworths renamed 4 nodes in one day).
+  3. `CategoryMapper` recomputes mappings every run instead of skipping already-mapped nodes (39 of the bad nodes were
+     frozen that way), keys on the crawler's `Slug` rather than a re-slugified display `Name`, and **clears** an item's
+     category to `Uncategorized` when nothing maps instead of keeping a stale label *(Kevin picked option A)*.
+  4. Migration `WoolworthsCategoryIdentityToSlugPath` deletes Woolworths' `StoreCategory` rows + links (leaves first —
+     the self-FK is `Restrict`) so the next complete crawl rebuilds under the new identity. In-place rewrite was
+     rejected: deriving the true path needs the parent chain, which the same churn had polluted (733 rows / 507 nodes).
+  Residuals filed as [tech-debt.md](tech-debt.md) TD-9 (orphan nodes from renames) and TD-10 (Foodstuffs' bare-name
+  identity collapses 13 same-named shelves — milder, nothing mis-labelled).
 
 - **2026-07-23** — 🧑‍⚖️ *(Kevin: "A" — do the two contained fixes, from a front-end report that a colby cheese
   showed under "Barn Eggs" and FreshChoice eggs were missing from category browse; both verified in code + live DB

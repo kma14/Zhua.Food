@@ -158,6 +158,60 @@ public class CategoryMapperTests
         }
     }
 
+    [Fact]
+    public async Task Mapping_is_recomputed_each_run_and_cleared_when_nothing_matches()
+    {
+        // Shared tree gets "Beef Steaks" from Foodstuffs; a Woolworths-only item reaches it via a WW shelf of the
+        // same slug.
+        await using (var db = NewContext())
+        {
+            var nw = new Store { Chain = Chain.NewWorld, Name = "NW", Suburb = "X", Latitude = -36.8, Longitude = 174.7 };
+            var ww = new Store { Chain = Chain.Woolworths, Name = "WW", Suburb = "Y", Latitude = -36.8, Longitude = 174.7 };
+            db.Stores.AddRange(nw, ww);
+
+            var nwShelf = new StoreCategory { Store = nw, Kind = CategoryKind.Shelf, ExternalId = "Beef Steaks", Slug = "beef-steaks", Name = "Beef Steaks" };
+            var wwShelf = new StoreCategory { Store = ww, Kind = CategoryKind.Shelf, ExternalId = "fridge-deli/beef/beef-steaks", Slug = "beef-steaks", Name = "Beef Steaks" };
+            db.StoreCategories.AddRange(nwShelf, wwShelf);
+
+            var nwItem = new Item { Name = "Seed", Category = Item.Uncategorized };
+            var nwP = new Product { Store = nw, Sku = "NW-1", RawName = "Seed", FirstSeenAt = DateTimeOffset.UtcNow, Item = nwItem };
+            nwP.Categories.Add(nwShelf);
+            var wwItem = new Item { MatchKey = "woolworths:WW-9", Name = "Macro Sirloin", Category = Item.Uncategorized };
+            var wwP = new Product { Store = ww, Sku = "WW-9", RawName = "Macro Sirloin", FirstSeenAt = DateTimeOffset.UtcNow, Item = wwItem };
+            wwP.Categories.Add(wwShelf);
+            db.Products.AddRange(nwP, wwP);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Mapper(db).MapAsync();
+        await using (var db = NewContext())
+            Assert.Equal("Beef Steaks", (await db.Items.SingleAsync(i => i.MatchKey == "woolworths:WW-9")).Category);
+
+        // The WW node turns out to be a different category than we recorded (the source re-shelved it), and the new
+        // one has no counterpart in the shared tree.
+        await using (var db = NewContext())
+        {
+            var wwShelf = await db.StoreCategories.SingleAsync(c => c.Store.Chain == Chain.Woolworths);
+            wwShelf.Slug = "frozen-pies";
+            wwShelf.Name = "Frozen Pies";
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await Mapper(db).MapAsync();
+
+        await using (var check = NewContext())
+        {
+            // Recomputed, not frozen: the stale mapping is dropped rather than kept forever…
+            var wwShelf = await check.StoreCategories.SingleAsync(c => c.Store.Chain == Chain.Woolworths);
+            Assert.Null(wwShelf.CategoryId);
+
+            // …and the item falls back to Uncategorized instead of keeping a label it no longer supports.
+            var wwItem = await check.Items.SingleAsync(i => i.MatchKey == "woolworths:WW-9");
+            Assert.Null(wwItem.CategoryId);
+            Assert.Equal(Item.Uncategorized, wwItem.Category);
+        }
+    }
+
     private async Task SeedAsync()
     {
         await using var db = NewContext();

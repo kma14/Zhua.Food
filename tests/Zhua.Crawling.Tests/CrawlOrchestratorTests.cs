@@ -202,6 +202,35 @@ public class CrawlOrchestratorTests
         Assert.Equal(["Barn Eggs", "Block Cheese"], shelves);         // both kept — no reset on a partial run
     }
 
+    // A product under one Shelf node whose identity (ExternalId/Slug) and display Name are given separately — the
+    // source can rename a category it still identifies the same way.
+    private static ScrapedProduct Shelved(string externalId, string slug, string name) => new()
+    {
+        Sku = "SKU-MILK",
+        Name = "Anchor Calci+ Milk Trim 2L",
+        Price = 4.50m,
+        PromoType = PromoType.None,
+        CategoryPath = [new ScrapedCategoryNode(CategoryKind.Shelf, externalId, slug, name)],
+    };
+
+    [Fact]
+    public async Task Source_renaming_a_category_refreshes_the_existing_node()
+    {
+        await SeedStoreAsync();
+        await RunAsync(Shelved("fridge-deli/milk/enriched-milk", "enriched-milk", "Enriched Milk"));
+
+        _clock.Advance(TimeSpan.FromHours(12));
+        // Same node, new label at the source (Woolworths renamed 4 nodes in a single day).
+        await RunAsync(Shelved("fridge-deli/milk/enriched-milk", "enriched-milk", "Fortified Milk"));
+
+        await using var db = NewContext();
+        var node = await db.StoreCategories.SingleAsync();
+        // Before the fix the row was created once and its Name frozen — CategoryMapper then filed everything under
+        // it by the outdated label.
+        Assert.Equal("Fortified Milk", node.Name);
+        Assert.Equal(1, await db.StoreCategories.CountAsync()); // identity unchanged → no duplicate node
+    }
+
     // ---- Missing-product reconciliation (plan D28) --------------------------------------------------------------
 
     private static ScrapedProduct Bread(decimal price = 2.00m) => new()
