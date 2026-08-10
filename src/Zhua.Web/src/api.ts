@@ -66,13 +66,15 @@ export function getCategoryProducts(
   size = 20,
   sort: ProductSort = "unitPriceAsc",
   storeIds: string[] = [],
-  apiBaseUrl?: string
+  apiBaseUrl?: string,
+  direct = false
 ) {
   return getJson<PagedResult<ProductGroup>>(`/categories/${categoryId}/products`, {
     storeId: storeIds,
     page,
     size,
-    sort
+    sort,
+    direct: direct ? "true" : undefined
   }, apiBaseUrl);
 }
 
