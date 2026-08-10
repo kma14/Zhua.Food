@@ -24,13 +24,16 @@ public sealed class CategoriesController(ICategoryService categories, IProductSe
     /// Products inside a category node (its whole subtree), grouped by item — the browse alias of
     /// GET /products?category={id} (same <c>PagedResult&lt;ProductGroup&gt;</c> envelope). Optional ?storeId=
     /// (repeatable) and ?sort= (unitPriceAsc|priceAsc|nameAsc|discountDesc, default unitPriceAsc). Archived id → 404.
+    /// <c>?direct=true</c> returns only what sits on this node itself — pair it with the node's own
+    /// <c>productCount</c> to show an "unsorted here" bucket beside the child shelves.
     /// </summary>
     [HttpGet("{id:guid}/products")]
     public async Task<IActionResult> Products(
         Guid id, [FromQuery] Guid[]? storeId,
-        [FromQuery] int page = 1, [FromQuery] int size = 20, [FromQuery] string? sort = null)
+        [FromQuery] int page = 1, [FromQuery] int size = 20, [FromQuery] string? sort = null,
+        [FromQuery] bool direct = false)
     {
-        var result = await products.ListAsync(q: null, categoryId: id, storeId, page, size, sort);
+        var result = await products.ListAsync(q: null, categoryId: id, storeId, page, size, sort, direct);
         return result is null ? NotFound() : Ok(result);
     }
 

@@ -14,8 +14,13 @@ public interface IProductService
     /// is echoed back in <see cref="PagedResult{T}.Sort"/>.
     /// </summary>
     /// <returns><c>null</c> only when <paramref name="categoryId"/> is given but unknown/archived (→ 404).</returns>
+    /// <param name="directCategoryOnly">
+    /// With <paramref name="categoryId"/>: return only what sits on that node itself, not its descendants — the
+    /// products whose own finer category never mapped into the shared tree, which drilling down can't reach.
+    /// </param>
     Task<PagedResult<ProductGroup>?> ListAsync(
-        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size, string? sort);
+        string? q, Guid? categoryId, IReadOnlyList<Guid>? storeIds, int page, int size, string? sort,
+        bool directCategoryOnly = false);
 
     /// <summary>The group containing <paramref name="productId"/> (its cross-store listings); <c>null</c> if unknown.</summary>
     Task<ProductGroup?> GetGroupAsync(Guid productId);

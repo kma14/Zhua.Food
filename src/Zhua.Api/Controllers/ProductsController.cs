@@ -17,13 +17,15 @@ public sealed class ProductsController(IProductService products) : ZhuaControlle
     /// The product collection: search (<c>?q=</c>, real store names/brands), filter by <c>?category=</c> and/or
     /// <c>?storeId=</c> (repeatable), paged. Listings are grouped by item — one group per product, each with all its
     /// store listings; unmatched listings are a group of one. An unknown/archived category → 404.
+    /// <c>?direct=true</c> narrows a <c>?category=</c> filter to that node alone, excluding its descendants.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string? q, [FromQuery] Guid? category, [FromQuery] Guid[]? storeId,
-        [FromQuery] int page = 1, [FromQuery] int size = 20, [FromQuery] string? sort = null)
+        [FromQuery] int page = 1, [FromQuery] int size = 20, [FromQuery] string? sort = null,
+        [FromQuery] bool direct = false)
     {
-        var result = await products.ListAsync(q, category, storeId, page, size, sort);
+        var result = await products.ListAsync(q, category, storeId, page, size, sort, direct);
         return result is null ? NotFound() : Ok(result);
     }
 

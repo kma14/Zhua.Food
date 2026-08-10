@@ -128,7 +128,9 @@ back as **one group with all its listings**. The API computes **no** cheapest/sa
 is the payload and **the client ranks it** (cheapest, nearest, on-special). Unmatched listings are a group of one.
 
 **Query (all optional):** `q` (search the real store name/brand) · `category={id}` (a category node — its whole
-subtree) · `storeId=` (repeatable) · `page` · `size` · `sort`. No filter ⇒ the whole catalogue, paged. `category`
+subtree) · `direct=true` (with `category=`: that node **only**, excluding descendants — see
+[`GET /categories/{id}/products`](#get-categoriesidproducts--products-inside-a-category-d22)) · `storeId=`
+(repeatable) · `page` · `size` · `sort`. No filter ⇒ the whole catalogue, paged. `category`
 returns only matched listings (the item carries the category); an unknown/archived `category` → `404`.
 
 **Sorting (`sort=`, applied server-side over the whole filtered set *before* paging, so pages are globally correct):**
@@ -229,9 +231,18 @@ The products under a category node (its **whole subtree**), grouped by item — 
 
 **Query:** `page`, `size`, `sort` (see [`GET /products`](#get-products--the-product-collection-search--browse) for
 the sort values; default `unitPriceAsc`); optional **`?storeId=`** (repeatable — restrict to those stores; see
-[Filtering by store](#filtering-by-store-storeid)).
+[Filtering by store](#filtering-by-store-storeid)); optional **`?direct=true`** (below).
 
 **Response:** `PagedResult<ProductGroup>` — identical envelope + sorting to [`GET /products`](#get-products--the-product-collection-search--browse).
+
+> **`?direct=true` — the "unsorted here" bucket (2026-08-10).** A product is filed on the **finest** category that
+> mapped, so an aisle also directly holds the products whose own shelf has no counterpart in the shared tree (each
+> chain names its shelves differently — only ~24% of Woolworths shelves map). Those products are **unreachable by
+> drilling down**: walking every shelf under `Beef` reaches 103 of its 157. `?direct=true` returns exactly that
+> remainder — the node itself, no descendants — so the UI can render it as one more bucket beside the child shelves
+> and have the arithmetic close. It pairs with the counts already on each tree node: `productCount` = direct (what
+> `?direct=true` lists), `totalProductCount` = whole subtree (the default). On a leaf shelf the two are the same.
+> Without `category=`/on `GET /products` with no category, the flag is ignored.
 
 > **Unmatched listings are included (2026-07-23).** A category page returns both matched groups (via the item's
 > category) **and** unmatched listings (via their own store-category) — so pending/held products aren't invisible to
@@ -407,3 +418,4 @@ The whole flow is now backed end-to-end.
 - 2026-07-23 🧑‍⚖️ **`ProductGroup.comparable`** added — a convenience boolean (= `products.length > 1`) so the client renders a real cross-store compare vs. a single-store "no cross-store price yet" card. Groundwork for surfacing unmatched listings in category browse (TD-5): a single listing is `comparable: false` (unmatched or one-store-only), never labelled "exclusive". Derived, so it can't drift from `products`; no other shape change.
 - 2026-07-23 🧑‍⚖️ **`comparable` fixed to be global (bug).** It was `products.length > 1`, so a `?storeId=` filter that narrowed a group to one listing reported `comparable: false` even when the item is at several stores — the whole store-filtered page looked "single store" (front-end report). Now it reflects the item's **global** store span, independent of the filter: a store-filtered group can show one listing and still be `comparable: true`. Front-end: read the flag, don't recompute from `products.length`.
 - 2026-07-23 🧑‍⚖️ **Category browse now includes unmatched listings (TD-5).** `GET /categories/{id}/products`, `GET /products?category=` and `/deals?category=` return unmatched listings (pending/held — `itemId: null`, `comparable: false`) via their own store-category, not just matched items; the `/categories` tree `totalProductCount` counts them too, so the badge matches the page. No response-shape change. Matched-group behaviour is unchanged. Front-end (Codex): render `comparable: false` groups as single-store cards.
+- 2026-08-10 🧑‍⚖️ *(Kevin: "先做第一步")* **`?direct=true` on category browse** — `GET /categories/{id}/products` and `GET /products?category=` accept `direct=true`, returning only what sits on that node itself instead of its whole subtree. From a front-end report that aisle totals dwarf the shelf totals beneath them: a product is filed on the finest category that **mapped**, and only ~24% of Woolworths shelves have a shared-tree counterpart, so the rest pile up on the aisle where drilling down can never reach them (Beef: 157 total, 103 across its shelves, 54 stranded — 44 of them Woolworths). The flag makes that remainder listable as an "unsorted here" bucket; it pairs with the tree's existing `productCount` (direct) / `totalProductCount` (subtree). **It exposes the gap rather than fixing it** — closing the mapping gap itself is planned separately in [internals/category-alignment.md](internals/ai-work/category-alignment.md).
