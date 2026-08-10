@@ -19,6 +19,17 @@ services:
       RUNNER_TOKEN: PASTE_REGISTRATION_TOKEN_HERE   # from the "New self-hosted runner" page
       LABELS: nas
       RUNNER_SCOPE: repo
+      # Persist the runner registration so a container restart REUSES it instead of re-running
+      # config.sh. Without this, a restart hits "already configured" while the (hour-lived)
+      # RUNNER_TOKEN has long expired -> deregister also fails -> infinite crash loop and the
+      # deploy job waits forever (2026-07-19 incident). RUNNER_TOKEN is now only needed once,
+      # for the very first registration into this dir.
+      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config
+      # Required WITH the dir above (the image warns about it): otherwise the exit trap
+      # deregisters the runner on every container stop, and the next start reuses the
+      # now-deregistered credentials -> Listener fails -> restart loop.
+      DISABLE_AUTOMATIC_DEREGISTRATION: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock    # drive the host Docker (sibling containers)
       - /volume1/docker/Zhua/runner:/tmp/runner       # runner work dir on the NAS
+      - /volume1/docker/Zhua/runner-config:/actions-runner-config  # persisted registration (create the folder first)
